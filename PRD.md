@@ -122,10 +122,10 @@ An OpenCode plugin package has a **server entry** (`@opencode/plugin`, `Plugin.d
 | Keys and slash command | `context.keymap.layer(() => ({ commands, bindings, … }))`; a command has `id`, `title`, `bind`, `palette`, `slash: { name, arguments }`, `run(input, event)` | ✅ |
 | Confirm / pick / edit text / toast | `ui.dialog.confirm`, `ui.dialog.select` (with `search` and `actions`), `ui.dialog.prompt({ title, value })` (prefilled, editable), `ui.toast.show` | ✅ |
 | Run git / rg | Server entry: `node:child_process` `spawn` with argv arrays (the plugin runtime has Bun and Node builds; `node:child_process` works on both) | ✅ |
-| Server ↔ TUI | Server: `ctx.rpc.register(definition, handlers)` returns a registration with `emit(...)` for server-pushed events; the TUI calls methods and listens through `context.client.rpc` | ✅ |
+| Server ↔ TUI | Server: `ctx.rpc.register(definition, handlers)` returns a registration with `events.emit(...)` for server-pushed events; the TUI calls methods and listens through `context.client.rpc` | ✅ |
 | Know what the agent does | Server: `ctx.tool.hook('execute.before' / 'execute.after')` with `tool`, `sessionID`, `input`, `status`, `result`; event `filesystem.changed`; `vcs.branch.updated` | ✅ |
 | Put text into the prompt | **No API in 2.x** to insert into the user's prompt (`tui.prompt.append` exists only as an event type). JEI uses `ui.dialog.prompt({ value })` prefilled with the text, then `client.session.prompt({ sessionID, text })` to send it | ✅ Different UX, see §5.3 |
-| AI commit message | `client.generate.text({ prompt: { prompt, model? } })` → `{ text }` | ✅ |
+| AI commit message | `ctx.generate.text({ prompt, model? })` → `{ text }`; prompt is a string and model is `{ providerID, id }` | ✅ |
 | State | Solid signals in the TUI; `context.storage` in the TUI; `ctx.storage` on the server | ✅ |
 | Symbols | No LSP or symbol call in the 2.x client | ❌ Approximate level only (§6.3) |
 | Git hooks | Git runs as a normal process: repo hooks fire | ✅ |
