@@ -1,0 +1,21 @@
+diff --git a/src.txt b/src.txt
+index bab081f..c155d42 100644
+--- a/src.txt
++++ b/src.txt
+@@ -16,6 +16,7 @@ line 15
+ line 16
+ line 17
+ line 18
++added after eighteen
+ line 19
+ line 20
+ line 21
+@@ -32,7 +33,7 @@ line 31
+ line 32
+ line 33
+ line 34
+-line 35
++line 35 changed
+ line 36
+ line 37
+ line 38
