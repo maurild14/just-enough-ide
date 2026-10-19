@@ -8,8 +8,24 @@ import type { DirEntry, FileStat, Host, Platform, RunOptions, RunResult } from '
 
 // An empty global config keeps the developer's own git settings out of the specs
 // (the null device path is not accepted by git on Windows).
-const EMPTY_CONFIG = join(tmpdir(), 'jei-empty-gitconfig')
-writeFileSync(EMPTY_CONFIG, '')
+let configDir: string | null = null
+function emptyConfig(): string {
+  if (configDir === null) {
+    configDir = realpathSync.native(mkdtempSync(join(tmpdir(), 'jei-cfg-')))
+    writeFileSync(join(configDir, 'gitconfig'), '')
+  }
+  return join(configDir, 'gitconfig')
+}
+function dropConfig(): void {
+  if (configDir !== null) rmSync(configDir, { recursive: true, force: true })
+  configDir = null
+}
+process.on('exit', dropConfig)
+
+/** The ambient environment without any GIT_* variable, so specs never see the developer's git setup. */
+function cleanEnv(): Record<string, string> {
+  return Object.fromEntries(Object.entries(process.env).filter(([k, v]) => !k.toUpperCase().startsWith('GIT_') && v !== undefined)) as Record<string, string>
+}
 
 export class FakeHost implements Host {
   readonly platform: Platform = process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux'
@@ -26,11 +42,9 @@ export class FakeHost implements Host {
       const child = spawn(cmd, args, {
         cwd: options.cwd,
         env: {
-          ...process.env,
-          GIT_CONFIG_GLOBAL: EMPTY_CONFIG,
+          ...cleanEnv(),
+          GIT_CONFIG_GLOBAL: emptyConfig(),
           GIT_CONFIG_NOSYSTEM: '1',
-          GIT_MERGE_AUTOEDIT: 'no',
-          GIT_TERMINAL_PROMPT: '0',
           ...options.env,
         },
         windowsHide: true,
@@ -106,6 +120,7 @@ const made: string[] = []
 
 /** Removes every temp directory created by `makeTemp` and `makeRepo`. Call from `afterEach`. */
 export function cleanup(): void {
+  dropConfig()
   for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
 }
 

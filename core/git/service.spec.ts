@@ -198,10 +198,63 @@ test('sync resolves divergence with rebase; other failures give the first line',
   await r.git('remote', 'set-url', 'origin', join(r.dir, 'nowhere'))
   const bad = await sync(r.host, r.dir, { ...branch, behind: 0, ahead: 1 })
   expect(bad.ok).toBe(false)
-  expect(bad).toHaveProperty('error')
+  const first = (await r.host.run(['git', '-C', r.dir, 'push'])).stderr.split('\n').find((l) => l.trim() !== '')?.trim()
+  expect(bad).toEqual({ ok: false, error: first as string })
 })
 
 test('git helper is usable on the fake host', async () => {
   const r = await makeRepo({ 'a.txt': 'x\n' })
   expect((await git(r.host, r.dir, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()).toBe('main')
+})
+
+test('discard treats names with glob characters literally', async () => {
+  const r = await makeRepo({ 'keep.txt': 'k\n' })
+  r.write('app/[id]/page.tsx', 'a\n')
+  r.write('app/d/page.tsx', 'd\n')
+  r.write('app/i/page.tsx', 'i\n')
+  const entries = (await snap(r)).status.entries.filter((e) => e.path === 'app/[id]/page.tsx')
+  expect(entries.length).toBe(1)
+  await discard(r.host, r.dir, entries)
+  expect(existsSync(join(r.dir, 'app/[id]/page.tsx'))).toBe(false)
+  expect(existsSync(join(r.dir, 'app/d/page.tsx'))).toBe(true)
+  expect(existsSync(join(r.dir, 'app/i/page.tsx'))).toBe(true)
+})
+
+test('stage treats glob characters in a file name literally', async () => {
+  const r = await makeRepo({ 'keep.txt': 'k\n' })
+  r.write('a[bc].txt', '1\n')
+  r.write('ab.txt', '2\n')
+  await stage(r.host, r.dir, ['a[bc].txt'])
+  const by = Object.fromEntries((await snap(r)).status.entries.map((e) => [e.path, e]))
+  expect(by['a[bc].txt']?.index).toBe('added')
+  expect(by['ab.txt']?.index).toBeNull()
+})
+
+test('numstat follows a staged rename', async () => {
+  const r = await makeRepo({ 'old.txt': 'one\ntwo\nthree\nfour\n' })
+  await r.git('mv', 'old.txt', 'new.txt')
+  r.write('new.txt', 'one\ntwo\nthree\nfour\nfive\n')
+  await r.git('add', 'new.txt')
+  const s = await snap(r)
+  expect(s.status.entries[0]).toMatchObject({ path: 'new.txt', origPath: 'old.txt' })
+  expect(s.staged.get('new.txt')).toEqual({ added: 1, removed: 0 })
+})
+
+test('generateMessage lists new files when nothing is staged', async () => {
+  const r = await makeRepo({ 'a.txt': 'x\n' })
+  r.write('brand-new.ts', 'x\n')
+  r.host.completeReply = 'feat: add file'
+  await generateMessage(r.host, r.dir, '', 0)
+  expect(r.host.prompts[0]?.prompt).toContain('New files: brand-new.ts')
+})
+
+test('a non-git failure while reading config is rethrown', async () => {
+  const r = await makeRepo({ 'a.txt': 'x\n' })
+  const branch = (await snap(r)).status.branch
+  const host = Object.assign(Object.create(r.host), {
+    run: async () => {
+      throw new Error('spawn failed')
+    },
+  })
+  await expect(sync(host, r.dir, branch)).rejects.toThrow('spawn failed')
 })

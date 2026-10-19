@@ -17,7 +17,7 @@ Source: `PRD.md` §9. To report a vulnerability, follow `SECURITY.md`.
 - **Destructive actions** (discard, discard all, delete, checkout over local changes) always confirm. JEI never stashes on its own.
 - **No surprise permission dialogs.** The Claude Code LSP and shell-tool permissions are checked with `$.tool.check` first; the pane explains and asks.
 - **No shell strings.** Every process is an argv array, which also removes a whole class of injection through file names.
-- **Paths stay inside the project root.** Every path JEI writes or deletes is resolved and checked.
+- **Paths stay inside the project root.** Every path JEI writes or deletes is resolved and checked. The Files service refuses a relative path that leaves the root (listing and preview return empty) and a preview whose real path (after symlinks) is outside the root's real path. Git runs with `GIT_LITERAL_PATHSPECS=1`, so a file name with `[`, `*` or `?` never matches other files when staged, restored or cleaned.
 - **No lock contention.** Git runs with `--no-optional-locks` so JEI never blocks the agent.
 
 ## Repository hygiene

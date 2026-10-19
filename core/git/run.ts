@@ -1,6 +1,6 @@
 import type { Host, RunOptions, RunResult } from '../host.ts'
 
-export const GIT_ENV: Readonly<Record<string, string>> = Object.freeze({ GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' })
+export const GIT_ENV: Readonly<Record<string, string>> = Object.freeze({ GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', GIT_LITERAL_PATHSPECS: '1', GIT_MERGE_AUTOEDIT: 'no', GIT_TERMINAL_PROMPT: '0' })
 
 export function gitArgv(root: string, args: readonly string[]): string[] {
   return ['git', '--no-optional-locks', '-C', root, ...args]

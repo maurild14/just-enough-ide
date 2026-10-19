@@ -2,7 +2,7 @@ import type { DirEntry, Host } from '../host.ts'
 import { GIT_ENV, gitArgv } from '../git/run.ts'
 import { isRepo } from '../git/status.ts'
 import type { Options } from '../options.ts'
-import { joinPath } from '../shared/paths.ts'
+import { isInside, joinPath } from '../shared/paths.ts'
 import { parseDelimited } from './csv.ts'
 import { openArgv } from './open.ts'
 import { PREVIEW_MAX_BYTES, languageOf, previewKind } from './preview.ts'
@@ -15,14 +15,23 @@ const PREVIEW_ROWS = 200
 
 const absOf = (root: string, rel: string): string => (rel === '' ? root : joinPath(root, rel))
 
+/** Absolute path for `rel`, or null when it leaves `root` (for example `../x`). */
+const insideAbs = (root: string, rel: string): string | null => {
+  const abs = absOf(root, rel)
+  return isInside(root, abs) ? abs : null
+}
+
 /** Lists one folder. `ignored` holds the listed paths (posix rels) that git ignores; empty outside a repo. */
 export async function listDir(host: Host, root: string, rel: string): Promise<{ entries: DirEntry[]; ignored: string[] }> {
-  const entries = await host.list(absOf(root, rel))
+  const abs = insideAbs(root, rel)
+  if (abs === null) return { entries: [], ignored: [] }
+  const entries = await host.list(abs)
   if (entries.length === 0 || (await isRepo(host, root)) === null) return { entries, ignored: [] }
   const paths = entries.filter((e) => e.name !== '.git').map((e) => joinPath(rel, e.name))
   if (paths.length === 0) return { entries, ignored: [] }
+  // check-ignore rejects literal pathspec magic; it matches the given paths as plain paths anyway.
   // Exit 1 means nothing is ignored; any other failure is treated the same (the tree still works).
-  const res = await host.run(gitArgv(root, IGNORED_ARGS), { env: GIT_ENV, stdin: paths.join('\0') + '\0' })
+  const res = await host.run(gitArgv(root, IGNORED_ARGS), { env: { ...GIT_ENV, GIT_LITERAL_PATHSPECS: '0' }, stdin: paths.join('\0') + '\0' })
   const ignored = res.exitCode === 0 ? res.stdout.split('\0').filter((p) => p !== '') : []
   return { entries, ignored }
 }
@@ -32,10 +41,14 @@ export async function loadPreview(
   root: string,
   rel: string,
 ): Promise<{ kind: PreviewKind; text?: string; rows?: string[][]; language?: string }> {
-  const abs = absOf(root, rel)
+  const abs = insideAbs(root, rel)
+  if (abs === null) return { kind: 'empty' }
   const name = rel.split('/').pop() ?? rel
   const info = await host.stat(abs)
   if (info === null || info.kind !== 'file') return { kind: 'empty' }
+  // A symlink may point outside the project: compare real paths.
+  const rootReal = (await host.stat(root))?.realPath
+  if (rootReal === undefined || !isInside(rootReal, info.realPath)) return { kind: 'empty' }
   // Size alone settles empty, image and too-large: those files are never read.
   const early = previewKind(name, info.size, new Uint8Array(0))
   if (early === 'empty' || early === 'image' || early === 'too-large') return { kind: early }
@@ -52,7 +65,12 @@ export async function loadPreview(
 export async function allFiles(host: Host, root: string): Promise<string[]> {
   if ((await isRepo(host, root)) !== null) {
     const res = await host.run(gitArgv(root, ['ls-files', '-co', '--exclude-standard', '-z']), { env: GIT_ENV })
-    if (res.exitCode === 0) return [...new Set(res.stdout.split('\0').filter((p) => p !== ''))]
+    if (res.exitCode === 0) {
+      // Tracked files deleted from the worktree still appear in `-c`; drop them.
+      const gone = await host.run(gitArgv(root, ['ls-files', '-d', '-z']), { env: GIT_ENV })
+      const deleted = new Set(gone.exitCode === 0 ? gone.stdout.split('\0') : [])
+      return [...new Set(res.stdout.split('\0').filter((p) => p !== '' && !deleted.has(p)))]
+    }
   }
   const files: string[] = []
   const queue: string[] = ['']

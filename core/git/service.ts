@@ -83,7 +83,12 @@ export async function fileDiff(
 /** Asks the model for a commit message for the staged diff, or for the working diff when nothing is staged. */
 export async function generateMessage(host: Host, root: string, model: string, stagedCount: number): Promise<string> {
   const args = ['diff', '--no-color', '--no-ext-diff', ...(stagedCount > 0 ? ['--cached'] : [])]
-  const diff = (await git(host, root, args)).stdout
+  let diff = (await git(host, root, args)).stdout
+  if (stagedCount === 0) {
+    // Untracked files are not in `git diff`; list them so a new-files-only change is not empty.
+    const fresh = (await git(host, root, ['ls-files', '--others', '--exclude-standard', '-z'])).stdout.split('\0').filter((p) => p !== '')
+    if (fresh.length > 0) diff += `${diff === '' ? '' : '\n'}New files: ${fresh.join(', ')}\n`
+  }
   return cleanMessage(await host.complete(commitPrompt(diff, PROMPT_MAX_CHARS), model))
 }
 
@@ -118,7 +123,8 @@ async function configValue(host: Host, root: string, key: string): Promise<strin
   try {
     const out = (await git(host, root, ['config', '--get', key])).stdout.trim()
     return out === '' ? null : out
-  } catch {
+  } catch (err) {
+    if (!(err instanceof GitError)) throw err
     return null // exit 1: unset
   }
 }

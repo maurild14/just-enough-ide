@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { FakeHost, cleanup, makeRepo, makeTemp, writeFiles } from '../../test/fake-host.ts'
 import { parseOptions } from '../options.ts'
@@ -62,4 +62,33 @@ test('openFile builds argv from the editor command and ignores the exit code', a
   await openFile(host, parseOptions({ editorCommand: 'code -g {path}:{line}' }), '/p/a.ts', 7)
   await openFile(host, parseOptions({}), '/p/a.ts')
   expect(calls).toEqual([['code', '-g', '/p/a.ts:7'], ['xdg-open', '/p/a.ts']])
+})
+
+test('paths that leave the root are refused', async () => {
+  const host = new FakeHost()
+  const dir = makeTemp('plain')
+  writeFiles(join(dir, '..'), { 'secret.txt': 's' })
+  writeFiles(dir, { 'a.txt': 'x' })
+  expect(await listDir(host, dir, '..')).toEqual({ entries: [], ignored: [] })
+  expect(await listDir(host, dir, '../')).toEqual({ entries: [], ignored: [] })
+  expect(await loadPreview(host, dir, '../secret.txt')).toEqual({ kind: 'empty' })
+  expect(await loadPreview(host, dir, '..')).toEqual({ kind: 'empty' })
+})
+
+test('a symlink that points outside the root is not previewed', async () => {
+  const host = new FakeHost()
+  const dir = makeTemp('plain')
+  writeFiles(join(dir, '..'), { 'secret.txt': 's' })
+  try {
+    symlinkSync(join(dir, '..', 'secret.txt'), join(dir, 'link.txt'))
+  } catch {
+    return // symlinks need privileges on some Windows setups
+  }
+  expect(await loadPreview(host, dir, 'link.txt')).toEqual({ kind: 'empty' })
+})
+
+test('allFiles drops tracked files deleted from the worktree', async () => {
+  const r = await makeRepo({ 'a.txt': 'x', 'b.txt': 'y' })
+  rmSync(join(r.dir, 'b.txt'))
+  expect(await allFiles(r.host, r.dir)).toEqual(['a.txt'])
 })
