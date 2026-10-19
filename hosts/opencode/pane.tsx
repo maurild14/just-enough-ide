@@ -55,6 +55,8 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   const [height, setHeight] = createSignal(dimensions().height)
   const width = () => Math.max(0, Math.floor(props.input.width))
   let stopped = false
+  let received = 0
+  const live = new Map<string, number>()
   onCleanup(() => { stopped = true })
   createEffect(() => { setState(memory.panes[props.input.sessionID] ?? initialPane(options.defaultTab)) })
   function dispatch(action: PaneAction) {
@@ -64,13 +66,13 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   }
   const refresh = latest(async () => readState(await props.api.state({})))
   async function refetch() {
+    const before = received
     try {
       const result = await refresh()
       if (stopped || result.stale) return
-      const incoming = result.value.activity.toJSON()
-      // A live event can arrive after the server serialized this state reply.
+      // Replay events received during this request without comparing host clocks.
       for (const [rel, row] of Object.entries(activity().toJSON())) {
-        if (row.at > (incoming[rel]?.at ?? -Infinity)) result.value.activity.touch(rel, row.kind, row.at)
+        if ((live.get(rel) ?? 0) > before) result.value.activity.touch(rel, row.kind, row.at)
       }
       setSnapshot(result.value)
       setActivity(result.value.activity)
@@ -88,6 +90,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
       if (typeof data.rel !== 'string') throw new Error('Invalid JEI activity.')
       const activityKind = kind(data.kind)
       if (!allows(options.activity, activityKind)) return
+      live.set(data.rel, ++received)
       activity().touch(data.rel, activityKind, Date.now())
       setActivity(activity())
       setNow(Date.now())

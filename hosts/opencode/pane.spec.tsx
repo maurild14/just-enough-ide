@@ -4,6 +4,7 @@ import type { Plugin } from '@opencode/plugin/tui'
 import { createMemo, createSignal, onCleanup } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import { parseOptions } from '../../core/options.ts'
+import { ActivityLog } from '../../core/activity/log.ts'
 import { initialPane, reducePane } from '../../core/pane.ts'
 import { cellWidth } from '../../core/shared/fit.ts'
 import plugin from '../../tui.ts'
@@ -299,3 +300,31 @@ test('a delayed state reply cannot erase newer live activity', async () => {
     expect(clear.mock.calls.some(([handle]) => handle === timer)).toBe(false)
   } finally { interval.mockRestore(); clear.mockRestore() }
 })
+
+for (const serverAt of [10000, 60000, 1000]) {
+  test(`live activity received during a request wins a same-file collision with server time ${serverAt}`, async () => {
+    const f = fixture()
+    const r = await f.mount()
+    let complete!: (value: unknown) => void
+    f.setReply(() => new Promise((resolve) => { complete = resolve }))
+    f.emit('changed')
+    const clock = spyOn(Date, 'now').mockReturnValue(10000)
+    const observed: { kind: string | null; at: number | undefined }[] = []
+    const isGlowing = ActivityLog.prototype.isGlowing
+    const glow = spyOn(ActivityLog.prototype, 'isGlowing').mockImplementation(function (this: ActivityLog, now) {
+      observed.push({ kind: this.kindOf('src/app.ts'), at: this.toJSON()['src/app.ts']?.at })
+      return isGlowing.call(this, now)
+    })
+    try {
+      f.emit('activity', { rel: 'src/app.ts', kind: 'write' })
+      await r.flush()
+      complete({ cwd: '/acme-app', options: {}, git: { root: null }, activity: { 'src/app.ts': { kind: 'read', at: serverAt } } })
+      await r.flush()
+      expect(observed.at(-1)).toEqual({ kind: 'write', at: 10000 })
+      f.setReply(async () => ({ cwd: '/acme-app', options: {}, git: { root: null }, activity: { 'src/app.ts': { kind: 'read', at: serverAt } } }))
+      f.emit('changed')
+      await r.flush()
+      expect(observed.at(-1)).toEqual({ kind: 'read', at: serverAt })
+    } finally { glow.mockRestore(); clock.mockRestore() }
+  })
+}
