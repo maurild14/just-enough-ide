@@ -1,0 +1,8 @@
+node_modules/
+.claude-plugin/types/
+*.log
+.env*
+.DS_Store
+coverage/
+*.tgz
+.superpowers/

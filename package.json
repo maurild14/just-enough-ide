@@ -1,0 +1,56 @@
+{
+  "name": "opencode-jei",
+  "version": "0.1.0",
+  "description": "The parts of an IDE you still need when the AI writes the code: a file tree, project search, symbols and a full Git panel, docked beside your Claude Code or OpenCode session.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maurild14/just-enough-ide.git"
+  },
+  "keywords": ["opencode", "claude-code", "plugin", "file-tree", "git"],
+  "exports": {
+    ".": "./index.ts",
+    "./server": "./index.ts",
+    "./tui": "./tui.ts",
+    "./rpc": "./rpc.ts"
+  },
+  "files": [
+    "index.ts",
+    "tui.ts",
+    "rpc.ts",
+    "core/",
+    "hosts/opencode/",
+    "!**/*.spec.ts",
+    "!**/*.spec.tsx",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "bun test ./core ./hosts/opencode",
+    "typecheck": "tsc -p hosts/opencode/tsconfig.json --noEmit",
+    "typecheck:claude": "tsc -p tsconfig.json --noEmit",
+    "validate": "claude plugin validate .",
+    "test:claude": "claude plugin test ."
+  },
+  "peerDependencies": {
+    "@opencode/plugin": "^2.0.32",
+    "@opentui/core": ">=0.5.17",
+    "@opentui/solid": ">=0.5.17",
+    "solid-js": ">=1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode/plugin": { "optional": true },
+    "@opentui/core": { "optional": true },
+    "@opentui/solid": { "optional": true },
+    "solid-js": { "optional": true }
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.0.32",
+    "@opentui/core": "0.5.17",
+    "@opentui/solid": "0.5.17",
+    "@types/bun": "1.4.3",
+    "solid-js": "1.9.12",
+    "typescript": "^5.9.0"
+  }
+}

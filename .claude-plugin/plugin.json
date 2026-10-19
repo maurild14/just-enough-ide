@@ -1,0 +1,72 @@
+{
+  "name": "jei",
+  "version": "0.1.0",
+  "description": "The parts of an IDE you still need when the AI writes the code: a file tree, project search, symbols and a full Git panel, docked beside your Claude Code or OpenCode session.",
+  "types": "./types/index.d.ts",
+  "author": { "name": "The JEI contributors" },
+  "repository": "https://github.com/maurild14/just-enough-ide",
+  "license": "MIT",
+  "keywords": ["file-tree", "git", "search", "symbols", "pane"],
+  "userConfig": {
+    "startOpen": {
+      "type": "string",
+      "title": "Open on start",
+      "description": "Open the pane when a session starts (where it can dock).",
+      "options": ["on", "off"],
+      "default": "on"
+    },
+    "defaultTab": {
+      "type": "string",
+      "title": "Default tab",
+      "description": "Tab shown when the pane opens.",
+      "options": ["files", "search", "symbols", "git"],
+      "default": "files"
+    },
+    "activity": {
+      "type": "string",
+      "title": "Activity shimmer",
+      "description": "What the shimmer shows in the file tree and the Git tab.",
+      "options": ["reads and writes", "writes", "reads", "none"],
+      "default": "reads and writes"
+    },
+    "followAgent": {
+      "type": "string",
+      "title": "Follow the agent",
+      "description": "The tree follows the files the agent touches.",
+      "options": ["on", "off"],
+      "default": "on"
+    },
+    "glyphs": {
+      "type": "string",
+      "title": "Icon set",
+      "description": "Icons: auto-detect, Nerd Font, or plain characters.",
+      "options": ["auto", "nerd", "plain"],
+      "default": "auto"
+    },
+    "editorCommand": {
+      "type": "string",
+      "title": "Editor command",
+      "description": "Command that opens a file; {path} and {line} are replaced. Empty uses the system default.",
+      "default": ""
+    },
+    "commitModel": {
+      "type": "string",
+      "title": "Commit message model",
+      "description": "Model used by Generate. Empty uses the host default.",
+      "default": ""
+    },
+    "smartCommit": {
+      "type": "string",
+      "title": "Smart commit",
+      "description": "Commit with nothing staged stages everything first.",
+      "options": ["on", "off"],
+      "default": "on"
+    },
+    "graphLimit": {
+      "type": "string",
+      "title": "Graph page size",
+      "description": "Commits loaded per page in the Git graph.",
+      "default": "200"
+    }
+  }
+}
