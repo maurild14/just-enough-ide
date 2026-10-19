@@ -1,4 +1,3 @@
-import { splitCommand } from '../shared/argv.ts'
 import type { Touch } from './classify.ts'
 
 const READERS = new Set(['cat', 'head', 'tail', 'less', 'more', 'bat', 'type', 'get-content', 'gc'])
@@ -15,25 +14,54 @@ const VALUE_FLAGS: Record<string, ReadonlySet<string>> = {
 }
 const PATTERN_FLAGS = new Set(['-e', '-f', '--regexp', '--file'])
 
-/** Split on `|`, `||`, `&&`, `;` and `&` outside quotes. */
-function segments(command: string): string[] {
-  const out: string[] = []
+type Word = { text: string; quoted: boolean }
+
+/**
+ * Split on `|`, `||`, `&&`, `;` and `&` outside quotes, and each segment into
+ * words (quotes removed, the word remembers it was quoted). A `&` that belongs
+ * to a redirection (`2>&1`, `&>`, `>&`) is part of its word, not a separator.
+ */
+function segments(command: string): Word[][] {
+  const out: Word[][] = []
+  let words: Word[] = []
   let cur = ''
+  let has = false
+  let quoted = false
   let quote: string | null = null
-  for (const ch of command) {
+  const flushWord = () => {
+    if (has) words.push({ text: cur, quoted })
+    cur = ''
+    has = false
+    quoted = false
+  }
+  const flushSegment = () => {
+    flushWord()
+    if (words.length > 0) out.push(words)
+    words = []
+  }
+  const chars = [...command]
+  chars.forEach((ch, i) => {
     if (quote) {
       if (ch === quote) quote = null
-      cur += ch
+      else cur += ch
     } else if (ch === '"' || ch === "'") {
       quote = ch
+      has = true
+      quoted = true
+    } else if (/\s/.test(ch)) {
+      flushWord()
+    } else if (ch === '&' && (chars[i - 1] === '>' || chars[i - 1] === '<' || chars[i + 1] === '>')) {
       cur += ch
+      has = true
     } else if (ch === '|' || ch === ';' || ch === '&') {
-      out.push(cur)
-      cur = ''
-    } else cur += ch
-  }
-  out.push(cur)
-  return out.map((s) => s.trim()).filter((s) => s !== '')
+      flushSegment()
+    } else {
+      cur += ch
+      has = true
+    }
+  })
+  flushSegment()
+  return out
 }
 
 function baseName(word: string): string {
@@ -41,14 +69,14 @@ function baseName(word: string): string {
   return name.toLowerCase().replace(/\.exe$/, '')
 }
 
-/** Drop redirections (`>`, `>>`, `2>`, `>&`, `<`, with or without a separate target). */
-function withoutRedirects(words: string[]): string[] {
+/** Drop unquoted redirections (`>`, `>>`, `2>`, `>&`, `&>`, `<`), with or without a separate target. */
+function withoutRedirects(words: Word[]): string[] {
   const out: string[] = []
   for (let i = 0; i < words.length; i++) {
     const w = words[i]!
-    const m = /^(\d*)(>>?|<)(&?)(.*)$/.exec(w)
+    const m = w.quoted ? null : /^(\d*)(&?>>?|<)(&?)(.*)$/.exec(w.text)
     if (!m) {
-      out.push(w)
+      out.push(w.text)
       continue
     }
     if (m[4] === '') i++ // target is the next word
@@ -84,16 +112,28 @@ function readPaths(cmd: string, args: string[]): string[] {
   return paths
 }
 
+const GIT_VALUE_OPTS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--super-prefix', '--config-env'])
+
+/** First word that is not a global option or an option's value (`--opt=value` is one word). */
+function gitSubcommand(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const w = args[i]!
+    if (GIT_VALUE_OPTS.has(w)) i++
+    else if (!w.startsWith('-')) return w
+  }
+  return undefined
+}
+
 /** Classify a command line by reading it; nothing is ever executed. */
 export function classifyShell(command: string): Touch | null {
   const reads: string[] = []
   let git = false
   for (const seg of segments(command)) {
-    const words = withoutRedirects(splitCommand(seg))
+    const words = withoutRedirects(seg)
     if (words.length === 0) continue
     const cmd = baseName(words[0]!)
     if (cmd === 'git') {
-      const sub = words.slice(1).find((w) => !w.startsWith('-'))
+      const sub = gitSubcommand(words.slice(1))
       if (sub && GIT_MUTATING.has(sub)) git = true
     } else if (READERS.has(cmd) || SEARCHERS.has(cmd)) {
       for (const p of readPaths(cmd, words.slice(1))) if (!reads.includes(p)) reads.push(p)

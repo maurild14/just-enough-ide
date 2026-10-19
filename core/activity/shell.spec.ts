@@ -39,6 +39,21 @@ test('git', () => {
   expect(classifyShell('git show HEAD')).toBeNull()
 })
 
+test('git global options', () => {
+  expect(classifyShell('git -C x commit')?.kind).toBe('git')
+  expect(classifyShell('git -c a=b push')?.kind).toBe('git')
+  expect(classifyShell('git --git-dir d push')?.kind).toBe('git')
+  expect(classifyShell('git --git-dir=d push')?.kind).toBe('git')
+  expect(classifyShell('git --no-pager log')).toBeNull()
+})
+
+test('quoted operators are arguments; &> and 2>&1 are redirects', () => {
+  expect(classifyShell('grep ">" a.ts')).toEqual({ kind: 'read', paths: ['a.ts'] })
+  expect(classifyShell('cat a &> out')).toEqual({ kind: 'read', paths: ['a'] })
+  expect(classifyShell('cat a >& out')).toEqual({ kind: 'read', paths: ['a'] })
+  expect(classifyShell('cat a 2>&1 | head')).toEqual({ kind: 'read', paths: ['a'] })
+})
+
 test('nothing relevant', () => {
   expect(classifyShell('npm test')).toBeNull()
   expect(classifyShell('')).toBeNull()

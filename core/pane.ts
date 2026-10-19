@@ -22,14 +22,10 @@ export function currentView(s: PaneState): View {
   return s.stack[s.stack.length - 1] ?? s.tab
 }
 
-/** Push `view` on top of `tab`'s root, replacing it when it is already on top. */
+/** Stack with `view` on top of `tab`'s root: keeps the current stack on the same tab, resets it otherwise, and never duplicates the top. */
 function push(s: PaneState, tab: Tab, view: View): View[] {
   const base = s.tab === tab ? s.stack : [tab]
-  return currentViewOf(base) === view ? base : [...base, view]
-}
-
-function currentViewOf(stack: View[]): View | undefined {
-  return stack[stack.length - 1]
+  return base[base.length - 1] === view ? base : [...base, view]
 }
 
 /** Pure reducer. Switching tabs resets the stack but keeps every `selected` entry. */
