@@ -14,52 +14,63 @@ const VALUE_FLAGS: Record<string, ReadonlySet<string>> = {
 }
 const PATTERN_FLAGS = new Set(['-e', '-f', '--regexp', '--file'])
 
-type Word = { text: string; quoted: boolean }
-
 /**
  * Split on `|`, `||`, `&&`, `;` and `&` outside quotes, and each segment into
- * words (quotes removed, the word remembers it was quoted). A `&` that belongs
- * to a redirection (`2>&1`, `&>`, `>&`) is part of its word, not a separator.
+ * words (quotes removed). Unquoted redirections (`>`, `>>`, `2>`, `>&`, `&>`,
+ * `<`, also in the middle of a word) are dropped together with their target,
+ * whether the target is attached or the next word. Quoted `>` is an argument.
  */
-function segments(command: string): Word[][] {
-  const out: Word[][] = []
-  let words: Word[] = []
+function segments(command: string): string[][] {
+  const out: string[][] = []
+  let words: string[] = []
   let cur = ''
   let has = false
-  let quoted = false
+  let digitsOnly = true // the pending word is an unquoted run of digits (a file descriptor)
+  let skipNext = false // the next word is a redirection target
   let quote: string | null = null
   const flushWord = () => {
-    if (has) words.push({ text: cur, quoted })
+    if (has) {
+      if (skipNext) skipNext = false
+      else words.push(cur)
+    }
     cur = ''
     has = false
-    quoted = false
+    digitsOnly = true
   }
   const flushSegment = () => {
     flushWord()
+    skipNext = false
     if (words.length > 0) out.push(words)
     words = []
   }
   const chars = [...command]
-  chars.forEach((ch, i) => {
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i]!
     if (quote) {
       if (ch === quote) quote = null
       else cur += ch
     } else if (ch === '"' || ch === "'") {
       quote = ch
       has = true
-      quoted = true
+      digitsOnly = false
     } else if (/\s/.test(ch)) {
       flushWord()
-    } else if (ch === '&' && (chars[i - 1] === '>' || chars[i - 1] === '<' || chars[i + 1] === '>')) {
-      cur += ch
-      has = true
+    } else if (ch === '>' || ch === '<' || (ch === '&' && chars[i + 1] === '>')) {
+      if (has && digitsOnly) {
+        cur = '' // `2>`: the descriptor belongs to the operator
+        has = false
+      } else flushWord()
+      while (chars[i] === '>' || chars[i] === '<' || chars[i] === '&') i++
+      i--
+      skipNext = true
     } else if (ch === '|' || ch === ';' || ch === '&') {
       flushSegment()
     } else {
       cur += ch
       has = true
+      if (!/\d/.test(ch)) digitsOnly = false
     }
-  })
+  }
   flushSegment()
   return out
 }
@@ -67,21 +78,6 @@ function segments(command: string): Word[][] {
 function baseName(word: string): string {
   const name = word.replaceAll('\\', '/').split('/').pop() ?? word
   return name.toLowerCase().replace(/\.exe$/, '')
-}
-
-/** Drop unquoted redirections (`>`, `>>`, `2>`, `>&`, `&>`, `<`), with or without a separate target. */
-function withoutRedirects(words: Word[]): string[] {
-  const out: string[] = []
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i]!
-    const m = w.quoted ? null : /^(\d*)(&?>>?|<)(&?)(.*)$/.exec(w.text)
-    if (!m) {
-      out.push(w.text)
-      continue
-    }
-    if (m[4] === '') i++ // target is the next word
-  }
-  return out
 }
 
 function readPaths(cmd: string, args: string[]): string[] {
@@ -129,7 +125,7 @@ export function classifyShell(command: string): Touch | null {
   const reads: string[] = []
   let git = false
   for (const seg of segments(command)) {
-    const words = withoutRedirects(seg)
+    const words = seg
     if (words.length === 0) continue
     const cmd = baseName(words[0]!)
     if (cmd === 'git') {

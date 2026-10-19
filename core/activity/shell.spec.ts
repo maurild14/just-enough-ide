@@ -54,6 +54,15 @@ test('quoted operators are arguments; &> and 2>&1 are redirects', () => {
   expect(classifyShell('cat a 2>&1 | head')).toEqual({ kind: 'read', paths: ['a'] })
 })
 
+test('redirect targets, quoted or attached', () => {
+  expect(classifyShell('cat a.ts >"out.txt"')).toEqual({ kind: 'read', paths: ['a.ts'] })
+  expect(classifyShell("cat a 2>'err.log'")).toEqual({ kind: 'read', paths: ['a'] })
+  expect(classifyShell('cat a.ts>out')).toEqual({ kind: 'read', paths: ['a.ts'] })
+  expect(classifyShell('cat a.ts 2>&1 >out b.ts')).toEqual({ kind: 'read', paths: ['a.ts', 'b.ts'] })
+  expect(classifyShell('cat <in.txt a.ts')).toEqual({ kind: 'read', paths: ['a.ts'] })
+  expect(classifyShell('grep ">" a.ts')).toEqual({ kind: 'read', paths: ['a.ts'] })
+})
+
 test('nothing relevant', () => {
   expect(classifyShell('npm test')).toBeNull()
   expect(classifyShell('')).toBeNull()
