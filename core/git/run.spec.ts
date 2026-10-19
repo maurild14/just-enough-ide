@@ -19,14 +19,14 @@ test('gitArgv', () => {
   expect(gitArgv('/r', ['status'])).toEqual(['git', '--no-optional-locks', '-C', '/r', 'status'])
 })
 
-test('GIT_ENV disables optional locks', () => expect(GIT_ENV).toEqual({ GIT_OPTIONAL_LOCKS: '0' }))
+test('GIT_ENV disables optional locks and pins the locale', () => expect(GIT_ENV).toEqual({ GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' }))
 
 test('git passes argv and merges env', async () => {
   const { host, calls } = fakeHost({ exitCode: 0, stdout: 'ok', stderr: '' })
   const res = await git(host, '/r', ['log'], { env: { LANG: 'C' }, timeoutMs: 5 })
   expect(res.stdout).toBe('ok')
   expect(calls[0]?.argv).toEqual(['git', '--no-optional-locks', '-C', '/r', 'log'])
-  expect(calls[0]?.options).toEqual({ env: { GIT_OPTIONAL_LOCKS: '0', LANG: 'C' }, timeoutMs: 5 })
+  expect(calls[0]?.options).toEqual({ env: { GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', LANG: 'C' }, timeoutMs: 5 })
 })
 
 test('git throws GitError with the first stderr line', async () => {

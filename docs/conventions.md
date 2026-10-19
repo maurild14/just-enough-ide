@@ -32,7 +32,7 @@ Status: draft — built in milestone 0.1 (plan Task 4).
 ## Processes
 
 - **argv only.** Every process is an argv array. Never `sh -c`, `cmd /c` or string concatenation into a shell. Where an OS tool is unavoidable, each OS gets its own argv, both tested.
-- **Git invocation.** Every git command is `['git', '--no-optional-locks', '-C', root, ...args]` run with env `GIT_OPTIONAL_LOCKS=0`, so JEI never contends with the agent's own git. All git calls go through the one runner in `core/git/run.ts`. Read with porcelain or plumbing formats only (`status --porcelain=v2 -z`, `log --format=...`, `diff --numstat -z`).
+- **Git invocation.** Every git command is `['git', '--no-optional-locks', '-C', root, ...args]` run with env `GIT_OPTIONAL_LOCKS=0` and `LC_ALL=C`, so JEI never contends with the agent's own git and can match git's English stderr (for example divergence detection) in any locale. All git calls go through the one runner in `core/git/run.ts`. Read with porcelain or plumbing formats only (`status --porcelain=v2 -z`, `log --format=...`, `diff --numstat -z`).
 - Paths are handled by `core/shared/paths.ts` (posix-style, case-insensitive on Windows). Every path JEI writes or deletes must resolve inside the project root.
 
 ## UI copy

@@ -1,7 +1,10 @@
 /** Prompt asking for one Conventional Commits message for `diff`, cut to `maxChars`. */
 export function commitPrompt(diff: string, maxChars: number): string {
   const cut = diff.length > maxChars
-  const body = cut ? `${diff.slice(0, maxChars)}\n[diff truncated at ${maxChars} characters]` : diff
+  let end = maxChars
+  const last = diff.charCodeAt(end - 1)
+  if (cut && last >= 0xd800 && last <= 0xdbff) end -= 1 // do not split a surrogate pair
+  const body = cut ? `${diff.slice(0, end)}\n[diff truncated at ${maxChars} characters]` : diff
   return [
     'Write one Conventional Commits message for the following git diff.',
     'Format: "type(scope): subject" with the subject at most 72 characters; an optional body after a blank line.',
@@ -12,12 +15,19 @@ export function commitPrompt(diff: string, maxChars: number): string {
   ].join('\n')
 }
 
-/** Strips code fences, a leading "Commit message:", and surrounding quotes or backticks. */
+/**
+ * Strips a leading "Commit message:", takes fenced content when a fence is present
+ * (ignoring prose around it; an unterminated fence runs to the end), then strips
+ * surrounding quotes or backticks.
+ */
 export function cleanMessage(raw: string): string {
-  let s = raw.trim()
-  const fence = /^```[^\n]*\n([\s\S]*?)\n?```$/.exec(s)
-  if (fence) s = (fence[1] ?? '').trim()
-  s = s.replace(/^commit message:\s*/i, '')
+  let s = raw.trim().replace(/^commit message:\s*/i, '')
+  const open = /(^|\n)```[^\n]*\n/.exec(s)
+  if (open) {
+    const rest = s.slice(open.index + open[0].length)
+    const close = rest.indexOf('\n```')
+    s = (close === -1 ? rest.replace(/\n?```\s*$/, '') : rest.slice(0, close)).trim()
+  }
   const q = s[0]
   if (s.length >= 2 && (q === '"' || q === "'" || q === '`') && s.endsWith(q)) s = s.slice(1, -1)
   return s.trim()

@@ -9,6 +9,21 @@ test('stage and unstage argv', () => {
   expect(unstageArgs(['a'])).toEqual(['restore', '--staged', '--', 'a'])
 })
 
+test('stage and unstage return no steps for empty input', () => {
+  expect(stageArgs([])).toEqual([])
+  expect(unstageArgs([])).toEqual([])
+})
+
+test('option-like paths and messages stay single argv elements after -- / -m', () => {
+  expect(stageArgs(['-f'])).toEqual(['add', '--', '-f'])
+  expect(unstageArgs(['-f'])).toEqual(['restore', '--staged', '--', '-f'])
+  expect(discardArgs({ restore: ['-f'], clean: ['-f'] })).toEqual([
+    ['restore', '--worktree', '--', '-f'],
+    ['clean', '-f', '--', '-f'],
+  ])
+  expect(commitSteps({ message: '-x', mode: 'commit', smartCommit: false, stagedCount: 1 })).toEqual([['commit', '-m', '-x']])
+})
+
 test('discardPlan routes by worktree status', () => {
   const plan = discardPlan([
     e('m.ts', null, 'modified'),
@@ -35,5 +50,11 @@ test('commitSteps', () => {
   expect(commitSteps({ ...base, stagedCount: 2 })).toEqual([['commit', '-m', 'feat: x']])
   expect(commitSteps({ ...base, smartCommit: false })).toEqual([['commit', '-m', 'feat: x']])
   expect(commitSteps({ ...base, mode: 'commit-push' })).toEqual([['add', '-A'], ['commit', '-m', 'feat: x'], ['push']])
+  expect(commitSteps({ ...base, mode: 'commit-push', publish: 'main' })).toEqual([
+    ['add', '-A'],
+    ['commit', '-m', 'feat: x'],
+    ['push', '-u', 'origin', 'main'],
+  ])
+  expect(commitSteps({ ...base, mode: 'commit', publish: 'main' })).toEqual([['add', '-A'], ['commit', '-m', 'feat: x']])
   expect(commitSteps({ ...base, mode: 'amend' })).toEqual([['commit', '--amend', '-m', 'feat: x']])
 })

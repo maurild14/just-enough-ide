@@ -1,12 +1,12 @@
 import type { StatusEntry } from './status.ts'
 
-/** Argv tails for `git(host, root, args)`. */
+/** Argv tails for `git(host, root, args)`. Empty input gives `[]` (no step to run), like `discardArgs`. */
 export function stageArgs(paths: readonly string[]): string[] {
-  return ['add', '--', ...paths]
+  return paths.length === 0 ? [] : ['add', '--', ...paths]
 }
 
 export function unstageArgs(paths: readonly string[]): string[] {
-  return ['restore', '--staged', '--', ...paths]
+  return paths.length === 0 ? [] : ['restore', '--staged', '--', ...paths]
 }
 
 export type DiscardPlan = { restore: string[]; clean: string[] }
@@ -35,13 +35,17 @@ export function discardArgs(plan: DiscardPlan): string[][] {
 
 export type CommitMode = 'commit' | 'commit-push' | 'amend'
 
-/** Smart commit stages everything first when nothing is staged (never for amend). */
-export function commitSteps(input: { message: string; mode: CommitMode; smartCommit: boolean; stagedCount: number }): string[][] {
-  const { message, mode, smartCommit, stagedCount } = input
+/**
+ * Smart commit stages everything first when nothing is staged (never for amend).
+ * `publish` is the branch head the caller passes when there is no upstream: commit-push
+ * then ends with `push -u origin <publish>` instead of `push`.
+ */
+export function commitSteps(input: { message: string; mode: CommitMode; smartCommit: boolean; stagedCount: number; publish?: string }): string[][] {
+  const { message, mode, smartCommit, stagedCount, publish } = input
   if (mode === 'amend') return [['commit', '--amend', '-m', message]]
   const steps: string[][] = []
   if (smartCommit && stagedCount === 0) steps.push(['add', '-A'])
   steps.push(['commit', '-m', message])
-  if (mode === 'commit-push') steps.push(['push'])
+  if (mode === 'commit-push') steps.push(publish ? ['push', '-u', 'origin', publish] : ['push'])
   return steps
 }

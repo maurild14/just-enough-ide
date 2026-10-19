@@ -14,13 +14,13 @@ export function syncSteps(cfg: PullConfig, branch: BranchInfo): string[][] {
   return steps
 }
 
-const DIVERGENCE = ['Not possible to fast-forward', 'diverging branches', 'Need to specify how to reconcile divergent branches']
+const DIVERGENCE = ['not possible to fast-forward', 'diverging branches', 'need to specify how to reconcile divergent branches']
 
 export function isDivergence(err: GitError): boolean {
-  const text = `${err.stderr}\n${err.firstLine}`
+  const text = `${err.stderr}\n${err.firstLine}`.toLowerCase()
   return DIVERGENCE.some((m) => text.includes(m))
 }
 
 export function resolveDivergence(choice: 'merge' | 'rebase'): string[][] {
-  return [['pull', choice === 'merge' ? '--no-rebase' : '--rebase'], ['push']]
+  return [['pull', ...(choice === 'merge' ? ['--no-rebase', '--ff'] : ['--rebase'])], ['push']]
 }

@@ -34,10 +34,12 @@ test('isDivergence', () => {
   expect(isDivergence(err('fatal: Not possible to fast-forward, aborting.'))).toBe(true)
   expect(isDivergence(err('hint: diverging branches cannot be fast-forwarded'))).toBe(true)
   expect(isDivergence(err('fatal: Need to specify how to reconcile divergent branches.'))).toBe(true)
+  expect(isDivergence(err("hint: Diverging branches can't be fast-forwarded, you need to either:"))).toBe(true)
+  expect(isDivergence(err('FATAL: NOT POSSIBLE TO FAST-FORWARD, ABORTING.'))).toBe(true)
   expect(isDivergence(err('fatal: unable to access remote'))).toBe(false)
 })
 
 test('resolveDivergence', () => {
-  expect(resolveDivergence('merge')).toEqual([['pull', '--no-rebase'], ['push']])
+  expect(resolveDivergence('merge')).toEqual([['pull', '--no-rebase', '--ff'], ['push']])
   expect(resolveDivergence('rebase')).toEqual([['pull', '--rebase'], ['push']])
 })
