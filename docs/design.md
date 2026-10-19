@@ -170,6 +170,8 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 - Claude Code paints with theme keys only, which cannot be mixed, so it always uses the 3-step form (`shimmerPhase` in `core/activity/log.ts`), redrawn every 250 ms only while a row glows.
 - There is no other animation: no spinners, no sliding, no blinking cursor except the host's own.
 
+The OpenCode shell follows these height rules using its root box's measured height, rather than assuming the terminal height equals the panel height. The tab bar uses `tabBar`, the single text hint uses `hintLine` (which retains Esc), and all remaining shell rows use `fitEnd` or `fitPath`. The active tab is bold in the resolved theme's primary action text color; tabs also accept clicks. At this stage only the shell is rendered; Files and Git content and shimmer painting arrive in Tasks 16-17.
+
 ## 10. Test checklist
 
 Render every view (Files tree, Files preview, Search, Quick Open, Symbols, Git, Diff, confirm dialogs and every state in §8) as snapshots in all three glyph sets.
