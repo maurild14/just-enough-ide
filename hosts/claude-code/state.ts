@@ -24,7 +24,7 @@ export const tree = atom({ plugin: 'jei', key: 'tree' } as const, {
   filtering: false,
   filter: '',
 } satisfies JeiTree)
-export const preview = atom({ plugin: 'jei', key: 'preview' } as const, { source: false, top: 0 } satisfies JeiPreview)
+export const preview = atom({ plugin: 'jei', key: 'preview' } as const, { rel: '', source: false, top: 0 } satisfies JeiPreview)
 export const tick = atom({ plugin: 'jei', key: 'tick' } as const, 0)
 
 type StateHost = Pick<EngineInterface, 'state'>

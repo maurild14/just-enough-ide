@@ -1,4 +1,4 @@
-import { expect, mock, test } from 'claude-code/testing'
+import { expect, mock, test, type Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { lineWidths, type Node } from './measure.ts'
 
@@ -70,6 +70,7 @@ async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd:
     const ok = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
     if (argv[0] === 'xdg-open') return { deny: 'xdg-open: not found\nmore detail' }
     if (argv.includes('--show-toplevel')) return ok(`${ROOT}\n`)
+    if (argv.includes('--absolute-git-dir')) return ok(`${ROOT}/.git\n`)
     if (argv.includes('check-ignore')) return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
     if (argv.includes('ls-files') && argv.includes('-co')) return ok(FILES.join('\0') + '\0')
     if (argv.includes('status')) return ok('# branch.oid 1111111111111111111111111111111111111111\0# branch.head main\0' + '1 .M N... 100644 100644 100644 1111111111111111111111111111111111111111 1111111111111111111111111111111111111111 src/api/user.ts\0')
@@ -295,4 +296,130 @@ test('no line is wider than the pane, and the selection survives a resize', asyn
       await ui.unmount()
     }
   }
+})
+
+// Fix round 1 ------------------------------------------------------------------
+
+const answerTools = (on: On) => on('tool.call', () => ({ result: {} as never, text: 'ok' }))
+const mountAt = ($: Engine, width = 80, rows = 24) =>
+  $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(width, rows), requestId: 'jei' })
+
+test('a shell command refreshes the whole tree, even one JEI cannot read', async ($, on) => {
+  const clock = mock.clock(on, { now: 10_000 })
+  answerTools(on)
+  await world($, on)
+  const saved = TREE[`${ROOT}/src`]!
+  try {
+    const ui = await mountAt($)
+    await ui.press({ key: 'row-src' })
+    expect(await rowKeys(ui)).toContain('row-src/index.ts')
+    TREE[`${ROOT}/src`] = saved.filter((x) => x.name !== 'index.ts')
+    await $.tool.call({ tool: 'Bash', command: 'rm src/index.ts' } as never)
+    await clock.advance(300)
+    expect(await rowKeys(ui)).not.toContain('row-src/index.ts')
+    TREE[`${ROOT}/src`] = saved
+    await $.tool.call({ tool: 'Bash', command: 'make build' } as never)
+    await clock.advance(300)
+    expect(await rowKeys(ui)).toContain('row-src/index.ts')
+    await ui.unmount()
+  } finally {
+    TREE[`${ROOT}/src`] = saved
+  }
+})
+
+test('a write in a new folder shows the folder in its parent', async ($, on) => {
+  const clock = mock.clock(on, { now: 10_000 })
+  answerTools(on)
+  await world($, on)
+  const saved = TREE[`${ROOT}/src`]!
+  try {
+    const ui = await mountAt($)
+    await ui.press({ key: 'row-src' })
+    TREE[`${ROOT}/src`] = [...saved, dir('lib')]
+    TREE[`${ROOT}/src/lib`] = [file('db.ts')]
+    await $.tool.call({ tool: 'Write', file_path: `${ROOT}/src/lib/db.ts`, content: 'x' } as never)
+    await clock.advance(300)
+    expect(await rowKeys(ui)).toContain('row-src/lib')
+    expect(await rowKeys(ui)).toContain('row-src/lib/db.ts')
+    await ui.unmount()
+  } finally {
+    TREE[`${ROOT}/src`] = saved
+    delete TREE[`${ROOT}/src/lib`]
+  }
+})
+
+test('follow-agent never takes over an open preview', async ($, on) => {
+  mock.clock(on, { now: 10_000 })
+  answerTools(on)
+  await world($, on)
+  const ui = await mountAt($)
+  await ui.press({ key: 'row-README.md' })
+  await $.tool.call({ tool: 'Read', file_path: `${ROOT}/src/api/user.ts` } as never)
+  expect((await ui.find({ type: 'Markdown' }))?.text).toContain('# acme-app')
+  expect((await ui.find({ key: 'back' }))?.text).toContain('README.md')
+  await ui.press({ key: 'back' })
+  expect(await ui.find({ key: 'glow-src/api/user.ts' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the selected row is inverted unless the focus ring is on it', async ($, on) => {
+  on('ui.focus', () => ({}))
+  await world($, on)
+  await $.command.run(jei(`${ROOT}/src/api/user.ts`))
+  const ui = await mountAt($)
+  const nameOf = async () => ((await ui.find({ key: 'row-src/api/user.ts' }))?.children[0] as { props: { inverse?: boolean } }).props
+  expect((await nameOf()).inverse).toBe(true)
+  await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src/api/user.ts', origin: { kind: 'person' } })
+  expect((await nameOf()).inverse).toBeFalsy()
+  await ui.unmount()
+})
+
+test('an unreadable folder says so, and is read again when reopened', async ($, on) => {
+  await world($, on)
+  const root = TREE[ROOT]!
+  TREE[ROOT] = [...root, dir('locked')]
+  try {
+    const ui = await mountAt($)
+    await ui.press({ key: 'row-locked' })
+    expect(await ui.find({ type: 'Text', text: "Can't read this folder." })).toBeDefined()
+    TREE[`${ROOT}/locked`] = [file('a.txt')]
+    await ui.press({ key: 'row-locked' })
+    await ui.press({ key: 'row-locked' })
+    expect(await rowKeys(ui)).toContain('row-locked/a.txt')
+    await ui.press({ key: 'row-locked' })
+    await ui.unmount()
+  } finally {
+    TREE[ROOT] = root
+    delete TREE[`${ROOT}/locked`]
+  }
+})
+
+test('letter keys still work on a short pane', async ($, on) => {
+  const seen = await world($, on)
+  await $.command.run(jei(`${ROOT}/src/api/user.ts`))
+  const ui = await mountAt($, 80, 5)
+  expect((await ui.find({ key: 'hint' }))?.text).not.toContain('mention')
+  await ui.press({ key: 'key-a' })
+  expect(seen.fills).toEqual([{ text: '@src/api/user.ts ', mode: 'insert' }])
+  await ui.unmount()
+})
+
+test('a steady stream of writes refreshes within 1.5 s', async ($, on) => {
+  const clock = mock.clock(on, { now: 10_000 })
+  answerTools(on)
+  const seen = await world($, on)
+  const statusRuns = () => seen.runs.filter((a) => a.includes('status')).length
+  const before = statusRuns()
+  for (let i = 0; i < 8; i++) {
+    await $.tool.call({ tool: 'Write', file_path: `${ROOT}/src/index.ts`, content: String(i) } as never)
+    await clock.advance(200)
+  }
+  expect(statusRuns()).toBeGreaterThan(before)
+})
+
+test('session start asks to watch the git index and HEAD', async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  await world($, on)
+  const r = await $.classic.SessionStart({ source: 'startup', cwd: ROOT } as never)
+  expect(r.watchPaths).toEqual([`${ROOT}/.git/index`, `${ROOT}/.git/HEAD`])
 })

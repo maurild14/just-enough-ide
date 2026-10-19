@@ -30,8 +30,8 @@ export type JeiTree = {
   filter: string
 }
 
-/** The Files preview: markdown source shown (`m`) and the first line in view. */
-export type JeiPreview = { source: boolean; top: number }
+/** The Files preview: the file shown, markdown source shown (`m`) and the first line in view. */
+export type JeiPreview = { rel: string; source: boolean; top: number }
 
 export type JeiFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted' | 'ignored'
 export type JeiCounts = Record<string, { added: number | null; removed: number | null }>

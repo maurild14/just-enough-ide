@@ -462,6 +462,7 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - The repo root is both the Claude Code plugin and the OpenCode npm package.
 - On OpenCode, git, rg and file work run in the server entry; the TUI only draws (works with remote servers).
 - Same single-letter/digit keys on both hosts, even though OpenCode allows more.
+- On Claude Code, Esc stays the host's (back to the prompt); nested views go back with their header Button or the tab digit (ADR 0009).
 - Agent-facing labels use the host's name ("Ask Claude" / "Ask OpenCode").
 - OpenCode 2.x only; the 1.x line has no side-panel slot.
 - On OpenCode, mention/send opens an editable prefilled dialog and sends the message, since 2.x cannot insert into the prompt (§5.3).

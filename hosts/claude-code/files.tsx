@@ -75,10 +75,13 @@ export function hostFor($: EngineInterface, root: string): Host {
 // events (activity.ts). A hot reload empties them, which only costs a re-read.
 
 type Listing = { entries: DirEntry[]; ignored: string[]; failed: boolean }
-type Preview = Awaited<ReturnType<typeof loadPreview>> & { size?: number }
+type Preview = (Awaited<ReturnType<typeof loadPreview>> & { size?: number }) | { kind: 'error'; message: string }
 
 const listings = new Map<string, Promise<Listing>>()
-const previews = new Map<string, Promise<Preview>>()
+/** Folders whose last read failed: dropped on the next toggle or refresh, never retried per frame. */
+const failed = new Set<string>()
+/** Only the preview on screen is kept; showPreview clears it. */
+let current: { key: string; p: Promise<Preview> } | null = null
 const fileLists = new Map<string, Promise<string[]>>()
 const at = (root: string, rel: string) => `${root}\u0000${rel}`
 const guardedAllFiles = latest(allFiles)
@@ -89,7 +92,10 @@ function listingOf(host: Host, root: string, rel: string): Promise<Listing> {
   if (p === undefined) {
     p = listDir(host, root, rel).then(
       (r) => ({ ...r, failed: false }),
-      () => ({ entries: [], ignored: [], failed: true }),
+      () => {
+        failed.add(key)
+        return { entries: [], ignored: [], failed: true }
+      },
     )
     listings.set(key, p)
   }
@@ -107,26 +113,54 @@ function filesOf(host: Host, root: string): Promise<string[]> {
 
 function previewOf(host: Host, root: string, rel: string): Promise<Preview> {
   const key = at(root, rel)
-  let p = previews.get(key)
-  if (p === undefined) {
-    p = (async (): Promise<Preview> => {
+  if (current?.key !== key) {
+    const p = (async (): Promise<Preview> => {
       const loaded = await loadPreview(host, root, rel)
       if (loaded.kind !== 'too-large') return loaded
       return { ...loaded, size: (await host.stat(absOf(root, rel)))?.size ?? 0 }
-    })().catch((): Preview => ({ kind: 'empty' }))
-    previews.set(key, p)
+    })().catch((err: unknown): Preview => ({ kind: 'error', message: firstLine(err) }))
+    current = { key, p }
   }
-  return p
+  return current.p
 }
 
-/** Drops what a change to these paths makes stale: their folder's listing, their own listing and preview. */
+/** Drops one listing and every listing below it. */
+function forgetListing(root: string, rel: string): void {
+  const key = at(root, rel)
+  const below = rel === '' ? at(root, '') : `${key}/`
+  for (const k of [...listings.keys()]) {
+    if (k === key || k.startsWith(below)) {
+      listings.delete(k)
+      failed.delete(k)
+    }
+  }
+}
+
+/**
+ * Drops what a change to these paths makes stale: the root's and every
+ * ancestor folder's listing (a new folder shows in its parent), the path's own
+ * listing and those below it, and its preview.
+ */
 export function forgetPaths(root: string, rels: readonly string[]): void {
   for (const rel of rels) {
-    const parent = parentDirs(rel).pop() ?? ''
-    listings.delete(at(root, parent))
-    listings.delete(at(root, rel))
-    previews.delete(at(root, rel))
+    for (const dir of ['', ...parentDirs(rel)]) {
+      listings.delete(at(root, dir))
+      failed.delete(at(root, dir))
+    }
+    forgetListing(root, rel)
+    if (current?.key === at(root, rel)) current = null
   }
+}
+
+/** Drops every listing and the preview for a root: a shell command may have changed anything. */
+export function forgetAll(root: string): void {
+  forgetListing(root, '')
+  if (current?.key.startsWith(at(root, ''))) current = null
+}
+
+/** Drops the filter's file list; it is re-read when the filter next draws. */
+export function forgetFileList(root: string): void {
+  fileLists.delete(root)
 }
 
 /** Re-reads the project file list behind the filter; only the latest call lands. */
@@ -140,6 +174,8 @@ export async function refreshFileList(host: Host, root: string): Promise<void> {
 
 let lastIds: string[] = []
 let lastPreviewLines = 0
+/** The element the pane's focus ring last landed on (`ui.focus`). */
+let focused: string | undefined
 const lastTop = new Map<string, number>()
 
 /** First row in view so the selected one shows, with a row of context once the body has 5 rows. */
@@ -159,6 +195,7 @@ function windowTop(mode: string, ids: readonly string[], selected: string | unde
 
 /** The ring moved onto a row: it becomes the selection. */
 export async function focusFiles($: EngineInterface, element: string | undefined): Promise<void> {
+  focused = element
   if (element === undefined || !element.startsWith(ROW_PREFIX)) return
   const id = element.slice(ROW_PREFIX.length)
   if (currentView(await readPane($)) !== 'files') return
@@ -215,7 +252,8 @@ async function open($: EngineInterface, options: Options, root: string, rel: str
 }
 
 async function showPreview($: EngineInterface, rel: string): Promise<void> {
-  await updatePreview($, () => ({ source: false, top: 0 }))
+  current = null
+  await updatePreview($, () => ({ rel, source: false, top: 0 }))
   await updatePane($, (s) => reducePane(s, { type: 'preview', rel }))
 }
 
@@ -269,9 +307,9 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   const host = hostFor($, root)
 
   if (view === 'files.preview') {
-    const rel = pane.selected.files ?? ''
-    const pv = await previewOf(host, root, rel)
     const state = await readPreview($)
+    const rel = state.rel
+    const pv = await previewOf(host, root, rel)
     const header = (
       <Box flexDirection="row">
         <Text>{inner > 0 ? ' ' : ''}</Text>
@@ -337,6 +375,8 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
         return notice(`Too large to preview (${sizeText(pv.size ?? 0)}).`)
       case 'empty':
         return notice('This file is empty.')
+      case 'error':
+        return { header, body: [line(`Can't read this file: ${pv.message}.`, { color: color('error') }, 'notice')], actions }
     }
   }
 
@@ -396,7 +436,8 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     const kind = log.kindOf(rel)
     const phase = shimmerPhase(log.glow(rel, now))
     const isSel = rel === selected
-    const inverse = isSel && !frame.isFocused
+    // The focus ring marks the row it is on; any other selected row is inverted.
+    const inverse = isSel && !(frame.isFocused && focused === `${ROW_PREFIX}${rel}`)
     const nameLook: Look =
       phase !== 'none' && !isSel && kind !== null
         ? { color: activityColor(kind), dim: phase === 'dim', bold: phase === 'bold', inverse }
@@ -426,6 +467,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   }
   const press = async (rel: string, isDir: boolean) => {
     if (!isDir) return showPreview($, rel)
+    if (failed.has(at(root, rel))) forgetListing(root, rel)
     await updateTree($, (t) => ({ ...t, expanded: t.expanded.includes(rel) ? t.expanded.filter((x) => x !== rel) : [...t.expanded, rel] }))
     await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id: rel }))
   }
@@ -441,12 +483,12 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     const expanded = new Set(tree.expanded)
     const lmap = new Map<string, DirEntry[]>()
     const ignored = new Set<string>()
-    let rootFailed = false
+    const unreadable = new Set<string>()
     const walk = async (rel: string): Promise<void> => {
       const l = await listingOf(host, root, rel)
       lmap.set(rel, l.entries)
       for (const i of l.ignored) ignored.add(i)
-      if (rel === '' && l.failed) rootFailed = true
+      if (l.failed) unreadable.add(rel)
       await Promise.all(
         l.entries.filter((x) => x.kind === 'dir' && expanded.has(joinPath(rel, x.name))).map((x) => walk(joinPath(rel, x.name))),
       )
@@ -474,11 +516,14 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
       const next = rows[i + 1]
       if (r.isDir && r.isExpanded && (next === undefined || next.depth <= r.depth)) {
         const indent = ' '.repeat(Math.min((r.depth + 1) * step, maxIndent))
-        items.push({ id: `${r.rel}/`, isRow: false, el: line(`${indent}This folder is empty.`, { dim: true }, `empty-${r.rel}`) })
+        const el = unreadable.has(r.rel)
+          ? line(`${indent}Can't read this folder.`, { color: color('error') }, `empty-${r.rel}`)
+          : line(`${indent}This folder is empty.`, { dim: true }, `empty-${r.rel}`)
+        items.push({ id: `${r.rel}/`, isRow: false, el })
       }
     })
     if (rows.length === 0) {
-      items.push({ id: 'empty', isRow: false, el: rootFailed ? line("Can't read this folder.", { color: color('error') }, 'notice') : line('This folder is empty.', { dim: true }, 'notice') })
+      items.push({ id: 'empty', isRow: false, el: unreadable.has('') ? line("Can't read this folder.", { color: color('error') }, 'notice') : line('This folder is empty.', { dim: true }, 'notice') })
     }
   }
 

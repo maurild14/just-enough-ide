@@ -106,7 +106,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 - Both hosts build the tab bar with `core/shared/tabs.ts` (`tabBar`): when a form does not fit, the gap shrinks to 1, then 0, before the labels shorten.
 - Both hosts build these strings with `core/shared/fit.ts` (`cellWidth`, `fitEnd`, `fitPath`, `padEnd`), never with string length. Every result is at most the requested width in cells.
 
-**Hint line.** Items are `key label` pairs in priority order, separated by ` · `. On Claude Code a letter key is a plain hotkey `Button`, drawn `a: mention` (bare `a: `), and Esc is not listed because the host keeps it (back to the prompt). Drop the lowest-priority items from the end until the line fits; the hint never ends with a catch-all item. Below 32 columns the hint shows only keys (`↑↓ enter a`). The full key list for every view is in the PRD and `core/keys.ts`.
+**Hint line.** Items are `key label` pairs in priority order, separated by ` · `. On Claude Code a letter key is a plain hotkey `Button`, drawn `a: mention` (bare `a: `), and Esc is not listed because the host keeps it (back to the prompt; ADR 0009). Drop the lowest-priority items from the end until the line fits; the hint never ends with a catch-all item. Below 32 columns the hint shows only keys (`↑↓ enter a`). The full key list for every view is in the PRD and `core/keys.ts`.
 
 **Hard rules.**
 - No list or chrome row ever wraps, and no line is wider than the pane.
@@ -115,7 +115,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 ## 6. Height rules
 
 - The tab bar and header row stay pinned, the hint line stays pinned at the bottom, and only the body scrolls.
-- When rows run short, hide parts in this order. Below 10 rows, hide the hint line first; the keys still work. Below 8, hide the rule. Below 6, hide the header row; its key facts move into the tab bar's right side if they fit. Below 3, render only the body.
+- When rows run short, hide parts in this order. Below 10 rows, hide the hint line first; the keys still work. On Claude Code the letter keys live on the hint line's Buttons, so a view with letter actions keeps the hint, bare (keys only), and drops it only below 3 rows (`docs/decisions/0009-esc-is-host-reserved-on-claude-code.md`). Below 8, hide the rule. Below 6, hide the header row; its key facts move into the tab bar's right side if they fit. Below 3, render only the body.
 - The body always keeps at least 1 row. Scrolling keeps 1 row of context above and below the selection when the body has 5 or more rows.
 - Expanded inline items (a commit's files, call hierarchy) never push the selected row out of view.
 
@@ -159,7 +159,7 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 - When it ends, the gutter shows `•` in the dim activity color for the rest of the session. That marker is the only thing that persists.
 - Touching the row again restarts the fade. Only visible rows animate, and rows that scroll off show their end state when they return.
 - On the selected row, only the gutter marker shimmers, so the selection stays readable.
-- `activity: none`, or the host's reduced-motion setting, skips the fade and shows the marker straight away.
+- `activity: none` shows nothing: no fade and no marker. The host's reduced-motion setting skips the fade and shows the marker straight away.
 - Claude Code paints with theme keys only, which cannot be mixed, so it always uses the 3-step form (`shimmerPhase` in `core/activity/log.ts`), redrawn every 250 ms only while a row glows.
 - There is no other animation: no spinners, no sliding, no blinking cursor except the host's own.
 

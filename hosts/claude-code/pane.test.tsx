@@ -93,6 +93,7 @@ test('short panes drop the hint, then the rule, then the header', async ($) => {
   for (const surface of SURFACES) {
     const tall = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 10), requestId: 'jei' })
     expect(await tall.find({ key: 'hint' })).toBeDefined()
+    await tall.press({ key: 'tab-4' }) // a view without letter actions
     await tall.unmount()
     const short = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 7), requestId: 'jei' })
     expect(await short.find({ key: 'hint' })).toBeUndefined()
@@ -101,7 +102,22 @@ test('short panes drop the hint, then the rule, then the header', async ($) => {
     await short.unmount()
     const tiny = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
     expect(await tiny.find({ key: 'header' })).toBeUndefined()
+    await tiny.press({ key: 'tab-1' })
     await tiny.unmount()
+  }
+})
+
+test('Files keeps its letter keys on short panes: a bare hint down to 3 rows', async ($) => {
+  for (const surface of SURFACES) {
+    for (const rows of [9, 5, 3]) {
+      const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80, rows), requestId: 'jei' })
+      expect(await ui.find({ key: 'hint' })).toBeDefined()
+      expect((await ui.find({ key: 'hint' }))?.text).not.toContain('move')
+      await ui.unmount()
+    }
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80, 2), requestId: 'jei' })
+    expect(await ui.find({ key: 'hint' })).toBeUndefined()
+    await ui.unmount()
   }
 })
 

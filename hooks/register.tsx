@@ -83,7 +83,7 @@ export const register: Register = (on, raw) => {
   // Observes only: a failure must never hold up the cd, so the catch passes it on.
   on('classic.CwdChanged', async ($, e, next) => {
     await setCwd($, e.new_cwd)
-    await refreshGit($).catch(() => undefined)
+    void refreshGit($).catch(() => undefined) // never holds up the cd
     return next(e)
   }).catch(($, e, next) => next(e))
 

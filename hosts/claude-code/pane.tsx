@@ -1,9 +1,9 @@
 import type { EngineInterface, RenderElement, RenderInput } from 'claude-code'
-import { hintLine, KEYS, type Tab, type View } from '../../core/keys.ts'
+import { fitHint, hintLine, KEYS, type Tab, type View } from '../../core/keys.ts'
 import type { Options } from '../../core/options.ts'
 import { currentView, reducePane } from '../../core/pane.ts'
 import { toPosix } from '../../core/shared/paths.ts'
-import { fitEnd } from '../../core/shared/fit.ts'
+import { cellWidth, fitEnd } from '../../core/shared/fit.ts'
 import { tabBar, TAB_NAMES } from '../../core/shared/tabs.ts'
 import { renderFiles, type FilesAction } from './files.tsx'
 import { readCwd, readPane, updatePane } from './state.ts'
@@ -39,12 +39,16 @@ type HintItem = { keyText: string; label: string; run?: () => void }
 /**
  * The hint line of a view whose letter keys are Buttons: on this host a key
  * reaches a pane only through a Button's `hotkey`, drawn plain as `a: label`
- * (`a: ` bare, counted as 3 cells). Items keep core's priority order; Esc is the host's own (it
- * returns to the prompt), so it is not listed. The longest labelled prefix
- * that fits is shown, the rest bare; below 32 columns every item is bare,
- * and items that still do not fit drop from the end.
+ * (`a: ` bare, 3 cells). Items keep core's priority order; Esc is the host's
+ * own (docs/decisions/0009), so it is not listed. `fitHint` picks the labelled
+ * prefix; `bareOnly` keeps every key on a short pane.
  */
-export function hintItems(view: View, width: number, actions: readonly FilesAction[]): { items: HintItem[]; labelled: number } {
+export function hintItems(
+  view: View,
+  width: number,
+  actions: readonly FilesAction[],
+  bareOnly = false,
+): { items: HintItem[]; labelled: number } {
   const all: HintItem[] = []
   for (const k of KEYS[view]) {
     if (k.key === 'esc') continue
@@ -55,16 +59,12 @@ export function hintItems(view: View, width: number, actions: readonly FilesActi
       if (action) all.push({ keyText, label: k.label, run: action.run })
     } else all.push({ keyText, label: k.label })
   }
-  const cost = (i: HintItem, labelled: boolean) =>
-    (i.run ? i.keyText.length + 2 : i.keyText.length) + (labelled ? 1 + i.label.length : 0)
-  const total = (items: HintItem[], k: number) =>
-    items.reduce((sum, item, idx) => sum + cost(item, idx < k) + (idx === 0 ? 0 : idx < k ? SEP.length : 1), 0)
-  for (let k = width >= 32 ? all.length : 0; k >= 0; k--) {
-    if (total(all, k) <= width) return { items: all, labelled: k }
-  }
-  const items = [...all]
-  while (items.length > 0 && total(items, 0) > width) items.pop()
-  return { items, labelled: 0 }
+  const costs = all.map((i) => {
+    const bare = cellWidth(i.keyText) + (i.run ? 2 : 0)
+    return { bare, labelled: bare + (i.run ? 0 : 1) + cellWidth(i.label) }
+  })
+  const fit = fitHint(costs, width, bareOnly)
+  return { items: all.slice(0, fit.count), labelled: fit.labelled }
 }
 
 /**
@@ -84,16 +84,19 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const row = (s: string) => (inner > 0 ? ` ${fitEnd(s, inner)}` : '')
   const bar = tabBar(columns, room, state.tab, BUTTON_CHROME)
 
-  const showHint = rows >= 10
+  const isFiles = view === 'files' || view === 'files.preview'
+  // Letter keys live on the hint's Buttons, so a view with letter actions keeps
+  // its hint (bare below 10 rows) down to 3 rows (docs/design.md section 6).
+  const showHint = isFiles ? rows >= 3 : rows >= 10
+  const bareHint = rows < 10
   const showRule = rows >= 8
   const showHeader = rows >= 6
   const showBar = rows >= 3
 
   const pinned = (showBar ? 1 : 0) + (showRule ? 1 : 0) + (showHeader ? 1 : 0) + (showHint ? 1 : 0)
-  const files =
-    view === 'files' || view === 'files.preview'
-      ? await renderFiles($, e, { columns, inner, bodyRows: Math.max(1, rows - pinned), isFocused: e.props.isFocused }, options)
-      : null
+  const files = isFiles
+    ? await renderFiles($, e, { columns, inner, bodyRows: Math.max(1, rows - pinned), isFocused: e.props.isFocused }, options)
+    : null
 
   const hintRow = (): RenderElement => {
     if (files === null) {
@@ -103,7 +106,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
         </Text>
       )
     }
-    const { items, labelled } = hintItems(view, inner, files.actions)
+    const { items, labelled } = hintItems(view, inner, files.actions, bareHint)
     return (
       <Box flexDirection="row">
         <Text dimColor>{inner > 0 ? ' ' : ''}</Text>
