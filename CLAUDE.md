@@ -28,6 +28,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 | Drawing a view, colors, glyphs, widths, resize, empty states | `docs/design.md` |
 | Touching a host API (Claude Code mod or OpenCode plugin) | `docs/hosts.md` |
 | Handling files, secrets, the network or releases | `docs/security.md` |
+| Changing sensitive commit approval | `docs/decisions/0010-exact-sensitive-path-approval.md` |
 | Checking what is built and known debt | `docs/quality.md` |
 | Changing a rule or a past decision | `docs/decisions/README.md` |
 | Picking up planned work | `docs/plans/` |

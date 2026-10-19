@@ -28,6 +28,8 @@ Update a row in the same commit that changes the area. `git log` is the history;
 | File operations in Files | not built | not built | 0.5 | |
 | Manual QA checklist, README, release pipeline | not built | not built | 0.1 (Task 18) | |
 
+OpenCode sensitive commit approval is enforced against the server's fresh plan using the exact RPC path list (ADR 0010), with real-git refusal-before-staging and TUI retry/cancel regressions. The subject-only input, responsive guidance and strict diff-kind fixes remain covered.
+
 ## Tech debt
 
 Add one row per item, newest first, and delete the row when it is fixed.

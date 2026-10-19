@@ -26,8 +26,8 @@ function flag(input: unknown, key: string): boolean {
   return value
 }
 
-function paths(input: unknown): string[] {
-  const value = record(input).paths
+function paths(input: unknown, key = 'paths'): string[] {
+  const value = record(input)[key]
   if (!Array.isArray(value) || !value.every((p): p is string => typeof p === 'string')) throw new Error('Invalid RPC input')
   return value
 }
@@ -127,10 +127,10 @@ export default Plugin.define({
       },
       async commit(input) {
         const params = commitInput(input)
-        const allowSensitive = flag(input, 'allowSensitive')
+        const approvedSensitive = paths(input, 'approvedSensitive')
         const snap = await repoSnapshot()
         const plan = commitPlan(snap, { ...params, smartCommit: options.smartCommit })
-        if (plan.sensitive.length > 0 && !allowSensitive) throw new Error('Sensitive files require confirmation.')
+        if (!plan.sensitive.every((path) => approvedSensitive.includes(path))) throw new Error('Sensitive files require confirmation.')
         await runSteps(host, snap.root, plan.steps)
         return {}
       },

@@ -1,4 +1,4 @@
-import { afterEach, expect, jest, test } from 'bun:test'
+import { afterEach, beforeEach, expect, jest, test } from 'bun:test'
 import type { Plugin, Rpc } from '@opencode/plugin'
 import type { ActivityLog } from '../../core/activity/log.ts'
 import type { Options } from '../../core/options.ts'
@@ -15,11 +15,26 @@ type Handlers = { [K in keyof typeof JeiRpc.methods]: (
 type State = { cwd: string; options: Options; git: WireGitSnapshot; activity: ReturnType<ActivityLog['toJSON']> }
 type ToolEvent = { tool: string; input: unknown; status: 'completed' | 'error' }
 const disposers: Plugin.Cleanup[] = []
+let gitEnv: Record<string, string | undefined> = {}
+
+beforeEach(() => {
+  gitEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase().startsWith('GIT_')))
+  for (const key of Object.keys(gitEnv)) delete process.env[key]
+  const config = makeTemp('config')
+  writeFiles(config, { gitconfig: '' })
+  process.env.GIT_CONFIG_GLOBAL = join(config, 'gitconfig')
+  process.env.GIT_CONFIG_NOSYSTEM = '1'
+})
 
 afterEach(async () => {
-  for (const dispose of disposers.splice(0)) await dispose()
-  jest.useRealTimers()
-  cleanup()
+  try { for (const dispose of disposers.splice(0)) await dispose() }
+  finally {
+    jest.useRealTimers()
+    try { cleanup() } finally {
+      for (const key of Object.keys(process.env)) if (key.toUpperCase().startsWith('GIT_')) delete process.env[key]
+      Object.assign(process.env, gitEnv)
+    }
+  }
 })
 
 async function start(directory: string, options: Record<string, unknown> = {}) {
@@ -129,7 +144,8 @@ test('every path RPC rejects escapes before touching any member of a batch', asy
   for (const [name, input] of [
     ['stage', { paths: ['a.txt', 3] }], ['preview', { rel: null }],
     ['diff', { path: 'a.txt', staged: 'false', untracked: false }], ['open', { rel: 'a.txt', line: 0 }],
-    ['commit', { message: 'feat: change', mode: 'commit', allowSensitive: 'false' }],
+    ['commit', { message: 'feat: change', mode: 'commit', approvedSensitive: 'false' }],
+    ['commit', { message: 'feat: change', mode: 'commit', approvedSensitive: ['.env', 3] }],
     ['commitPlan', { message: 'feat: change', mode: 'other' }], ['sync', { choice: 'other' }],
   ] as const) await expect(server.call(name, input)).rejects.toThrow('Invalid RPC input')
 })
@@ -177,11 +193,32 @@ test('commit replans from fresh state and requires explicit approval for sensiti
     steps: [['add', '-A'], ['commit', '-m', 'feat: update']], sensitive: [], viaAgentShell: false,
   })
   repo.write('.env', 'sample fixture\n')
-  await expect(server.call('commit', { message: 'feat: update', mode: 'commit', allowSensitive: false })).rejects.toThrow('Sensitive files require confirmation')
+  await expect(server.call('commit', { message: 'feat: update', mode: 'commit', approvedSensitive: [] })).rejects.toThrow('Sensitive files require confirmation')
   expect(await repo.git('log', '-1', '--format=%s')).toBe('chore: initial commit')
   expect((await server.call('state') as State).git).toMatchObject({ staged: {} })
-  expect(await server.call('commit', { message: 'feat: update', mode: 'commit', allowSensitive: true })).toEqual({})
+  expect(await server.call('commit', { message: 'feat: update', mode: 'commit', approvedSensitive: ['.env'] })).toEqual({})
   expect(await repo.git('log', '-1', '--format=%s')).toBe('feat: update')
+  expect((await server.call('state') as State).git).toMatchObject({ status: { entries: [] } })
+})
+
+test('a fresh server commit plan rejects a sensitive path missing from the exact approved list before staging', async () => {
+  const repo = await makeRepo({ 'a.txt': 'before\n' })
+  const server = await start(repo.dir)
+  repo.write('.env', 'fictional environment fixture\n')
+  const initial = await server.call('commitPlan', { message: 'feat: add fixtures', mode: 'commit' }) as { sensitive: string[] }
+  expect(initial.sensitive).toEqual(['.env'])
+  repo.write('id_rsa', 'fictional key fixture\n')
+  const before = await repo.git('rev-parse', 'HEAD')
+  await expect(server.call('commit', { message: 'feat: add fixtures', mode: 'commit', approvedSensitive: initial.sensitive })).rejects.toThrow('Sensitive files require confirmation')
+  for (const approvedSensitive of [[' .env', 'id_rsa'], ['.ENV', 'id_rsa']]) {
+    await expect(server.call('commit', { message: 'feat: add fixtures', mode: 'commit', approvedSensitive })).rejects.toThrow('Sensitive files require confirmation')
+  }
+  expect(await repo.git('rev-parse', 'HEAD')).toBe(before)
+  expect((await server.call('state') as State).git).toMatchObject({ staged: {} })
+  const current = await server.call('commitPlan', { message: 'feat: add fixtures', mode: 'commit' }) as { sensitive: string[] }
+  expect(current.sensitive).toEqual(['.env', 'id_rsa'])
+  expect(await server.call('commit', { message: 'feat: add fixtures', mode: 'commit', approvedSensitive: current.sensitive })).toEqual({})
+  expect(await repo.git('log', '-1', '--format=%s')).toBe('feat: add fixtures')
   expect((await server.call('state') as State).git).toMatchObject({ status: { entries: [] } })
 })
 
@@ -308,7 +345,7 @@ test('OpenCode commits run repository hooks directly and preserve hook failure',
   chmodSync(hook, 0o755)
   const server = await start(repo.dir)
   expect(await server.call('commitPlan', { message: 'feat: update', mode: 'commit' })).toMatchObject({ viaAgentShell: true })
-  await expect(server.call('commit', { message: 'feat: update', mode: 'commit', allowSensitive: false })).rejects.toThrow('Fixture hook refused commit')
+  await expect(server.call('commit', { message: 'feat: update', mode: 'commit', approvedSensitive: [] })).rejects.toThrow('Fixture hook refused commit')
   expect(await repo.git('log', '-1', '--format=%s')).toBe('chore: initial commit')
 })
 

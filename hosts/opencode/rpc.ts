@@ -152,7 +152,7 @@ export const JeiRpc = Rpc.define({
       },
     },
     commit: {
-      input: { type: 'object', properties: { message: text, mode, allowSensitive: flag }, required: ['message', 'mode', 'allowSensitive'], additionalProperties: false },
+      input: { type: 'object', properties: { message: text, mode, approvedSensitive: strings }, required: ['message', 'mode', 'approvedSensitive'], additionalProperties: false },
       output: empty,
     },
     init: { input: empty, output: empty },

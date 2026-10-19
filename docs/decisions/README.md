@@ -24,3 +24,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0007 | `0007-release-please-and-npm-trusted-publishing.md` | release-please and npm trusted publishing |
 | 0008 | `0008-agents-index-and-docs-system-of-record.md` | AGENTS.md and CLAUDE.md as an index over docs/ |
 | 0009 | `0009-esc-is-host-reserved-on-claude-code.md` | Esc is reserved by the host on Claude Code |
+| 0010 | `0010-exact-sensitive-path-approval.md` | Sensitive commit approval names exact paths and is enforced by the server |

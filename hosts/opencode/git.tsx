@@ -124,26 +124,26 @@ export function Git(props: {
     const selectedMode = mode()
     const [, update] = draft()
     await perform('Commit', async () => {
-      async function approval(): Promise<boolean | undefined> {
+      async function approval(): Promise<readonly string[] | undefined> {
         let approved: readonly string[] = []
         while (!stopped) {
           const plan = record(await props.api.commitPlan({ message: text, mode: selectedMode }))
           if (!Array.isArray(plan.sensitive) || !plan.sensitive.every((p): p is string => typeof p === 'string')) throw new Error('Invalid Git reply.')
           if (stopped) return undefined
-          if (plan.sensitive.every((p) => approved.includes(p))) return plan.sensitive.length > 0
+          if (plan.sensitive.every((p) => approved.includes(p))) return approved
           if (!await props.ctx.ui.dialog.confirm({ title: 'Sensitive files', message: `These files look sensitive:\n${plan.sensitive.join('\n')}`, label: { confirm: 'Commit anyway', cancel: 'Cancel' } })) return undefined
           approved = plan.sensitive
         }
       }
-      let allowSensitive = await approval()
-      if (stopped || allowSensitive === undefined) return
+      let approvedSensitive = await approval()
+      if (stopped || approvedSensitive === undefined) return
       try {
-        try { await props.api.commit({ message: text, mode: selectedMode, allowSensitive }) }
+        try { await props.api.commit({ message: text, mode: selectedMode, approvedSensitive }) }
         catch (error) {
-          if (allowSensitive || !(error instanceof Error) || error.message !== 'Sensitive files require confirmation.') throw error
-          allowSensitive = await approval()
-          if (stopped || allowSensitive === undefined) return
-          await props.api.commit({ message: text, mode: selectedMode, allowSensitive })
+          if (!(error instanceof Error) || error.message !== 'Sensitive files require confirmation.') throw error
+          approvedSensitive = await approval()
+          if (stopped || approvedSensitive === undefined) return
+          await props.api.commit({ message: text, mode: selectedMode, approvedSensitive })
         }
         update((d) => { if (d.message.trim() === text) d.message = '' })
         if (!stopped) setEditing(false)

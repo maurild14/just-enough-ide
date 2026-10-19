@@ -23,7 +23,8 @@ test('the portable contract names every service, includes error previews and dec
   expect(JeiRpc.id).toBe('jei')
   expect(Object.keys(JeiRpc.methods)).toEqual(['state', 'listDir', 'preview', 'allFiles', 'open', 'stage', 'unstage', 'discard', 'diff', 'generate', 'commitPlan', 'commit', 'init', 'sync'])
   expect(JeiRpc.methods.preview.output.properties.kind.enum).toContain('error')
-  expect(JeiRpc.methods.commit.input.required).toEqual(['message', 'mode', 'allowSensitive'])
+  expect(JeiRpc.methods.commit.input.required).toEqual(['message', 'mode', 'approvedSensitive'])
+  expect(JeiRpc.methods.commit.input.properties.approvedSensitive).toEqual({ type: 'array', items: { type: 'string' } })
   expect(JeiRpc.methods.sync.input.required).toEqual([])
   expect(JeiRpc.methods.open.input.required).toEqual(['rel'])
   for (const name of ['listDir', 'preview', 'open', 'stage', 'unstage', 'discard', 'diff'] as const) {

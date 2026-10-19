@@ -110,7 +110,7 @@ test('generation fills the native message input, c picks the commit mode, input 
   expect(f.calls.filter((c) => c.method === 'generate')).toHaveLength(1)
   expect(f.selects).toHaveLength(1)
   input.submit(); await r.flush()
-  expect(f.calls.find((c) => c.method === 'commit')?.input).toEqual({ message: 'feat: update app safely', mode: 'commit-push', allowSensitive: false })
+  expect(f.calls.find((c) => c.method === 'commit')?.input).toEqual({ message: 'feat: update app safely', mode: 'commit-push', approvedSensitive: [] })
   expect(f.calls.at(-1)?.method).toBe('state')
 })
 
@@ -127,7 +127,7 @@ test('sensitive paths require approval, cancel preserves the message, and duplic
   f.handlers.commit = () => new Promise((resolve) => { finish = resolve })
   input.submit(); input.submit(); await r.flush()
   expect(f.calls.filter((c) => c.method === 'commit')).toHaveLength(1)
-  expect(f.calls.find((c) => c.method === 'commit')?.input).toMatchObject({ mode: 'amend', allowSensitive: true })
+  expect(f.calls.find((c) => c.method === 'commit')?.input).toMatchObject({ mode: 'amend', approvedSensitive: ['.env', 'keys/id_rsa'] })
   finish({}); await r.flush(); expect(input.value).toBe('')
 })
 
@@ -267,12 +267,12 @@ test('a sensitive file arriving between plan and commit is confirmed before retr
   const f = fixture(); const r = await f.mount()
   let planned = 0
   f.handlers.commitPlan = async () => ({ steps: [], sensitive: planned++ ? ['.env.local'] : [], viaAgentShell: false })
-  f.handlers.commit = async (input) => { if (!input.allowSensitive) throw new Error('Sensitive files require confirmation.'); return {} }
+  f.handlers.commit = async (input) => { if (!input.approvedSensitive.includes('.env.local')) throw new Error('Sensitive files require confirmation.'); return {} }
   f.key('g'); await r.flush(); f.choose('commit'); f.key('c'); await r.flush(); f.confirm(true)
   const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
   input.submit(); await r.flush()
   expect(f.confirms.at(-1)?.message).toContain('.env.local')
-  expect(f.calls.filter((c) => c.method === 'commit').map((c) => c.input.allowSensitive)).toEqual([false, true])
+  expect(f.calls.filter((c) => c.method === 'commit').map((c) => c.input.approvedSensitive)).toEqual([[], ['.env.local']])
 })
 
 test('hunk position survives width changes that rewrap earlier diff lines', async () => {
@@ -388,7 +388,7 @@ test('sensitive approval is rechecked after each dialog and newly arriving paths
   expect(f.calls.some((c) => c.method === 'commit')).toBe(false)
   delete f.handlers.confirm; f.confirm(true); input.submit(); await r.flush()
   expect(f.calls.filter((c) => c.method === 'commit')).toHaveLength(1)
-  expect(f.calls.find((c) => c.method === 'commit')?.input.allowSensitive).toBe(true)
+  expect(f.calls.find((c) => c.method === 'commit')?.input.approvedSensitive).toEqual(['.env', 'id_rsa'])
   expect(plans).toBe(4)
 })
 
@@ -402,7 +402,7 @@ test('the commit waits for approval of newly arriving sensitive files and then r
   expect(f.confirms).toHaveLength(2); expect(f.calls.some((c) => c.method === 'commit')).toBe(false)
   approveNew(true); await r.flush()
   expect(plans).toBe(3)
-  expect(f.calls.filter((c) => c.method === 'commit').map((c) => c.input.allowSensitive)).toEqual([true])
+  expect(f.calls.filter((c) => c.method === 'commit').map((c) => c.input.approvedSensitive)).toEqual([['.env', 'id_rsa']])
 })
 
 test('the message placeholder follows branch and width, and smart-commit guidance follows options and mode', async () => {
@@ -437,4 +437,21 @@ for (const kind of [['add'], { toString: 'add' }]) test(`diff rejects non-string
     expect(r.captureCharFrame()).not.toContain('+after')
     expect(r.captureCharFrame().split('\n').every((line) => cellWidth(line) <= width)).toBe(true)
   }
+})
+
+for (const retry of [false, true]) test(`a server refusal after the last TUI plan requires complete-list reapproval (retry ${retry})`, async () => {
+  const f = fixture(); const r = await f.mount(); let plans = 0
+  f.handlers.commitPlan = async () => ({ steps: [], sensitive: plans++ < 2 ? ['.env'] : ['.env', 'id_rsa'], viaAgentShell: false })
+  f.handlers.confirm = async () => f.confirms.length === 1 || retry
+  f.handlers.commit = async (input) => {
+    if (!['.env', 'id_rsa'].every((path) => input.approvedSensitive.includes(path))) throw new Error('Sensitive files require confirmation.')
+    return {}
+  }
+  f.key('g'); await r.flush(); f.choose('commit'); f.key('c'); await r.flush()
+  const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
+  input.submit(); input.submit(); await r.flush()
+  expect(f.confirms).toHaveLength(2)
+  expect(f.confirms[1].message).toBe('These files look sensitive:\n.env\nid_rsa')
+  expect(f.calls.filter((c) => c.method === 'commit').map((c) => c.input.approvedSensitive)).toEqual(retry ? [['.env'], ['.env', 'id_rsa']] : [['.env']])
+  expect(input.value).toBe(retry ? '' : 'feat: update app')
 })
