@@ -114,7 +114,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 
 ## 6. Height rules
 
-- The tab bar and header row stay pinned, the hint line stays pinned at the bottom, and only the body scrolls.
+- The tab bar and header row stay pinned, the hint line stays pinned at the bottom, and only the body scrolls. An active OpenCode Files filter keeps one editable input row even when the normal header is hidden, including heights 2 and 5; the result viewport keeps at least one row.
 - When rows run short, hide parts in this order. Below 10 rows, hide the hint line first; the keys still work. On Claude Code the letter keys live on the hint line's Buttons, so a view with letter actions keeps the hint, bare (keys only), and drops it only below 3 rows (`docs/decisions/0009-esc-is-host-reserved-on-claude-code.md`). Below 8, hide the rule. Below 6, hide the header row; its key facts move into the tab bar's right side if they fit. Below 3, render only the body.
 - The body always keeps at least 1 row. Scrolling keeps 1 row of context above and below the selection when the body has 5 or more rows.
 - Expanded inline items (a commit's files, call hierarchy) never push the selected row out of view.

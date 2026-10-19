@@ -14,7 +14,7 @@ import { latest } from '../../core/latest.ts'
 import type { Options } from '../../core/options.ts'
 import { currentView, type PaneAction, type PaneState } from '../../core/pane.ts'
 import { cellWidth, fitEnd, fitPath, padEnd } from '../../core/shared/fit.ts'
-import { joinPath, projectRel, toPosix } from '../../core/shared/paths.ts'
+import { insideRel, joinPath, toPosix } from '../../core/shared/paths.ts'
 import { activityColor } from './colors.ts'
 import { handToAgent } from './hand-off.ts'
 import type { JeiRpc } from './rpc.ts'
@@ -70,6 +70,7 @@ export function Files(props: {
   const [query, setQuery] = createSignal('')
   const [listings, setListings] = createSignal(new Map<string, Listing>())
   const [files, setFiles] = createSignal<string[]>([])
+  const [filesError, setFilesError] = createSignal(false)
   const [loaded, setLoaded] = createSignal(false)
   const [preview, setPreview] = createSignal<Preview>()
   const [previewRel, setPreviewRel] = createSignal('')
@@ -81,9 +82,10 @@ export function Files(props: {
   const cwd = createMemo(() => props.cwd)
   const selected = () => props.state.selected.files
   const isPreview = () => currentView(props.state) === 'files.preview'
-  const relOf = (path: string) => projectRel(cwd(), path)
+  const relOf = (path: string) => insideRel(cwd(), path)
+  const editing = () => filtering() && !isPreview()
   const inner = () => Math.max(0, props.width - 2)
-  const room = () => Math.max(1, props.height - (props.header ? 1 : 0))
+  const room = () => Math.max(1, props.height - (props.header || editing() ? 1 : 0))
   const theme = () => props.ctx.theme
   const syntax = createMemo(() => SyntaxStyle.fromStyles(Object.fromEntries(Object.entries(theme().syntax ?? {}).map(([name, fg]) => [name, { fg: fg as RGBA }]))))
   createEffect(() => { const style = syntax(); onCleanup(() => style.destroy()) })
@@ -117,7 +119,10 @@ export function Files(props: {
   createEffect(() => {
     cwd(); props.revision
     if (!filtering()) return
-    void loadFiles().then((r) => { if (!stopped && !r.stale) setFiles(r.value) }).catch(() => { if (!stopped) setFiles([]) })
+    setFilesError(false)
+    void loadFiles().then((r) => { if (!stopped && !r.stale) setFiles(r.value) }).catch(() => {
+      if (!stopped) { setFiles([]); setFilesError(true) }
+    })
   })
   const load = latest(async (rel: string | undefined) => rel === undefined ? undefined : readPreview(await props.api.preview({ rel })))
   const previewPath = createMemo(() => isPreview() ? previewRel() || selected() : undefined)
@@ -157,6 +162,7 @@ export function Files(props: {
   })
   const items = createMemo(() => {
     const result: { rel: string; label: string; row?: ReturnType<typeof treeRows>[number] }[] = []
+    if (filtering() && filesError()) return [{ rel: '', label: "Can't list project files." }]
     if (!loaded()) return [{ rel: '', label: 'Loading…' }]
     const flattened = rows()
     for (const [index, row] of flattened.entries()) {
@@ -194,7 +200,7 @@ export function Files(props: {
       case 'activate': {
         if (!rel) return
         const row = rows().find((r) => r.rel === rel)
-        if (filtering() && query() && !row) return
+        if (filtering() && (filesError() || query() && !row)) return
         if (row && 'isDir' in row && row.isDir) {
           const next = new Set(expanded())
           if (next.has(rel)) next.delete(rel)
@@ -217,7 +223,7 @@ export function Files(props: {
       case 'toggle-markdown-source': return
     }
   }
-  props.bind((action) => { void run(action).catch(() => props.ctx.ui.toast.show({ message: 'Unable to complete Files action.', variant: 'error' })) }, () => filtering() && !isPreview() && props.header)
+  props.bind((action) => { void run(action).catch(() => props.ctx.ui.toast.show({ message: 'Unable to complete Files action.', variant: 'error' })) }, editing)
   const table = createMemo(() => fitTable(preview()?.rows ?? [], inner()))
   const notice = () => {
     switch (preview()?.kind) {
@@ -254,15 +260,15 @@ export function Files(props: {
     return RGBA.fromValues(fg.r + (accent.r - fg.r) * weight, fg.g + (accent.g - fg.g) * weight, fg.b + (accent.b - fg.b) * weight)
   }
   return <box flexDirection="column" flexGrow={1} minHeight={1}>
-    <Show when={props.header}>
-      <Show when={filtering() && !isPreview()} fallback={<text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitPath(isPreview() ? previewRel() || selected() || '' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text>}>
+    <Show when={props.header || editing()}>
+      <Show when={editing()} fallback={<text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitPath(isPreview() ? previewRel() || selected() || '' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text>}>
         <box height={1} flexShrink={0} flexDirection="row"><text fg={theme().text.muted}>{fitEnd(' Filter: ', props.width)}</text><input width={Math.max(1, props.width - 9)} focused={props.focused} value={query()} onInput={setQuery} onSubmit={() => { void run('activate') }} /></box>
       </Show>
     </Show>
     <box flexGrow={1} minHeight={1} overflow="hidden" flexDirection="column">
       <Show when={isPreview()} fallback={<For each={window()}>{(item) => <text height={1} flexShrink={0} width={props.width} bg={item.rel === selected() ? theme().background?.action.primary.base : undefined}
         onMouseDown={() => { if (item.row && !('more' in item.row)) { props.dispatch({ type: 'select', view: 'files', id: item.rel }); void run('activate') } }}>
-        <span style={{ fg: color(item.rel, true), dim: props.activity.touched(item.rel) && !props.activity.glow(item.rel, props.now) }}>{props.activity.touched(item.rel) ? '•' : ' '}</span><span style={{ fg: color(item.rel) }}>{rowText(item)}</span><span style={{ fg: statusColor(item) }}>{statusSuffix(item)}</span>
+        <span style={{ fg: color(item.rel, true), dim: props.activity.touched(item.rel) && !props.activity.glow(item.rel, props.now) }}>{props.activity.touched(item.rel) ? '•' : ' '}</span><span style={{ fg: filtering() && filesError() ? theme().text.feedback.error.base : color(item.rel) }}>{rowText(item)}</span><span style={{ fg: statusColor(item) }}>{statusSuffix(item)}</span>
       </text>}</For>}>
         <Show when={preview()?.kind === 'code' || preview()?.kind === 'markdown'} fallback={<For each={notice() ? [notice()] : table().slice(top(), top() + room())}>{(line) => <text height={1} flexShrink={0} fg={preview()?.kind === 'error' ? theme().text.feedback.error.base : theme().text.muted}>{' ' + fitEnd(line, inner())}</text>}</For>}>
           <code id="files-code" ref={(el) => { code = el; el.scrollY = top() }} width={inner()} height={room()} marginLeft={1} content={preview()?.text ?? ''} filetype={preview()?.language ?? (preview()?.kind === 'markdown' ? 'markdown' : undefined)} syntaxStyle={syntax()} wrapMode="char" fg={theme().text.base} conceal={false} />

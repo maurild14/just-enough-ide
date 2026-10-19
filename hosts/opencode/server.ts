@@ -5,7 +5,7 @@ import { allFiles, listDir, loadPreview, openFile } from '../../core/files/servi
 import type { CommitMode } from '../../core/git/commands.ts'
 import { commitPlan, discard, fileDiff, generateMessage, initRepo, runSteps, snapshot, stage, sync, unstage } from '../../core/git/service.ts'
 import { parseOptions } from '../../core/options.ts'
-import { isInside, joinPath, projectRel, relativeTo, toPosix } from '../../core/shared/paths.ts'
+import { insideRel, joinPath } from '../../core/shared/paths.ts'
 import { nodeHost } from './host.ts'
 import { JeiRpc, toWire } from './rpc.ts'
 
@@ -43,14 +43,6 @@ function parseModel(model: string): { providerID: string; id: string } {
   const slash = model.indexOf('/')
   if (slash <= 0 || slash === model.length - 1) throw new Error('Use provider/model for the commit model.')
   return { providerID: model.slice(0, slash), id: model.slice(slash + 1) }
-}
-
-function insideRel(root: string, path: string): string | null {
-  const p = toPosix(path)
-  const absolute = /^(?:[A-Za-z]:)?\//.test(p)
-  if (/^[A-Za-z]:[^/]/.test(p)) return null
-  const full = absolute ? p : joinPath(root, p)
-  return isInside(root, full) ? relativeTo(root, full) : null
 }
 
 export default Plugin.define({
@@ -180,7 +172,7 @@ export default Plugin.define({
           if (['bash', 'powershell', 'shell'].includes(event.tool.toLowerCase())) changed()
           return
         }
-        const rels = [...new Set(touch.paths.map((p) => projectRel(ctx.location.directory, p)).filter((p): p is string => p !== null && p !== ''))]
+        const rels = [...new Set(touch.paths.map((p) => insideRel(ctx.location.directory, p)).filter((p): p is string => p !== null && p !== ''))]
         if (allows(options.activity, touch.kind)) {
           for (const rel of rels) {
             if (stopped) return

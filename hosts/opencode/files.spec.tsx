@@ -42,12 +42,13 @@ function fixture(options: Record<string, unknown> = {}) {
   }
   let listing = async (rel: string): Promise<unknown> => ({ entries: tree[rel] ?? [], ignored: ['dist'] })
   let preview = async (rel: string): Promise<unknown> => previews[rel] ?? { kind: 'empty' }
+  let allFiles = async (): Promise<unknown> => ({ files: ['src/usage.ts', 'README.md', 'src/api/user.ts', '.env'] })
   let git: unknown = { root: '/acme-app', status: { entries: [{ path: 'src/api/user.ts', index: null, worktree: 'modified' }] } }
   const api = {
     state: async () => ({ cwd: '/acme-app', options: parseOptions(options), git, activity: {} }),
     async listDir(input: { rel: string }) { calls.push({ method: 'listDir', input }); return listing(input.rel) },
     async preview(input: { rel: string }) { calls.push({ method: 'preview', input }); return preview(input.rel) },
-    async allFiles() { calls.push({ method: 'allFiles', input: {} }); return { files: ['src/usage.ts', 'README.md', 'src/api/user.ts', '.env'] } },
+    async allFiles() { calls.push({ method: 'allFiles', input: {} }); return allFiles() },
     async open(input: unknown) { calls.push({ method: 'open', input }); return {} },
     events: { on(name: string, fn: (event: { data: unknown }) => void) {
       const handlers = listeners.get(name) ?? new Set(); listeners.set(name, handlers); handlers.add(fn)
@@ -76,6 +77,7 @@ function fixture(options: Record<string, unknown> = {}) {
   return { mount, key, select, calls, prompts, sent, notices, tree, previews, setWidth,
     setEdited(value: string | undefined) { edited = value }, setListing(fn: typeof listing) { listing = fn }, setPreview(fn: typeof preview) { preview = fn },
     setGit(value: unknown) { git = value },
+    setAllFiles(fn: typeof allFiles) { allFiles = fn },
     emit(name: string, data: unknown = {}) { for (const fn of listeners.get(name) ?? []) fn({ data }) },
   }
 }
@@ -272,4 +274,53 @@ test('CSV is capped at 200 rows and preview scrolling reaches wrapped content', 
   for (let i = 0; i < 15; i++) f.key('down')
   await r.flush(); expect(r.captureCharFrame()).toContain('last line')
   expect(f.notices).toHaveLength(0)
+})
+
+for (const height of [2, 5]) test(`filter remains editable and suppresses shortcuts at height ${height}`, async () => {
+  const f = fixture(); const r = await f.mount(24, height)
+  f.key('f'); await r.flush(); await r.mockInput.typeText('usr'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Filter: usr')
+  expect(r.captureCharFrame()).toContain('user.ts')
+  f.key('4'); f.key('a'); f.key('h'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Filter: usr'); expect(f.prompts).toHaveLength(0)
+  expect(r.captureCharFrame().split('\n').every((line) => cellWidth(line) <= 24)).toBe(true)
+  expect(r.captureSpans().rows).toBe(height)
+  f.key('enter'); await r.flush(); expect(r.captureCharFrame()).toContain('export const user = 1')
+})
+
+test('literal leading-space filenames stay distinct for preview, mention, open and filter', async () => {
+  const f = fixture()
+  f.tree[''] = [file(' leading.ts'), file('leading.ts')]
+  f.previews[' leading.ts'] = { kind: 'code', text: 'spaced sibling', language: 'typescript' }
+  f.previews['leading.ts'] = { kind: 'code', text: 'plain sibling', language: 'typescript' }
+  f.setAllFiles(async () => ({ files: [' leading.ts'] }))
+  const r = await f.mount()
+  f.key('enter'); await r.flush(); expect(r.captureCharFrame()).toContain('spaced sibling')
+  expect(f.calls.filter((c) => c.method === 'preview').at(-1)?.input).toEqual({ rel: ' leading.ts' })
+  f.key('a'); f.key('o'); await r.flush()
+  expect(f.prompts.at(-1)?.value).toBe('@" leading.ts" ')
+  expect(f.calls.filter((c) => c.method === 'open').at(-1)?.input).toEqual({ rel: ' leading.ts' })
+  f.key('esc'); await r.flush(); f.key('down'); f.key('enter'); await r.flush()
+  expect(r.captureCharFrame()).toContain('plain sibling')
+  f.key('esc'); await r.flush(); f.key('f'); await r.flush(); await r.mockInput.typeText('leading'); await r.flush()
+  f.key('enter'); await r.flush(); expect(r.captureCharFrame()).toContain('spaced sibling')
+  f.emit('activity', { rel: ' leading.ts', kind: 'read' }); await r.flush()
+  f.key('esc'); await r.flush(); f.key('esc'); await r.flush(); f.key('a'); await r.flush()
+  expect(f.prompts.at(-1)?.value).toBe('@" leading.ts" ')
+})
+
+test('filter-list failures show a distinct error and recover on changed events and retry', async () => {
+  const f = fixture(); const r = await f.mount()
+  f.setAllFiles(async () => { throw new Error('unavailable') })
+  f.key('f'); await r.flush(); await r.mockInput.typeText('usr'); await r.flush()
+  expect(r.captureCharFrame()).toContain("Can't list project files.")
+  expect(r.captureCharFrame()).not.toContain('No files match')
+  f.key('enter'); await r.flush(); expect(f.calls.some((c) => c.method === 'preview')).toBe(false)
+  f.setAllFiles(async () => ({ files: ['src/api/user.ts'] })); f.emit('changed'); await r.flush()
+  expect(r.captureCharFrame()).toContain('src/api/user.ts'); expect(r.captureCharFrame()).not.toContain("Can't list project files.")
+  f.setAllFiles(async () => { throw new Error('unavailable') }); f.emit('changed'); await r.flush()
+  expect(r.captureCharFrame()).toContain("Can't list project files.")
+  f.key('esc'); await r.flush(); f.setAllFiles(async () => ({ files: ['src/api/user.ts'] }))
+  f.key('f'); await r.flush(); await r.mockInput.typeText('usr'); await r.flush()
+  expect(r.captureCharFrame()).toContain('src/api/user.ts'); expect(r.captureCharFrame()).not.toContain("Can't list project files.")
 })

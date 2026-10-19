@@ -88,7 +88,13 @@ export function parentDirs(rel: string): string[] {
  * itself gives ''.
  */
 export function projectRel(root: string, path: string): string | null {
-  const p = toPosix(path.trim())
+  return insideRel(root, path.trim())
+}
+
+/** A literal filesystem path inside `root`, as a posix rel; preserves filename whitespace. */
+export function insideRel(root: string, path: string): string | null {
+  const p = toPosix(path)
+  if (/^[A-Za-z]:[^/]/.test(p)) return null
   const absolute = /^([A-Za-z]:)?\//.test(p)
   const full = absolute ? p : joinPath(root, p)
   if (!isInside(root, full)) return null

@@ -134,6 +134,14 @@ test('every path RPC rejects escapes before touching any member of a batch', asy
   ] as const) await expect(server.call(name, input)).rejects.toThrow('Invalid RPC input')
 })
 
+test('literal leading-space paths survive preview and activity classification', async () => {
+  const repo = await makeRepo({ ' leading.ts': 'spaced\n', 'leading.ts': 'plain\n' })
+  const server = await start(repo.dir)
+  expect(await server.call('preview', { rel: ' leading.ts' })).toMatchObject({ text: 'spaced\n' })
+  await server.tool({ tool: 'read', input: { filePath: ' leading.ts' }, status: 'completed' })
+  expect(server.emitted).toContainEqual({ name: 'activity', data: { rel: ' leading.ts', kind: 'read' } })
+})
+
 test('preview preserves the real-path guard for a symlink outside the project', async () => {
   const root = makeTemp()
   const outside = makeTemp('outside')

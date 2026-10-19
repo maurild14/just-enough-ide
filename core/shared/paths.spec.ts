@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { isInside, joinPath, parentDirs, platformOf, projectRel, relativeTo, toPosix } from './paths.ts'
+import { insideRel, isInside, joinPath, parentDirs, platformOf, projectRel, relativeTo, toPosix } from './paths.ts'
 
 test('toPosix', () => expect(toPosix('a\\b\\c')).toBe('a/b/c'))
 
@@ -71,6 +71,17 @@ test('projectRel keeps typed paths inside the root', () => {
   expect(projectRel('/work/acme-app', '../other/x.ts')).toBeNull()
   expect(projectRel('/work/acme-app', 'src/../../x.ts')).toBeNull()
   expect(projectRel('/work/acme-app', 'D:/work/acme-app/x.ts')).toBeNull()
+})
+
+test('insideRel preserves literal whitespace and rejects paths outside the root', () => {
+  expect(insideRel('/acme-app', ' leading.ts')).toBe(' leading.ts')
+  expect(insideRel('/acme-app', 'leading.ts ')).toBe('leading.ts ')
+  expect(insideRel('/acme-app', '/acme-app/ leading.ts')).toBe(' leading.ts')
+  expect(insideRel('C:/acme-app', 'src\\ leading.ts')).toBe('src/ leading.ts')
+  for (const path of ['../outside.ts', '/outside.ts', 'D:/outside.ts', 'C:outside.ts', '//outside/share/file.ts']) {
+    expect(insideRel('/acme-app', path)).toBeNull()
+  }
+  expect(projectRel('/acme-app', ' leading.ts ')).toBe('leading.ts')
 })
 
 test('platformOf reads the path shape', () => {

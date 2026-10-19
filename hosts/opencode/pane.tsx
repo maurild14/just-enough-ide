@@ -11,7 +11,7 @@ import { parseOptions } from '../../core/options.ts'
 import { currentView, initialPane, reducePane, type PaneAction, type PaneState } from '../../core/pane.ts'
 import { fitEnd, fitPath } from '../../core/shared/fit.ts'
 import { TAB_NAMES, tabBar } from '../../core/shared/tabs.ts'
-import { projectRel } from '../../core/shared/paths.ts'
+import { insideRel } from '../../core/shared/paths.ts'
 import { Files } from './files.tsx'
 import { JeiRpc } from './rpc.ts'
 
@@ -93,7 +93,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     try {
       const data = record(event.data)
       if (typeof data.rel !== 'string') throw new Error('Invalid JEI activity.')
-      const rel = snapshot() ? projectRel(snapshot()!.cwd, data.rel) : data.rel
+      const rel = snapshot() ? insideRel(snapshot()!.cwd, data.rel) : data.rel
       if (rel === null || !rel) throw new Error('Invalid JEI activity.')
       const activityKind = kind(data.kind)
       if (!allows(options.activity, activityKind)) return
