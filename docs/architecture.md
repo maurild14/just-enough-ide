@@ -21,7 +21,7 @@ Status: current. Defined in `core/host.ts`; the process, file and model half onl
 
 ## Key map and actions
 
-`core/keys.ts` holds the one key map. `KEYS[view]` lists `{ key, action, label }` in hint-line priority (lowest priority last); adapters dispatch on `action`. `TAB_KEYS` maps `1`-`4` to tabs. `hintLine(view, columns)` builds the hint line for any width >= 1: below 32 columns it shows keys only, otherwise `key label` pairs joined by ` · `, dropping items from the end until it fits.
+`core/keys.ts` holds the one key map. `KEYS[view]` lists `{ key, action, label }` in hint-line priority (lowest priority last); adapters dispatch on `action`. `TAB_KEYS` maps `1`-`4` to tabs. `hintLine(view, columns)` builds the hint line for any width >= 1: below 32 columns it shows keys only, otherwise `key label` pairs joined by ` · `, keeping `esc` first, then items in priority order; an item that does not fit is skipped so shorter ones can still fit, and a word is never cut (an empty string when nothing fits).
 
 | View | key: action |
 | --- | --- |

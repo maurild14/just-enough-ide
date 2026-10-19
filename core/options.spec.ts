@@ -44,3 +44,10 @@ test('valid enums and strings are kept', () => {
   expect(o.editorCommand).toBe('code -g "{path}:{line}"')
   expect(o.commitModel).toBe('small')
 })
+
+test('enums are trimmed and case-insensitive', () => {
+  const o = parseOptions({ defaultTab: ' Git ', glyphs: 'PLAIN', activity: 'Reads' })
+  expect(o.defaultTab).toBe('git')
+  expect(o.glyphs).toBe('plain')
+  expect(o.activity).toBe('reads')
+})

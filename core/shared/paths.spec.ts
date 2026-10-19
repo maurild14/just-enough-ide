@@ -32,3 +32,21 @@ test('parentDirs', () => {
   expect(parentDirs('a/b/c.ts')).toEqual(['a', 'a/b'])
   expect(parentDirs('c.ts')).toEqual([])
 })
+
+test('paths escaping a relative root are outside', () => {
+  expect(isInside('.', '../x')).toBe(false)
+  expect(isInside('', '../../etc')).toBe(false)
+  expect(isInside('.', 'a/b')).toBe(true)
+  expect(isInside('../a', '../a/b')).toBe(true)
+})
+
+test('windows-style roots', () => {
+  expect(isInside('C:\\R\\', 'c:\\r\\a')).toBe(true)
+  expect(isInside('C:', 'C:/x')).toBe(true)
+  expect(isInside('\\\\srv\\share\\R', '\\\\SRV\\Share\\r\\a')).toBe(true)
+  expect(isInside('\\\\srv\\share\\R', '\\\\srv\\other\\r\\a')).toBe(false)
+})
+
+test('parentDirs ignores dot segments', () => {
+  expect(parentDirs('./a/./b.ts')).toEqual(['a'])
+})

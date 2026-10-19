@@ -25,3 +25,9 @@ test('case-insensitive, camelCase and separators count as word starts', () => {
 test('empty query matches everything', () => {
   expect(fuzzyScore('', 'x')).toBe(0)
 })
+
+test('length-changing lowercase does not throw', () => {
+  expect(() => fuzzyScore('x', 'İx')).not.toThrow()
+  expect(fuzzyScore('x', 'İx')).not.toBeNull()
+  expect(fuzzyScore('İ', 'a İ b')).not.toBeNull()
+})

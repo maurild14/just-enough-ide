@@ -66,9 +66,11 @@ export const TAB_KEYS: Readonly<Record<'1' | '2' | '3' | '4', Tab>> = {
 const SEP = ' · '
 
 /**
- * One line of `key label` pairs for a view. Works at any width >= 1: below 32
- * columns only keys are shown, lowest-priority items drop first, and the result
- * never exceeds `columns`.
+ * One line of `key label` pairs for a view. Works at any width: below 32
+ * columns only keys are shown. Items are kept in priority order; one that does
+ * not fit is skipped so shorter, lower-priority ones can still fit. `esc` is
+ * reserved first because it is the way out. Words are never cut: when nothing
+ * fits the result is ''. The result never exceeds `columns`.
  */
 export function hintLine(view: View, columns: number): string {
   const width = Math.max(0, Math.floor(columns))
@@ -79,8 +81,18 @@ export function hintLine(view: View, columns: number): string {
     items.push({ keyText, label: k.label })
   }
   const keysOnly = width < 32
-  const parts = items.map((i) => (keysOnly ? i.keyText : `${i.keyText} ${i.label}`))
   const sep = keysOnly ? ' ' : SEP
-  while (parts.length > 1 && parts.join(sep).length > width) parts.pop()
-  return parts.join(sep).slice(0, width)
+  const text = items.map((i) => (keysOnly ? i.keyText : `${i.keyText} ${i.label}`))
+  const keep = new Set<number>()
+  let used = 0
+  const tryAdd = (idx: number) => {
+    const cost = text[idx]!.length + (keep.size > 0 ? sep.length : 0)
+    if (used + cost > width) return
+    keep.add(idx)
+    used += cost
+  }
+  const escIdx = items.findIndex((i) => i.keyText === 'esc')
+  if (escIdx >= 0) tryAdd(escIdx)
+  for (let i = 0; i < items.length; i++) if (i !== escIdx) tryAdd(i)
+  return text.filter((_, i) => keep.has(i)).join(sep)
 }

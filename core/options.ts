@@ -39,7 +39,8 @@ function bool(value: unknown, fallback: boolean): boolean {
 }
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
-  return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? (value as T) : fallback
+  const v = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return (allowed as readonly string[]).includes(v) ? (v as T) : fallback
 }
 
 function text(value: unknown): string {

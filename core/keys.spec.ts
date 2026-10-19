@@ -45,21 +45,31 @@ test('hint line fits every width and has no help key', () => {
     for (const w of [1, 10, 24, 31, 32, 40, 80, 120]) {
       const line = hintLine(view, w)
       expect(line.length).toBeLessThanOrEqual(w)
-      expect(line.length).toBeGreaterThan(0)
       expect(line).not.toContain('?')
     }
 })
 
 test('hint line at 24, 40, 80, 120 and 10', () => {
-  expect(hintLine('git', 40)).toBe('↑↓ move · enter open · s stage')
+  expect(hintLine('git', 40)).toBe('↑↓ move · enter open · e sync · esc back')
+  expect(hintLine('git', 24)).toBe('↑↓ enter s u d c g e esc')
   expect(hintLine('files', 24)).toBe('↑↓ enter a o f h esc')
-  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · a mention · o open in editor · f filter · h hidden')
+  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · a mention · o open in editor · f filter · esc back')
   expect(hintLine('files', 120)).toBe('↑↓ move · enter open · a mention · o open in editor · f filter · h hidden · esc back')
-  expect(hintLine('git.diff', 10)).toBe('↑↓ n p j k')
-  expect(hintLine('git', 10)).toBe('↑↓ enter s')
-  expect(hintLine('git', 1)).toBe('↑')
+  expect(hintLine('git.diff', 10)).toBe('↑↓ n p esc')
+  expect(hintLine('git', 10)).toBe('↑↓ s u esc')
 })
 
-test('wider hint lines extend narrower ones (drop from the end)', () => {
-  expect(hintLine('git', 80).startsWith(hintLine('git', 40))).toBe(true)
+test('hint line keeps esc, never cuts a word, and never exceeds the width', () => {
+  for (const view of views) {
+    expect(hintLine(view, 3)).toBe('esc')
+    expect(hintLine(view, 40)).toContain('esc')
+  }
+  expect(hintLine('git', 2)).toBe('↑↓')
+  expect(hintLine('git', 1)).toBe('s')
+  expect(hintLine('files.preview', 1)).toBe('a')
+  expect(hintLine('git', 0)).toBe('')
+})
+
+test('a long item does not block shorter lower-priority ones', () => {
+  expect(hintLine('git', 40)).toContain('e sync')
 })

@@ -38,7 +38,9 @@ function normalize(path: string): Norm {
   return { prefix, segs }
 }
 
-// Windows-style roots (drive letter or UNC) compare case-insensitively.
+// Core has no platform, so case folding is a heuristic: a root with a drive
+// letter or a UNC prefix is Windows-style and compares case-insensitively;
+// anything else (posix roots, relative roots) is case-sensitive.
 function foldsCase(n: Norm): boolean {
   return /^[A-Za-z]:/.test(n.prefix) || n.prefix === '//'
 }
@@ -49,8 +51,11 @@ function insideCount(root: string, path: string): number {
   const p = normalize(path)
   const fold = foldsCase(r) || foldsCase(p)
   const key = (s: string) => (fold ? s.toLowerCase() : s)
-  if (key(r.prefix) !== key(p.prefix)) return -1
+  const bare = (s: string) => key(s.replace(/\/$/, ''))
+  if (bare(r.prefix) !== bare(p.prefix)) return -1
   if (r.segs.length > p.segs.length) return -1
+  // Leading `..` kept beyond the root means the path escapes it.
+  if (p.segs.slice(r.segs.length).includes('..')) return -1
   for (let i = 0; i < r.segs.length; i++) {
     if (key(r.segs[i]!) !== key(p.segs[i]!)) return -1
   }
@@ -69,9 +74,9 @@ export function isInside(root: string, path: string): boolean {
   return insideCount(root, path) >= 0
 }
 
-/** 'a/b/c.ts' -> ['a', 'a/b'] */
+/** 'a/b/c.ts' -> ['a', 'a/b']. Input is posix-relative (callers pass `toPosix` output); `.` segments are ignored. */
 export function parentDirs(rel: string): string[] {
-  const segs = toPosix(rel).split('/').filter(Boolean)
+  const segs = toPosix(rel).split('/').filter((s) => s !== '' && s !== '.')
   const out: string[] = []
   for (let i = 1; i < segs.length; i++) out.push(segs.slice(0, i).join('/'))
   return out

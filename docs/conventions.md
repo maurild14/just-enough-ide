@@ -45,3 +45,7 @@ Status: draft — built in milestone 0.1 (plan Task 4).
 ## Commits
 
 [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `test:`, `chore:`, `ci:`, with an optional scope (`feat(core): ...`). release-please reads them to cut releases. One logical change per commit, with docs in the same commit as the code they describe. Commits use the maintainer's GitHub noreply identity.
+
+## Paths
+
+Core paths are posix-relative: callers pass `toPosix` output and `/` is the only separator. `core/` has no platform, so `isInside` and `relativeTo` fold case only for Windows-style roots (a drive letter or a UNC prefix); posix and relative roots are case-sensitive. A path that keeps a leading `..` beyond its root is outside it.

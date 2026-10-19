@@ -14,11 +14,14 @@ function isBoundary(prev: string, ch: string): boolean {
 /**
  * Subsequence match, case-insensitive. Higher is better, null means no match.
  * Bonuses: word starts (after / _ - . or camelCase), consecutive characters,
- * characters inside the basename.
+ * characters inside the basename. Paths are posix-relative: callers pass
+ * `toPosix` output, so `/` is the only separator.
  */
 export function fuzzyScore(query: string, candidate: string): number | null {
-  const q = query.toLowerCase()
-  const c = candidate.toLowerCase()
+  // Lowercase per UTF-16 index: String#toLowerCase can change length ('İ'), which would misalign indexes.
+  const lower = (s: string) => Array.from({ length: s.length }, (_, i) => s[i]!.toLowerCase())
+  const q = lower(query)
+  const c = lower(candidate)
   const m = q.length
   const n = c.length
   if (m === 0) return 0
@@ -49,6 +52,7 @@ export function fuzzyScore(query: string, candidate: string): number | null {
     }
     prev = cur
   }
-  const best = Math.max(...prev)
+  let best = NEG
+  for (const v of prev) if (v > best) best = v
   return best === NEG ? null : best - LENGTH * n
 }
