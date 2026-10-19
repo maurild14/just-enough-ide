@@ -16,11 +16,10 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/hosts.md` | Verified API facts and limits of Claude Code mods and OpenCode 2.x plugins. |
 | `docs/security.md` | Privacy model, secret handling, repository hygiene, how to report a problem. |
 | `docs/quality.md` | Per-area status table and the tech-debt list. |
+| `docs/qa.md` | The manual QA checklist run on both hosts before every release. |
 | `docs/decisions/` | Architecture decision records (ADRs); see `docs/decisions/README.md` for the format and the list. |
 | `docs/decisions/0010-exact-sensitive-path-approval.md` | Exact approved sensitive-path lists across the OpenCode commit RPC. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
-
-Not written yet: the manual QA checklist run on both hosts before a release (plan Task 18).
 
 ## Keeping docs current
 

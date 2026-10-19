@@ -27,7 +27,7 @@ On OpenCode, sensitive-file approval covers the exact list shown and crosses RPC
 - No secrets, tokens, personal paths, usernames, emails or real project names in code, fixtures, docs or screenshots. Fixtures use `acme-app` and fictional authors (`@example.com`).
 - Commits use the maintainer's GitHub noreply identity, never a personal address. The license names "The JEI contributors".
 - CI runs a gitleaks scan on the full history, with `contents: read` permissions, `persist-credentials: false` on checkout, and Dependabot keeping the SHA-pinned actions current; run a secret scan over the repo before each release.
-- npm publishing runs from GitHub Actions through npm trusted publishing (OIDC): no npm token exists to leak, and provenance is attached automatically. Actions are pinned by commit SHA and run with least-privilege `permissions`. Status: draft — built in milestone 0.1 (plan Tasks 2 and 18).
+- npm publishing runs from GitHub Actions through npm trusted publishing (OIDC): no npm token exists to leak, and provenance is attached automatically. `.github/workflows/release.yml` runs release-please (`contents`, `issues` and `pull-requests: write`, nothing else) and a `publish` job in the `npm` environment with only `contents: read` and `id-token: write`; it runs the tests before `npm publish`. Actions are pinned by commit SHA and run with least-privilege `permissions`. The trusted publisher on npmjs.com (this repository, `release.yml`, environment `npm`) is a one-time maintainer setup described in `CONTRIBUTING.md`.
 - `.claude-plugin/types/` (laid by Claude Code) is gitignored and never committed.
 
 ## Reporting

@@ -32,7 +32,7 @@ The registered OpenCode server's commit regression approves `.env`, creates `id_
 
 Task 17 review regressions verify LF/CRLF generated bodies and subjects longer than the native 1,000-character default through actual OpenTUI input events, tab remounts and all required widths/heights. They also verify blank-subject rejection, reapproval after `.env` is followed by newly arriving `id_rsa` (including cancel and a pending second confirmation), responsive placeholders, option/amend-aware smart-commit guidance, and malformed array/object diff kinds.
 
-`hosts/opencode/git.spec.tsx` exercises the public TUI entry, registered exact bindings, native input and mouse events, fake RPC and real OpenTUI frames/spans. It covers initialization, metadata, group counts/actions, literal and option-like paths, discard/sensitive/mode/divergence/review cancel branches, generated and edited messages, all commit modes, empty-message and duplicate-submit/click guards, native focus suppression, draft/mode/busy retention across tab remounts, direct mutation refresh, stale state/diff responses, errors and malformed replies. The width/height matrix is 24/40/80/120 by 2/5/10/24; wrapped wide-character hunks retain position through resize. Git behavior itself remains covered by the existing real-git core/server specs with `test/fake-host.ts` isolation. The terminal renderer is the verification surface; browser DOM checks cannot exercise OpenTUI, and real-host dialog/focus/paint remains manual QA for Task 18.
+`hosts/opencode/git.spec.tsx` exercises the public TUI entry, registered exact bindings, native input and mouse events, fake RPC and real OpenTUI frames/spans. It covers initialization, metadata, group counts/actions, literal and option-like paths, discard/sensitive/mode/divergence/review cancel branches, generated and edited messages, all commit modes, empty-message and duplicate-submit/click guards, native focus suppression, draft/mode/busy retention across tab remounts, direct mutation refresh, stale state/diff responses, errors and malformed replies. The width/height matrix is 24/40/80/120 by 2/5/10/24; wrapped wide-character hunks retain position through resize. Git behavior itself remains covered by the existing real-git core/server specs with `test/fake-host.ts` isolation. The terminal renderer is the verification surface; browser DOM checks cannot exercise OpenTUI, and real-host dialog/focus/paint remains manual QA (`docs/qa.md`).
 
 Unreadable preview coverage: `core/files/service.spec.ts` makes `readHead` return `null` for an existing file and expects `error`, while missing, directory and rejected paths stay `empty`. `hosts/claude-code/files.test.tsx` denies a fixture read and verifies the generic error notice on terminal and desktop at 24, 40, 80 and 120 columns. A caught exception with a message keeps the detailed notice; a null-only Host cannot expose the OS reason.
 
@@ -48,7 +48,7 @@ Every view is rendered as a snapshot at widths 24, 40, 80 and 120 (200 as a smok
 
 ## Manual QA
 
-What the kits cannot see (real paint, real terminals, a real agent) is checked by hand on both hosts before each release, on Windows and one of macOS or Linux. The checklist is `docs/qa.md`. Status: draft — written in milestone 0.1 (plan Task 18).
+What the kits cannot see (real paint, real terminals, a real agent) is checked by hand on both hosts before each release, on Windows and one of macOS or Linux. The checklist is `docs/qa.md`.
 
 ## CI
 

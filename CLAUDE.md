@@ -30,6 +30,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 | Handling files, secrets, the network or releases | `docs/security.md` |
 | Changing sensitive commit approval | `docs/decisions/0010-exact-sensitive-path-approval.md` |
 | Checking what is built and known debt | `docs/quality.md` |
+| Preparing a release (manual QA, release pipeline) | `docs/qa.md`, `CONTRIBUTING.md` |
 | Changing a rule or a past decision | `docs/decisions/README.md` |
 | Picking up planned work | `docs/plans/` |
 | Product behavior, keys, options, milestones | `PRD.md` |

@@ -1,0 +1,56 @@
+# Manual QA checklist
+
+> Purpose: the hand checks run on both hosts before every release, for what the test kits cannot see · Status: current · Last reviewed: 2026-10-19
+
+The specs cover logic and rendered frames (`docs/testing.md`). They cannot see real paint, real terminals, a real agent or a real model. Before each release, run this list on **Claude Code** and on **OpenCode 2.0.32+**, on **Windows** and on **one of macOS or Linux**. Use a disposable copy of the sample repo `acme-app` (fictional authors, a bare repo as `origin`), never a real project. Load the working copy as described in `CONTRIBUTING.md` ("Running each host from the working copy").
+
+Record failures as issues or rows in `docs/quality.md`; a release ships only when every item passes or has a logged, accepted reason.
+
+## 1. Load and open (both hosts)
+
+- [ ] Claude Code: `claude --plugin-dir <path to jei>`, then `/tui fullscreen` in a terminal of at least 110 columns; the pane docks beside the transcript.
+- [ ] OpenCode: the checkout is listed as a local plugin in `opencode.json`; after a restart the panel opens once on session start (`startOpen: on`) and not again in the same session.
+- [ ] `/jei` toggles the pane; `/jei files`, `/jei search`, `/jei symbols`, `/jei git` open on that tab; `/jei <path>` opens Files revealing the path.
+- [ ] Keys `1` to `4` switch tabs while the pane is focused; clicking a tab works where the host has a mouse.
+- [ ] Search and Symbols show "Coming in a later version."
+- [ ] OpenCode: `Esc` goes back from a nested view; host `Ctrl-N` / `Ctrl-P` still work; clicking the panel focuses it.
+- [ ] Claude Code: `Esc` stays the host's (back to the prompt); nested views go back with the header button or the tab digit (ADR 0009).
+- [ ] Claude Code: arrow keys either scroll the pane or walk the focus ring when the tree fits; both paths move the selection sensibly.
+- [ ] Claude Code desktop app: the pane draws, buttons have sensible chrome and every action works by click.
+
+## 2. Files
+
+- [ ] Expand and collapse folders; git status letters and colors appear on files and roll up to folders.
+- [ ] `f` filter: typing goes to the filter input (not the agent prompt), results narrow, `esc` clears; `h` toggles hidden files.
+- [ ] `enter` previews a file: code, Markdown (`m` toggles source), CSV table, binary and too-large notices.
+- [ ] `a` mention: Claude Code inserts the text into the prompt; OpenCode opens an editable dialog and sends it.
+- [ ] `o` opens the file in the editor (`editorCommand` empty and set with `{path}` / `{line}`).
+- [ ] Shimmer while the agent works: ask the agent to read a file (purple), edit one (orange), then commit (green); the row fades over about 2 s and keeps a "touched" marker. `followAgent: on` reveals the touched file.
+
+## 3. Git
+
+- [ ] Not a repository: the Git tab says so and nothing breaks; Files still works.
+- [ ] Repository row shows branch and Sync state; `e` Sync on a diverged branch offers Merge and Rebase.
+- [ ] `s` stage, `u` unstage, `d` discard (asks to confirm; cancel keeps the change), discard all confirms.
+- [ ] `g` ✦ Generate against a configured model (`commitModel` empty and set); the subject can be edited and the generated body is kept in the commit (OpenCode edits the subject only).
+- [ ] Commit, Commit & Push and Amend; smart commit with nothing staged stages everything first.
+- [ ] A sensitive file (`.env`, `id_rsa`) in a smart commit is listed and needs "Commit anyway"; adding another sensitive path after approving asks again for the exact new list.
+- [ ] A repo with a real `pre-commit` hook: on Claude Code the commit goes through the agent's shell tool (permission asked first; the message file is written into `.git` via `$.fs.write`); on OpenCode the hook runs. A failing hook shows its message.
+- [ ] Claude Code: a failing shell-tool step shows a readable toast line.
+
+## 4. Diff view
+
+- [ ] `enter` on a change opens its diff replacing the pane; `n` / `p` next and previous hunk, `j` / `k` next and previous file, `a` ask, `o` open in editor, `esc` (or the header button on Claude Code) goes back.
+- [ ] Long lines wrap or truncate without pushing the hint line off the pane.
+
+## 5. Sizes and themes
+
+- [ ] Live-resize the pane through 120, 80, 40 and 24 columns and through 24, 10, 5 and 2 rows: no line wider than the pane, the selected row stays visible, the hint line adapts.
+- [ ] Dark and light host themes: every state stays readable.
+
+## 6. Release
+
+- [ ] Run `bun run test`, `bun run typecheck`, `bun run check:docs`, `bun run validate` and `bun run test:claude`.
+- [ ] `npm pack --dry-run` lists only `index.ts`, `tui.ts`, `rpc.ts`, `core/`, `hosts/opencode/` (no specs), `LICENSE`, `README.md`, `package.json`.
+- [ ] Run a secret scan over the full history (gitleaks).
+- [ ] Take the README screenshots, one per host, from `acme-app`, with no personal paths or names in the title bar or prompt.

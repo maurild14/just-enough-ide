@@ -26,7 +26,7 @@ Update a row in the same commit that changes the area. `git log` is the history;
 | Search tab and Quick Open | not built | not built | 0.3 | |
 | Symbols tab | not built | not built | 0.4 | OpenCode approximate only until an LSP API exists. |
 | File operations in Files | not built | not built | 0.5 | |
-| Manual QA checklist, README, release pipeline | not built | not built | 0.1 (Task 18) | |
+| Manual QA checklist, README, release pipeline | built | built | 0.1 (Task 18) | `docs/qa.md` (both hosts, Windows plus macOS or Linux), README for 0.1, release-please (`release-please-config.json`, manifest `0.1.0`, `CHANGELOG.md`) and `.github/workflows/release.yml` (npm trusted publishing, SHA-pinned). The checklist has not been run yet; README screenshots are added by the maintainer. |
 
 OpenCode sensitive commit approval is enforced against the server's fresh plan using the exact RPC path list (ADR 0010), with real-git refusal-before-staging and TUI retry/cancel regressions. The subject-only input, responsive guidance and strict diff-kind fixes remain covered.
 
@@ -37,10 +37,10 @@ Add one row per item, newest first, and delete the row when it is fixed.
 | Date | Area | Issue | Severity (low, medium, high) |
 | --- | --- | --- | --- |
 | 2026-10-19 | Git (OpenCode) | Native commit entry edits the subject only; generated bodies and separators are preserved and committed in full. Add a multiline editor if body editing is needed. Review regressions cover long drafts, reapproval races, responsive guidance and strict diff kinds. | low |
-| 2026-10-19 | Git/diff (OpenCode) | Real-host input focus, dialog routing, hook paint and terminal color fidelity still require manual QA in Task 18. Renderer coverage includes native input/mouse, cancels, races, wrapping and all required sizes; the existing server/core real-git specs cover hook and command semantics. | low |
-| 2026-10-19 | Files (OpenCode) | Real-host paint, filter focus routing and terminal color fidelity still require manual QA in Task 18; renderer coverage includes native syntax highlighting, wrapping, scrolling and all preview kinds at 24/40/80/120 columns and short heights. | low |
+| 2026-10-19 | Git/diff (OpenCode) | Real-host input focus, dialog routing, hook paint and terminal color fidelity still require manual QA (`docs/qa.md`). Renderer coverage includes native input/mouse, cancels, races, wrapping and all required sizes; the existing server/core real-git specs cover hook and command semantics. | low |
+| 2026-10-19 | Files (OpenCode) | Real-host paint, filter focus routing and terminal color fidelity still require manual QA (`docs/qa.md`); renderer coverage includes native syntax highlighting, wrapping, scrolling and all preview kinds at 24/40/80/120 columns and short heights. | low |
 | 2026-10-19 | Git (Claude Code) | The host has no file delete, so the hooks path leaves an empty `<gitdir>/JEI_COMMIT_MSG` after a commit (it is overwritten by the next one). | low |
 | 2026-10-19 | Git (Claude Code) | Through the agent's shell, core's git environment (`LC_ALL=C` and the rest) cannot be set: divergence detection may miss on non-English locales in repos with hooks. | low |
-| 2026-10-19 | Git (Claude Code) | A failed shell-tool step is read from the result's `text` (an `Exit code N` line is dropped); the exact text format of a failing Bash or PowerShell call is not in the types, so the toast line is unverified until manual QA (Task 18). | low |
-| 2026-10-19 | Diff (Claude Code) | The diff window counts rows, but `Code` soft-wraps long lines (design.md), so a window of wide lines can draw more rows than the body has; the engine then scrolls the pane. Same as the Files preview. Check in manual QA. | low |
-| 2026-10-19 | Files (Claude Code) | Whether arrow keys raise `ui.scroll` or walk the focus ring in a pane whose tree fits is unverified (the kit never paints); both are handled. Check in manual QA (Task 18). | low |
+| 2026-10-19 | Git (Claude Code) | A failed shell-tool step is read from the result's `text` (an `Exit code N` line is dropped); the exact text format of a failing Bash or PowerShell call is not in the types, so the toast line is unverified until manual QA (`docs/qa.md`). | low |
+| 2026-10-19 | Diff (Claude Code) | The diff window counts rows, but `Code` soft-wraps long lines (design.md), so a window of wide lines can draw more rows than the body has; the engine then scrolls the pane. Same as the Files preview. Check in manual QA (`docs/qa.md`). | low |
+| 2026-10-19 | Files (Claude Code) | Whether arrow keys raise `ui.scroll` or walk the focus ring in a pane whose tree fits is unverified (the kit never paints); both are handled. Check in manual QA (`docs/qa.md`). | low |

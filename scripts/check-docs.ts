@@ -8,9 +8,6 @@ const fail = (message: string) => problems.push(message)
 const read = (rel: string) => readFileSync(join(root, rel), 'utf8')
 const posix = (p: string) => p.replaceAll(String.fromCharCode(92), '/')
 
-// Files that docs may name before they exist. Remove an entry when its task creates the file.
-const PLANNED = new Set(['docs/qa.md', 'CHANGELOG.md'])
-
 // AGENTS.md and CLAUDE.md: identical bytes, at most 150 lines.
 if (!Buffer.from(readFileSync(join(root, 'AGENTS.md'))).equals(readFileSync(join(root, 'CLAUDE.md')))) {
   fail('CLAUDE.md differs from AGENTS.md (run `bun run sync:agents`).')
@@ -29,7 +26,7 @@ const docs = walk('docs')
 
 // Links: relative Markdown links and backticked docs/... or *.md paths, outside fenced code.
 const exists = (path: string, from: string) =>
-  [join(root, path), join(root, dirname(from), path)].some(existsSync) || PLANNED.has(path)
+  [join(root, path), join(root, dirname(from), path)].some(existsSync)
 for (const file of ['AGENTS.md', ...docs]) {
   const text = read(file).replace(/^```[\s\S]*?^```/gm, '')
   const targets = new Set<string>()

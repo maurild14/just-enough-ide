@@ -54,10 +54,11 @@ because the CLI may need a signed-in account in CI: run
 
 ## Running each host from the working copy
 
-Claude Code:
+Claude Code: point it at the checkout. The folder is watched and the mod
+reloads on save; dock the pane with `/tui fullscreen`.
 
 ```
-claude --plugin-dir .
+claude --plugin-dir <path to jei>
 ```
 
 Validate and test the plugin:
@@ -67,5 +68,39 @@ bun run validate
 bun run test:claude
 ```
 
-OpenCode: host-specific steps are added with the OpenCode adapter. Until then,
-`bun run test` and `bun run typecheck` cover that half.
+OpenCode 2.x: add the absolute path of the checkout to `plugins` in
+`opencode.json` (the loader resolves `index`, `tui` and `rpc` in that folder),
+then restart OpenCode:
+
+```json
+{ "plugins": ["/absolute/path/to/jei"] }
+```
+
+`bun run test` and `bun run typecheck` cover that half without a running host.
+
+## Releases
+
+Before a release, run the manual checklist in `docs/qa.md` on both hosts.
+
+Releases are automated by `.github/workflows/release.yml`. On every push to
+`main`, release-please opens or updates a release PR from the Conventional
+Commits since the last release: it bumps `package.json`,
+`.claude-plugin/plugin.json` and `core/version.ts` together and updates
+`CHANGELOG.md`. Merging that
+PR creates the tag and GitHub release, and the `publish` job (environment
+`npm`) runs the tests and publishes `opencode-jei` to npm through npm trusted
+publishing. There is no npm token; provenance is attached automatically.
+
+One-time setup by the maintainer:
+
+- The manifest (`.release-please-manifest.json`) starts at `0.1.0`, so
+  release-please treats 0.1.0 as released and proposes the next version.
+  Publish 0.1.0 once by hand from a clean checkout of the release commit
+  (`npm publish --access public`) and push the tag `v0.1.0` on that commit;
+  npm can only attach a trusted publisher to a package that exists.
+- On npmjs.com, in the `opencode-jei` package settings, add a trusted
+  publisher: GitHub Actions, repository `maurild14/just-enough-ide`, workflow
+  `release.yml`, environment `npm`.
+- In the GitHub repository, create the `npm` environment and allow GitHub
+  Actions to create pull requests (Settings, Actions, General) so
+  release-please can open its PR.
