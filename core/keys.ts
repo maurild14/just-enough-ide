@@ -66,11 +66,13 @@ export const TAB_KEYS: Readonly<Record<'1' | '2' | '3' | '4', Tab>> = {
 const SEP = ' · '
 
 /**
- * One line of `key label` pairs for a view. Works at any width: below 32
- * columns only keys are shown. Items are kept in priority order; one that does
- * not fit is skipped so shorter, lower-priority ones can still fit. `esc` is
- * reserved first because it is the way out. Words are never cut: when nothing
- * fits the result is ''. The result never exceeds `columns`.
+ * One line of hints for a view, at any width; the result never exceeds `columns`
+ * and a word is never cut. Items are in priority order and `esc` (the way out)
+ * is always kept when it fits. The longest priority prefix that fits is shown
+ * with labels (`s stage`, joined by ` · `); the items that still fit after it
+ * are appended as bare keys (`u d c`), skipping any that do not fit. Below 32
+ * columns everything is bare. The number of keys shown never drops as width
+ * grows: a labelled prefix is only used when it costs no keys.
  */
 export function hintLine(view: View, columns: number): string {
   const width = Math.max(0, Math.floor(columns))
@@ -80,19 +82,57 @@ export function hintLine(view: View, columns: number): string {
     if (keyText === '↑↓' && items.some((i) => i.keyText === '↑↓')) continue
     items.push({ keyText, label: k.label })
   }
-  const keysOnly = width < 32
-  const sep = keysOnly ? ' ' : SEP
-  const text = items.map((i) => (keysOnly ? i.keyText : `${i.keyText} ${i.label}`))
-  const keep = new Set<number>()
-  let used = 0
-  const tryAdd = (idx: number) => {
-    const cost = text[idx]!.length + (keep.size > 0 ? sep.length : 0)
-    if (used + cost > width) return
-    keep.add(idx)
-    used += cost
-  }
+  const n = items.length
   const escIdx = items.findIndex((i) => i.keyText === 'esc')
-  if (escIdx >= 0) tryAdd(escIdx)
-  for (let i = 0; i < items.length; i++) if (i !== escIdx) tryAdd(i)
-  return text.filter((_, i) => keep.has(i)).join(sep)
+  const labelled = items.map((i) => `${i.keyText} ${i.label}`)
+  const bareLen = (i: number) => items[i]!.keyText.length + 1 // with its separator space
+
+  // Most bare keys from `idx` that fit in `budget` columns (shortest first).
+  const maxFit = (idx: number[], budget: number): number => {
+    let count = 0
+    let left = budget
+    for (const len of idx.map(bareLen).sort((x, y) => x - y)) {
+      if (len > left) break
+      left -= len
+      count++
+    }
+    return count
+  }
+
+  // Items [0, k) labelled, the rest bare. Null when the labelled prefix does not fit.
+  const layout = (k: number): { text: string; count: number } | null => {
+    if (k === n) {
+      const text = labelled.join(SEP)
+      return text.length <= width ? { text, count: n } : null
+    }
+    const head = labelled.slice(0, k).join(SEP)
+    if (head.length > width) return null
+    const budget = width - (head ? head.length + SEP.length : 0) + 1 // +1: no trailing space
+    const keepEsc = escIdx >= k && bareLen(escIdx) <= budget
+    let left = budget - (keepEsc ? bareLen(escIdx) : 0)
+    const rest: number[] = []
+    for (let i = k; i < n; i++) if (i !== escIdx) rest.push(i)
+    let need = maxFit(rest, left)
+    const chosen: number[] = []
+    rest.forEach((i, pos) => {
+      if (need === 0 || bareLen(i) > left) return
+      // take it only if the target count is still reachable afterwards
+      if (1 + maxFit(rest.slice(pos + 1), left - bareLen(i)) >= need) {
+        chosen.push(i)
+        left -= bareLen(i)
+        need--
+      }
+    })
+    const shown = keepEsc ? [...chosen, escIdx] : chosen
+    const bare = shown.map((i) => items[i]!.keyText).join(' ')
+    return { text: head && bare ? head + SEP + bare : head + bare, count: k + shown.length }
+  }
+
+  const options: { text: string; count: number }[] = []
+  for (let k = 0; k <= (width >= 32 ? n : 0); k++) {
+    const r = layout(k)
+    if (r) options.push(r)
+  }
+  const best = Math.max(...options.map((o) => o.count))
+  return options.filter((o) => o.count === best).pop()?.text ?? ''
 }

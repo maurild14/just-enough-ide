@@ -50,3 +50,12 @@ test('windows-style roots', () => {
 test('parentDirs ignores dot segments', () => {
   expect(parentDirs('./a/./b.ts')).toEqual(['a'])
 })
+
+test('absolute and relative roots never match each other', () => {
+  expect(isInside('/r', 'r/a')).toBe(false)
+  expect(isInside('/r', 'a/b')).toBe(false)
+  expect(isInside('', '/x')).toBe(false)
+  expect(isInside('', '/etc/passwd')).toBe(false)
+  expect(isInside('//srv/share', 'srv/share/x')).toBe(false)
+  expect(isInside('//srv/share', '//srv/share/x')).toBe(true)
+})

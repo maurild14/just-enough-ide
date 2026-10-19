@@ -49,27 +49,38 @@ test('hint line fits every width and has no help key', () => {
     }
 })
 
-test('hint line at 24, 40, 80, 120 and 10', () => {
-  expect(hintLine('git', 40)).toBe('↑↓ move · enter open · e sync · esc back')
+test('hint line at 24, 40, 80 and 10', () => {
+  expect(hintLine('git', 40)).toBe('↑↓ move · enter open · s u d c g e esc')
   expect(hintLine('git', 24)).toBe('↑↓ enter s u d c g e esc')
   expect(hintLine('files', 24)).toBe('↑↓ enter a o f h esc')
-  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · a mention · o open in editor · f filter · esc back')
+  expect(hintLine('files', 40)).toBe('↑↓ move · enter open · a o f h esc')
+  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · a mention · o open in editor · f filter · h hidden · esc')
   expect(hintLine('files', 120)).toBe('↑↓ move · enter open · a mention · o open in editor · f filter · h hidden · esc back')
   expect(hintLine('git.diff', 10)).toBe('↑↓ n p esc')
   expect(hintLine('git', 10)).toBe('↑↓ s u esc')
 })
 
-test('hint line keeps esc, never cuts a word, and never exceeds the width', () => {
+test('hint line at every width: fits, whole words, keys never drop, esc kept', () => {
   for (const view of views) {
-    expect(hintLine(view, 3)).toBe('esc')
-    expect(hintLine(view, 40)).toContain('esc')
+    const names = new Set(KEYS[view].map((k) => (k.key === 'up' || k.key === 'down' ? '↑↓' : k.key)))
+    const words = new Set(KEYS[view].flatMap((k) => k.label.split(' ')))
+    let prev = 0
+    for (let w = 0; w <= 140; w++) {
+      const line = hintLine(view, w)
+      expect(line.length).toBeLessThanOrEqual(w)
+      const tokens = line.split(/ · | /).filter(Boolean)
+      for (const t of tokens) expect(names.has(t) || words.has(t)).toBe(true)
+      const count = tokens.filter((t) => names.has(t)).length
+      expect(count).toBeGreaterThanOrEqual(prev)
+      prev = count
+      if (w >= 3 && names.has('esc')) expect(tokens).toContain('esc')
+    }
   }
-  expect(hintLine('git', 2)).toBe('↑↓')
-  expect(hintLine('git', 1)).toBe('s')
-  expect(hintLine('files.preview', 1)).toBe('a')
-  expect(hintLine('git', 0)).toBe('')
 })
 
-test('a long item does not block shorter lower-priority ones', () => {
-  expect(hintLine('git', 40)).toContain('e sync')
+test('hint line edge widths', () => {
+  expect(hintLine('git', 3)).toBe('esc')
+  expect(hintLine('git', 2)).toBe('↑↓')
+  expect(hintLine('git', 1)).toBe('s')
+  expect(hintLine('git', 0)).toBe('')
 })

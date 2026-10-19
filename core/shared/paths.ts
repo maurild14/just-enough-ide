@@ -51,7 +51,7 @@ function insideCount(root: string, path: string): number {
   const p = normalize(path)
   const fold = foldsCase(r) || foldsCase(p)
   const key = (s: string) => (fold ? s.toLowerCase() : s)
-  const bare = (s: string) => key(s.replace(/\/$/, ''))
+  const bare = (s: string) => key(s.replace(/^([A-Za-z]:)\/$/, '$1'))
   if (bare(r.prefix) !== bare(p.prefix)) return -1
   if (r.segs.length > p.segs.length) return -1
   // Leading `..` kept beyond the root means the path escapes it.
