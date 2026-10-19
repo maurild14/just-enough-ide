@@ -106,7 +106,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 - Both hosts build the tab bar with `core/shared/tabs.ts` (`tabBar`): when a form does not fit, the gap shrinks to 1, then 0, before the labels shorten.
 - Both hosts build these strings with `core/shared/fit.ts` (`cellWidth`, `fitEnd`, `fitPath`, `padEnd`), never with string length. Every result is at most the requested width in cells.
 
-**Hint line.** Items are `key label` pairs in priority order, separated by ` · `. Drop the lowest-priority items from the end until the line fits; the hint never ends with a catch-all item. Below 32 columns the hint shows only keys (`↑↓ enter a`). The full key list for every view is in the PRD and `core/keys.ts`.
+**Hint line.** Items are `key label` pairs in priority order, separated by ` · `. On Claude Code a letter key is a plain hotkey `Button`, drawn `a: mention` (bare `a: `), and Esc is not listed because the host keeps it (back to the prompt). Drop the lowest-priority items from the end until the line fits; the hint never ends with a catch-all item. Below 32 columns the hint shows only keys (`↑↓ enter a`). The full key list for every view is in the PRD and `core/keys.ts`.
 
 **Hard rules.**
 - No list or chrome row ever wraps, and no line is wider than the pane.
@@ -137,6 +137,8 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 | Files | Read failure | `Can't read this folder.` |
 | Files | Preview too large | `Too large to preview (3.4 MB).` |
 | Files | Binary | `Binary file. Press o to open it.` |
+| Files | Empty file | `This file is empty.` |
+| Files | Image the surface cannot draw | `No image preview here. Press o to open it.` |
 | Search | Idle | `Type to search the project.` |
 | Search | No results | `No results for "getUser".` |
 | Search | Capped | `Showing the first 2,000 matches.` (`warning`) |
@@ -158,6 +160,7 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 - Touching the row again restarts the fade. Only visible rows animate, and rows that scroll off show their end state when they return.
 - On the selected row, only the gutter marker shimmers, so the selection stays readable.
 - `activity: none`, or the host's reduced-motion setting, skips the fade and shows the marker straight away.
+- Claude Code paints with theme keys only, which cannot be mixed, so it always uses the 3-step form (`shimmerPhase` in `core/activity/log.ts`), redrawn every 250 ms only while a row glows.
 - There is no other animation: no spinners, no sliding, no blinking cursor except the host's own.
 
 ## 10. Test checklist

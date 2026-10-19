@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { ActivityLog, GLOW_MS, allows } from './log.ts'
+import { ActivityLog, GLOW_MS, allows, shimmerPhase } from './log.ts'
 
 test('glow fades linearly', () => {
   const log = new ActivityLog()
@@ -41,4 +41,16 @@ test('allows', () => {
   expect(allows('writes', 'git')).toBe(true)
   expect(allows('none', 'git')).toBe(false)
   expect(allows('none', 'write')).toBe(false)
+})
+
+test('shimmerPhase follows the 16-color steps of docs/design.md', () => {
+  // bold 0-700 ms, color 700-1400 ms, dim 1400-2000 ms, then none
+  const at = (ms: number) => shimmerPhase(Math.max(0, 1 - ms / GLOW_MS))
+  expect(at(0)).toBe('bold')
+  expect(at(699)).toBe('bold')
+  expect(at(700)).toBe('color')
+  expect(at(1399)).toBe('color')
+  expect(at(1400)).toBe('dim')
+  expect(at(1999)).toBe('dim')
+  expect(at(2000)).toBe('none')
 })

@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 import { cellWidth } from '../../core/shared/fit.ts'
+import { lineWidths, type Node } from './measure.ts'
 
 const SURFACES = ['terminal', 'desktop'] as const
 const WIDTHS = [24, 40, 80, 120] as const
@@ -19,36 +20,6 @@ function paneProps(bodyColumns: number, bodyRows = 24) {
     scroll: { offset: 0, bodyRows },
     view: {},
   }
-}
-
-type Node = { type?: string; props?: Record<string, unknown>; children?: unknown[] } | string
-
-function textOf(node: unknown): string {
-  if (typeof node === 'string') return node
-  if (node && typeof node === 'object' && 'children' in node) {
-    return ((node as { children?: unknown[] }).children ?? []).map(textOf).join('')
-  }
-  return ''
-}
-
-/**
- * Display width of each terminal line the tree draws: a column Box stacks its
- * children, a row Box joins them with its `gap`, a Button is `[ label ]`.
- */
-function lineWidths(node: Node): number[] {
-  if (typeof node === 'string') return [cellWidth(node)]
-  const kids = (node.children ?? []) as Node[]
-  if (node.type === 'Text') return [cellWidth(textOf(node))]
-  if (node.type === 'Button') return [cellWidth(textOf(node) || String(node.props?.label ?? '')) + 4]
-  if (node.type === 'Box') {
-    if (node.props?.flexDirection === 'row') {
-      const gap = Number(node.props?.gap ?? 0)
-      const parts = kids.map((k) => Math.max(0, ...lineWidths(k)))
-      return [parts.reduce((a, b) => a + b, 0) + gap * Math.max(0, parts.length - 1)]
-    }
-    return kids.flatMap(lineWidths)
-  }
-  return []
 }
 
 test('pane shell: tabs, headers, placeholders and hint on every surface', async ($) => {

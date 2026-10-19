@@ -1,6 +1,6 @@
 // Claude Code contract for JEI: the session state the pane draws from
 // ($.state, plugin 'jei'). Self-contained: no imports. The shapes mirror
-// core's types (core/pane.ts, core/host.ts, core/git/*); the Claude Code
+// core's types (core/pane.ts, core/activity/*, core/git/*); the Claude Code
 // adapter checks at compile time that they stay identical
 // (hosts/claude-code/state.ts). Every value is JSON data.
 
@@ -18,17 +18,20 @@ export type JeiPane = {
 /** core/activity/log.ts ActivityLog JSON: rel path to its latest touch. */
 export type JeiActivity = Record<string, { kind: 'read' | 'write' | 'git'; at: number }>
 
-/** core/host.ts DirEntry. */
-export type JeiDirEntry = { name: string; kind: 'file' | 'dir' | 'other'; size: number }
-
-/** The Files tab's tree: listings keyed by folder rel ('' is the root). */
+/**
+ * The Files tab's tree as the person left it. Folder listings are not state:
+ * the adapter reads them through a cache refreshed on file events.
+ */
 export type JeiTree = {
   expanded: string[]
-  listings: Record<string, JeiDirEntry[]>
-  ignored: string[]
   showHidden: boolean
+  /** The filter Input is open (`f`). */
+  filtering: boolean
   filter: string
 }
+
+/** The Files preview: markdown source shown (`m`) and the first line in view. */
+export type JeiPreview = { source: boolean; top: number }
 
 export type JeiFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted' | 'ignored'
 export type JeiCounts = Record<string, { added: number | null; removed: number | null }>
@@ -55,6 +58,9 @@ declare module 'claude-code' {
       activity: JeiActivity
       git: JeiGit | null
       tree: JeiTree
+      preview: JeiPreview
+      /** Bumped by the shimmer clock and by refreshed caches: a redraw. */
+      tick: number
     }
   }
 }

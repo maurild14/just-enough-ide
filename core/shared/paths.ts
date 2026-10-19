@@ -94,3 +94,14 @@ export function projectRel(root: string, path: string): string | null {
   if (!isInside(root, full)) return null
   return relativeTo(root, full)
 }
+
+/**
+ * The platform a path's shape points to, for hosts that do not say: a drive
+ * letter or a UNC prefix is Windows, `/Users/` is macOS, anything else Linux.
+ */
+export function platformOf(path: string): 'win32' | 'darwin' | 'linux' {
+  const p = toPosix(path)
+  if (/^[A-Za-z]:/.test(p) || p.startsWith('//')) return 'win32'
+  if (p.startsWith('/Users/')) return 'darwin'
+  return 'linux'
+}

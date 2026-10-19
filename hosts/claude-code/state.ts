@@ -1,11 +1,11 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
-import type { DirEntry } from '../../core/host.ts'
 import type { Tab, View } from '../../core/keys.ts'
 import { initialPane, type PaneState } from '../../core/pane.ts'
 import type { ActivityKind } from '../../core/activity/classify.ts'
 import type { GitSnapshot } from '../../core/git/service.ts'
-import type { JeiActivity, JeiDirEntry, JeiGit, JeiPane, JeiTab, JeiTree, JeiView } from '../../types/index.d.ts'
+import type { StatusEntry } from '../../core/git/status.ts'
+import type { JeiActivity, JeiGit, JeiPane, JeiPreview, JeiTab, JeiTree, JeiView } from '../../types/index.d.ts'
 
 /** The pane's id: `$.ui.open({ id })` and the `requestId` its `ui.render` reads. */
 export const PANE_ID = 'jei'
@@ -20,11 +20,12 @@ export const activity = atom({ plugin: 'jei', key: 'activity' } as const, {})
 export const git = atom({ plugin: 'jei', key: 'git' } as const, null)
 export const tree = atom({ plugin: 'jei', key: 'tree' } as const, {
   expanded: [],
-  listings: {},
-  ignored: [],
   showHidden: false,
+  filtering: false,
   filter: '',
 } satisfies JeiTree)
+export const preview = atom({ plugin: 'jei', key: 'preview' } as const, { source: false, top: 0 } satisfies JeiPreview)
+export const tick = atom({ plugin: 'jei', key: 'tick' } as const, 0)
 
 type StateHost = Pick<EngineInterface, 'state'>
 
@@ -44,6 +45,34 @@ export function updateTree($: StateHost, fn: (t: JeiTree) => JeiTree): Promise<J
 }
 export function setCwd($: StateHost, dir: string): Promise<string> {
   return update($, cwd, () => dir)
+}
+export function readTree($: StateHost): Promise<JeiTree> {
+  return read($, tree)
+}
+export function readActivity($: StateHost): Promise<JeiActivity> {
+  return read($, activity)
+}
+export function updateActivity($: StateHost, fn: (a: JeiActivity) => JeiActivity): Promise<JeiActivity> {
+  return update($, activity, fn)
+}
+export function readGit($: StateHost): Promise<JeiGit | null> {
+  return read($, git)
+}
+export function setGit($: StateHost, value: JeiGit | null): Promise<JeiGit | null> {
+  return update($, git, () => value)
+}
+export function readPreview($: StateHost): Promise<JeiPreview> {
+  return read($, preview)
+}
+export function updatePreview($: StateHost, fn: (p: JeiPreview) => JeiPreview): Promise<JeiPreview> {
+  return update($, preview, fn)
+}
+/** Read while drawing so a bump redraws: the shimmer clock and refreshed caches. */
+export function readTick($: StateHost): Promise<number> {
+  return read($, tick)
+}
+export function bumpTick($: StateHost): Promise<number> {
+  return update($, tick, (n) => (n + 1) % 1_000_000)
 }
 
 /**
@@ -76,7 +105,7 @@ const drift: [
   Same<JeiPane, PaneState>,
   Same<JeiTab, Tab>,
   Same<JeiView, View>,
-  Same<JeiDirEntry, DirEntry>,
+  Same<Extract<JeiGit, { root: string }>['status']['entries'][number], StatusEntry>,
   Same<JeiActivity[string]['kind'], ActivityKind>,
 ] = [true, true, true, true, true]
 void drift

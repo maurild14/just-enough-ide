@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { isInside, joinPath, parentDirs, projectRel, relativeTo, toPosix } from './paths.ts'
+import { isInside, joinPath, parentDirs, platformOf, projectRel, relativeTo, toPosix } from './paths.ts'
 
 test('toPosix', () => expect(toPosix('a\\b\\c')).toBe('a/b/c'))
 
@@ -71,4 +71,13 @@ test('projectRel keeps typed paths inside the root', () => {
   expect(projectRel('/work/acme-app', '../other/x.ts')).toBeNull()
   expect(projectRel('/work/acme-app', 'src/../../x.ts')).toBeNull()
   expect(projectRel('/work/acme-app', 'D:/work/acme-app/x.ts')).toBeNull()
+})
+
+test('platformOf reads the path shape', () => {
+  expect(platformOf('C:\\work\\acme-app')).toBe('win32')
+  expect(platformOf('c:/work/acme-app')).toBe('win32')
+  expect(platformOf('\\\\server\\share\\acme-app')).toBe('win32')
+  expect(platformOf('/Users/ana/acme-app')).toBe('darwin')
+  expect(platformOf('/home/ana/acme-app')).toBe('linux')
+  expect(platformOf('')).toBe('linux')
 })

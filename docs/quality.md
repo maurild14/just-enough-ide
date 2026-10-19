@@ -8,6 +8,8 @@ Update a row in the same commit that changes the area. `git log` is the history;
 
 | Area | Claude Code | OpenCode | Planned for | Notes |
 | --- | --- | --- | --- | --- |
+| 2026-10-19 | Files (Claude Code) | Letter keys (`a o f h m`) are hotkeys of the hint line's Buttons, so they are gone when the hint hides (below 10 rows); Esc is the host's (back to the prompt), so preview goes back with the header Button or `1`. Whether arrows raise `ui.scroll` or walk the focus ring in a pane whose tree fits needs manual QA (both are handled). | medium |
+| 2026-10-19 | Files (Claude Code) | `classic.FileChanged` only fires for `watchPaths` a `classic.SessionStart` hook returns; JEI returns none yet, so outside agent tool calls the tree refreshes only on the next tool write or cwd change. | low |
 | Repo scaffolding, CI scripts | built | built | 0.1 (Tasks 1, 2) | Bootstrap done; CI workflow, Dependabot, issue forms and PR template added (Claude Code CI job non-blocking). |
 | `core/` foundations (Host, options, keys, paths, argv, fuzzy) | built | built | 0.1 (Task 3) | Shared by both hosts. Keys cover Files, Git and diff; Search and Symbols carry navigation only. |
 | Git runner, status parser | built | built | 0.1 (Task 4) | `core/git/run.ts` (runner, `GitError`), `core/git/status.ts` (porcelain v2 parser, folder roll-up, `isRepo`). Fixtures in `test/fixtures/git/`. |
@@ -16,7 +18,7 @@ Update a row in the same commit that changes the area. `git log` is the history;
 | Activity, refresh guard, pane state, `/jei` argument | built | built | 0.1 (Task 8) | `core/activity/*`, `core/latest.ts`, `core/pane.ts`, `core/command.ts`. Host wiring (hooks, timers, `relativeTo` on raw paths) comes with the adapters. |
 | Core services: Files and Git over a Host | built | built | 0.1 (Task 9) | `core/files/service.ts`, `core/git/service.ts`, spec-only `test/fake-host.ts` (real git in temp repos, including a bare-remote divergence). Adapters call these and own refresh guards. |
 | Pane shell, tabs, hint line, `/jei` | built | not built | 0.1 (Tasks 10, 15) | Claude Code: `hooks/register.tsx`, `hosts/claude-code/{host.ts,state.ts,pane.tsx}`, `types/index.d.ts`. Files and Git bodies are header rows until Tasks 11 and 12; Search and Symbols say "Coming in a later version." Tab-bar breakpoints are in `core/shared/tabs.ts` (`tabBar`, chrome width a parameter) for both hosts. |
-| Files tab (tree, status, shimmer, follow, preview, mention, open) | not built | not built | 0.1 (Tasks 11, 16) | |
+| Files tab (tree, status, shimmer, follow, preview, mention, open) | built | not built | 0.1 (Tasks 11, 16) | Claude Code: `hosts/claude-code/{files.tsx,activity.ts,theme.ts}`. Listings, the file list and previews are read-through caches in the adapter, dropped by tool writes and `classic.FileChanged` (debounced 300 ms). Shimmer uses the 16-color 3-step form (theme keys cannot be mixed). Letter keys live on the hint line's Buttons, so they stop working when the hint hides below 10 rows. `FileChanged` needs `watchPaths`, which JEI does not return yet. |
 | Git tab: repository row, Changes, commit, generated message | not built | not built | 0.1 (Tasks 12, 17) | |
 | Diff view | not built | not built | 0.1 (Tasks 12, 17) | |
 | Git tab: Graph, commit actions, agent markers | not built | not built | 0.2 | |

@@ -52,3 +52,18 @@ export function allows(setting: Options['activity'], kind: ActivityKind): boolea
   if (kind === 'git' || setting === 'reads and writes') return true
   return setting === 'writes' ? kind === 'write' : kind === 'read'
 }
+
+export type ShimmerPhase = 'bold' | 'color' | 'dim' | 'none'
+
+/**
+ * The shimmer step for a glow (1 at the touch, 0 after GLOW_MS), in the
+ * 16-color form of docs/design.md section 9: bold activity color for the first
+ * 700 ms, the activity color to 1400 ms, the dim activity color to 2000 ms.
+ */
+export function shimmerPhase(glow: number): ShimmerPhase {
+  if (!(glow > 0)) return 'none'
+  const elapsed = (1 - Math.min(1, glow)) * GLOW_MS
+  if (elapsed < 700 - 1e-6) return 'bold'
+  if (elapsed < 1400 - 1e-6) return 'color'
+  return 'dim'
+}

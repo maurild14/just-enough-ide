@@ -5,6 +5,8 @@ import { parseOptions } from '../core/options.ts'
 import { reveal } from '../core/files/tree.ts'
 import { projectRel } from '../core/shared/paths.ts'
 import { TAB_NAMES } from '../core/shared/tabs.ts'
+import { refreshGit, registerActivity } from '../hosts/claude-code/activity.ts'
+import { focusFiles, scrollFiles } from '../hosts/claude-code/files.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
 import { initPane, PANE_ID, readCwd, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
 
@@ -35,6 +37,7 @@ export const register: Register = (on, raw) => {
     })
     await setCwd($, e.cwd)
     autoOpenArmed = (await initPane($, options.defaultTab)) && options.startOpen
+    void refreshGit($).catch(() => undefined)
     return next(e)
   })
 
@@ -80,9 +83,24 @@ export const register: Register = (on, raw) => {
   // Observes only: a failure must never hold up the cd, so the catch passes it on.
   on('classic.CwdChanged', async ($, e, next) => {
     await setCwd($, e.new_cwd)
+    await refreshGit($).catch(() => undefined)
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // The matcher spells PANE_ID as a literal so the validator can read it.
-  on('ui.render', { component: 'Pane', requestId: 'jei' }, ($, e) => renderPane($, e))
+  // Tool calls and file events: the shimmer, follow-the-agent and refreshes.
+  registerActivity(on, options)
+
+  // The matchers spell PANE_ID as a literal so the validator can read it.
+  on('ui.render', { component: 'Pane', requestId: 'jei' }, ($, e) => renderPane($, e, options))
+
+  // The ring landing on a Files row selects it; the ring always moves on.
+  on('ui.focus', { requestId: 'jei' }, async ($, e, next) => {
+    await focusFiles($, e.element)
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // Files draws its own window (pinned header and hint), so it takes the scroll.
+  on('ui.scroll', { requestId: 'jei' }, async ($, e, next) => ((await scrollFiles($, e.by)) ? {} : next(e))).catch(
+    ($, e, next) => next(e),
+  )
 }

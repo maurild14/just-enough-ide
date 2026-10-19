@@ -123,9 +123,9 @@ core/
   host.ts  keys.ts  options.ts  latest.ts  pane.ts
   shared/{paths.ts, fuzzy.ts, argv.ts, fit.ts, tabs.ts}
   git/{run.ts, status.ts, diff.ts, commands.ts, hooks.ts, message.ts, sensitive.ts, sync.ts, service.ts}
-  activity/{classify.ts, shell.ts, log.ts}
-  files/{tree.ts, preview.ts, csv.ts, open.ts, icons.ts, mention.ts, service.ts}
-hosts/claude-code/    host.ts, state.ts, pane.tsx, files.tsx, git.tsx, diff.tsx, activity.ts, *.test.tsx
+  activity/{classify.ts, shell.ts, log.ts (ActivityLog, allows, shimmerPhase)}
+  files/{tree.ts, preview.ts, csv.ts (parseDelimited, fitTable), open.ts, icons.ts, mention.ts, service.ts}
+hosts/claude-code/    host.ts, state.ts, theme.ts, pane.tsx, files.tsx, git.tsx, diff.tsx, activity.ts, *.test.tsx, measure.ts (test helper)
 hosts/opencode/       host.ts, rpc.ts, server.ts, tui.tsx, pane.tsx, files.tsx, git.tsx, diff.tsx, *.spec.ts(x)
 types/index.d.ts      Claude Code PluginState contract
 test/fake-host.ts     spec-only Host over a temp dir and real git
