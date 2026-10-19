@@ -86,6 +86,10 @@ export function readGitUi($: StateHost): Promise<JeiGitUi> {
 export function updateGitUi($: StateHost, fn: (g: JeiGitUi) => JeiGitUi): Promise<JeiGitUi> {
   return update($, gitUi, fn)
 }
+/** A new session has no operation running and no open question (a reload may have cut one short). */
+export function resetGitUi($: StateHost): Promise<JeiGitUi> {
+  return update($, gitUi, (g) => ({ ...g, busy: null, ask: null }))
+}
 export function bumpTick($: StateHost): Promise<number> {
   return update($, tick, (n) => (n + 1) % 1_000_000)
 }

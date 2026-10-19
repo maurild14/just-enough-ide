@@ -26,6 +26,10 @@ type Repo = {
   pushFails: string | null
   /** Lines in the working diff of src/api/user.ts. */
   diffLines: number
+  /** The session's shell tool. */
+  shell: 'Bash' | 'PowerShell'
+  /** The shell tool's answer to a call: done, or moved to the background. */
+  background: boolean
 }
 
 const STAGED_INDEX = `1 M. N... 100644 100644 100644 ${H} ${H} src/index.ts`
@@ -44,6 +48,8 @@ function repo(over: Partial<Repo> = {}): Repo {
     diverged: false,
     pushFails: null,
     diffLines: 0,
+    shell: 'Bash',
+    background: false,
     ...over,
   }
 }
@@ -66,11 +72,11 @@ function userDiff(r: Repo): string {
   return body.join('\n') + '\n'
 }
 
-type Calls = { runs: string[][]; toasts: string[]; fills: { text: string; mode?: string }[]; checks: unknown[]; tools: Record<string, unknown>[]; prompts: string[] }
+type Calls = { writes: { path: string; text: string }[]; runs: string[][]; toasts: string[]; fills: { text: string; mode?: string }[]; checks: unknown[]; tools: Record<string, unknown>[]; prompts: string[] }
 
 /** Answers git, the files and the session beneath the plugin; `r` may be changed mid-test. */
 async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd: string }) => Promise<unknown> } }, on: On, r: Repo) {
-  const calls: Calls = { runs: [], toasts: [], fills: [], checks: [], tools: [], prompts: [] }
+  const calls: Calls = { writes: [], runs: [], toasts: [], fills: [], checks: [], tools: [], prompts: [] }
   const res = (exitCode: number, stdout: string, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
@@ -98,13 +104,20 @@ async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd:
     calls.prompts.push(String((e as { prompt?: unknown }).prompt ?? ''))
     return { value: { isAnswered: true, text: 'feat(api): return the user name', usage: {} } as never }
   })
-  on('tool.list', () => ({ value: [{ name: 'Read', description: 'Read a file', mcp: false }, { name: 'Bash', description: 'Run a command', mcp: false }] }))
+  on('fs.write', (_$, e) => {
+    calls.writes.push({ path: posix(e.path), text: e.text })
+    return { value: undefined }
+  })
+  on('tool.list', () => ({ value: [{ name: 'Read', description: 'Read a file', mcp: false }, { name: r.shell, description: 'Run a command', mcp: false }] }))
   on('tool.check', (_$, e) => {
     calls.checks.push(e)
     return { decision: 'allow' as const }
   })
   on('tool.call', (_$, e) => {
     calls.tools.push({ ...e })
+    if (r.background) {
+      return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b1', timedOutAfterMs: 600000 } as never, text: 'moved to the background' }
+    }
     return { result: { stdout: '[main 1234567] feat\n', stderr: '', interrupted: false } as never, text: 'ok' }
   })
   on('prompt.fill', (_$, e) => {
@@ -334,9 +347,89 @@ test('with hooks the commit goes through the agent shell after a check, and the 
   expect(calls.tools).toHaveLength(1)
   const call = calls.tools[0]!
   expect(call.tool).toBe('Bash')
-  expect(call.command).toBe(`git -C ${ROOT} commit -m 'fix: it'\\''s the name'`)
+  expect(call.command).toBe(`git --no-optional-locks -c core.quotepath=off -C ${ROOT} commit -F ${ROOT}/.git/JEI_COMMIT_MSG`)
+  expect(call.timeout).toBe(600000)
   expect((calls.checks[0] as { input: { command: string } }).input.command).toBe(call.command)
+  // The message goes to a file in the git dir, never into the shell line; the file is emptied after.
+  expect(calls.writes[0]).toEqual({ path: `${ROOT}/.git/JEI_COMMIT_MSG`, text: "fix: it's the name\n" })
+  expect(calls.writes.at(-1)).toEqual({ path: `${ROOT}/.git/JEI_COMMIT_MSG`, text: '' })
   expect(gitRuns(calls, 'commit')).toHaveLength(0)
+  await ui.unmount()
+})
+
+test('hostile messages never reach the shell line, on Bash or PowerShell', async ($, on) => {
+  const r = repo({ hooks: true })
+  const calls = await world($, on, r)
+  const hostile = [
+    'a b" --amend --no-verify -a -m "c',
+    "it's `whoami` $(rm -rf ~) $HOME",
+    'line one\nline two; git push --force',
+    '\u2018quoted\u2019 & | > <',
+  ]
+  for (const shell of ['Bash', 'PowerShell'] as const) {
+    r.shell = shell
+    for (const message of hostile) {
+      const ui = await gitPane($, 'terminal')
+      await ui.input({ key: 'message', text: message, kind: 'submit' })
+      const call = calls.tools.at(-1)!
+      expect(call.tool).toBe(shell)
+      expect(String(call.command)).toBe(`git --no-optional-locks -c core.quotepath=off -C ${ROOT} commit -F ${ROOT}/.git/JEI_COMMIT_MSG`)
+      expect(calls.writes.filter((w) => w.text !== '').at(-1)?.text).toBe(`${message.trim()}\n`)
+      await ui.unmount()
+    }
+  }
+})
+
+test('a commit the shell moved to the background keeps the message and says so', async ($, on) => {
+  const calls = await world($, on, repo({ hooks: true, background: true }))
+  const ui = await gitPane($, 'terminal')
+  await ui.input({ key: 'message', text: 'feat: slow hooks', kind: 'submit' })
+  expect(calls.toasts.at(-1)).toBe('Commit is still running in the background; check the terminal.')
+  expect((await ui.find({ type: 'Input', key: 'message' }))?.props.value).toBe('feat: slow hooks')
+  // The file is left for the running commit.
+  expect(calls.writes.at(-1)?.text).toBe('feat: slow hooks\n')
+  await ui.input({ key: 'message', text: '', kind: 'change' })
+  await ui.unmount()
+})
+
+test('the sensitive check reads a fresh snapshot, and Commit anyway covers only what was shown', async ($, on) => {
+  const r = repo({ records: [CHANGED_USER] })
+  const calls = await world($, on, r)
+  const ui = await gitPane($, 'terminal')
+  await ui.input({ key: 'message', text: 'feat: config', kind: 'change' })
+  r.records = [CHANGED_USER, UNTRACKED_ENV] // changed on disk, not yet refreshed
+  await ui.press({ key: 'commit' })
+  expect(await ui.find({ type: 'Text', text: /These files look sensitive:/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /\.env/ })).toBeDefined()
+  expect(gitRuns(calls, 'commit')).toHaveLength(0)
+  r.records = [CHANGED_USER, UNTRACKED_ENV, '? id_rsa'] // another one appears before the answer
+  await ui.press({ key: 'sensitive-commit' })
+  expect(gitRuns(calls, 'commit')).toHaveLength(0)
+  expect(await ui.find({ type: 'Text', text: /id_rsa/ })).toBeDefined()
+  await ui.press({ key: 'sensitive-commit' })
+  expect(gitRuns(calls, 'commit', 'feat: config')).toHaveLength(1)
+  await ui.unmount()
+})
+
+test('the sensitive question lists every file, wrapped to the width', async ($, on) => {
+  const names = ['.env', '.env.local', 'secrets/server.pem', 'keys/deploy.key', 'id_rsa', 'config/credentials.json']
+  await world($, on, repo({ records: names.map((n) => `? ${n}`) }))
+  const ui = await gitPane($, 'terminal', 40)
+  await ui.input({ key: 'message', text: 'feat: keys', kind: 'submit' })
+  const shown = (await ui.findAll({ type: 'Text' })).map((t) => t.text).join('\n')
+  for (const n of names) expect(shown).toContain(n)
+  for (const w of lineWidths((await ui.drawn()) as Node)) expect(w).toBeLessThanOrEqual(40)
+  await ui.press({ key: 'sensitive-cancel' })
+  await ui.input({ key: 'message', text: '', kind: 'change' })
+  await ui.unmount()
+})
+
+test('Discard all says how many untracked files it deletes', async ($, on) => {
+  await world($, on, repo({ records: [CHANGED_USER, UNTRACKED_ENV] }))
+  const ui = await gitPane($, 'terminal')
+  await ui.press({ key: 'discard-all' })
+  expect(await ui.find({ type: 'Text', text: /Discard all changes \(2 files, 1 untracked will be deleted\)\?/ })).toBeDefined()
+  await ui.press({ key: 'confirm-cancel' })
   await ui.unmount()
 })
 

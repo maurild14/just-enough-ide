@@ -1,5 +1,5 @@
 import type { EngineInterface, RenderElement } from 'claude-code'
-import { commitPlan, discard, generateMessage, initRepo, runSteps, stage, sync, unstage } from '../../core/git/service.ts'
+import { commitPlan, discard, generateMessage, initRepo, runSteps, snapshot, stage, sync, unstage } from '../../core/git/service.ts'
 import type { GitSnapshot } from '../../core/git/service.ts'
 import { GitError, git, gitArgv } from '../../core/git/run.ts'
 import type { FileStatus, StatusEntry } from '../../core/git/status.ts'
@@ -11,7 +11,7 @@ import { toPosix } from '../../core/shared/paths.ts'
 import type { JeiCommitMode, JeiGit, JeiGitUi } from '../../types/index.d.ts'
 import { refreshAfterChange, refreshGit } from './activity.ts'
 import { firstLine, hostFor, reason, windowTop, type FilesAction, type FilesFrame, type FilesView, type PaneRender } from './files.tsx'
-import { readCwd, readGit, readGitUi, readPane, readTick, updateGitUi, updatePane } from './state.ts'
+import { gitState, readCwd, readGit, readGitUi, readPane, readTick, setGit, updateGitUi, updatePane } from './state.ts'
 import { color, statusLook } from './theme.ts'
 
 export type Repo = Extract<JeiGit, { root: string }>
@@ -70,16 +70,12 @@ export function groupsOf(g: Repo): Record<Group, FileRow[]> {
 // ---------------------------------------------------------------------------
 // Running git where hooks fire.
 
-let shellTool: 'Bash' | 'PowerShell' | null = null
-
-/** The session's shell tool, read from the tool list once: Bash, else PowerShell. */
+/** The session's shell tool, from the tool list of this operation: Bash when present, else PowerShell. */
 async function agentShell($: EngineInterface): Promise<'Bash' | 'PowerShell'> {
-  if (shellTool !== null) return shellTool
   const names = new Set((await $.tool.list()).map((t) => t.name))
-  if (names.has('Bash')) shellTool = 'Bash'
-  else if (names.has('PowerShell')) shellTool = 'PowerShell'
-  else throw new Error('Claude has no shell tool in this session, so git hooks cannot run')
-  return shellTool
+  if (names.has('Bash')) return 'Bash'
+  if (names.has('PowerShell')) return 'PowerShell'
+  throw new Error('Claude has no shell tool in this session, so git hooks cannot run')
 }
 
 /** A shell tool's error text without its `Exit code N` line, so `GitError.firstLine` is git's own. */
@@ -90,14 +86,40 @@ function shellError(text: string): string {
     .join('\n')
 }
 
+/** A step the agent's shell left running (moved to the background, timed out or interrupted). */
+export class StillRunning extends Error {
+  readonly step: string
+  constructor(step: string) {
+    super(`git ${step} is still running`)
+    this.name = 'StillRunning'
+    this.step = step
+  }
+}
+
+/** The longest a shell tool runs a step in the foreground (its maximum). */
+const SHELL_TIMEOUT_MS = 600_000
+/** The commit message file for the agent's shell, in the git dir (never in the shell line). */
+const MESSAGE_FILE = 'JEI_COMMIT_MSG'
+
 let warnedAsk = false
+
+/** `-m <message>` of a commit step, or null. */
+function messageOf(step: readonly string[]): string | null {
+  if (step[0] !== 'commit') return null
+  const at = step.indexOf('-m')
+  return at >= 0 && at + 1 < step.length ? step[at + 1]! : null
+}
 
 /**
  * Runs git steps for the Git tab. Without hooks every step runs directly
  * (`runSteps`, argv arrays). With hooks (`viaAgentShell`), steps that fire
  * hooks run through the session's shell tool (`$.tool.call`, after
- * `$.tool.check`) so the repository's hooks run; the rest run directly. A
- * failed step throws a `GitError` naming it; the steps after it are skipped.
+ * `$.tool.check`) so the repository's hooks run; the rest run directly. The
+ * shell line holds only git's own words and quoted paths: a commit message is
+ * written to `<gitdir>/JEI_COMMIT_MSG` and passed as `-F <file>` (emptied once
+ * the commit is done; the host has no delete). A failed step throws a
+ * `GitError` naming it, a step the shell left running throws `StillRunning`;
+ * the steps after it are skipped.
  */
 export async function runHookAware($: EngineInterface, root: string, steps: readonly string[][], viaAgentShell: boolean): Promise<void> {
   const host = hostFor($, root)
@@ -109,20 +131,45 @@ export async function runHookAware($: EngineInterface, root: string, steps: read
     }
     const tool = await agentShell($)
     const shell: Shell = tool === 'Bash' ? 'bash' : 'powershell'
-    const command = shellLine(['git', '-C', root, ...step], shell)
+    let words = step
+    let file: string | null = null
+    const message = messageOf(step)
+    if (message !== null) {
+      const gitDir = toPosix((await git(host, root, ['rev-parse', '--absolute-git-dir'])).stdout.trim())
+      file = `${gitDir}/${MESSAGE_FILE}`
+      await $.fs.write(file, `${message}\n`)
+      const at = step.indexOf('-m')
+      words = [...step.slice(0, at), '-F', file, ...step.slice(at + 2)]
+    }
+    // Core's runner sets these through the environment; the agent's shell takes only flags.
+    const command = shellLine(['git', '--no-optional-locks', '-c', 'core.quotepath=off', '-C', root, ...words], shell)
     const description = `Run git ${step[0]} so the repository's hooks run`
     const argv = gitArgv(root, step)
-    const verdict = await $.tool.check({ tool, input: { command, description } })
-    if (verdict.decision === 'deny') {
-      throw new GitError(argv, { exitCode: 1, stdout: '', stderr: `Claude's permissions block ${tool}: ${verdict.reason ?? 'denied'}` })
+    let leftRunning = false
+    try {
+      const verdict = await $.tool.check({ tool, input: { command, description } })
+      if (verdict.decision === 'deny') {
+        throw new GitError(argv, { exitCode: 1, stdout: '', stderr: `Claude's permissions block ${tool}: ${verdict.reason ?? 'denied'}` })
+      }
+      if (verdict.decision === 'ask' && !warnedAsk) {
+        warnedAsk = true
+        $.ui.toast(`This repo has git hooks, so JEI runs git through Claude's shell. Allow ${tool}(git *) to skip the prompt.`)
+      }
+      const r =
+        tool === 'Bash'
+          ? await $.tool.call({ tool: 'Bash', command, description, timeout: SHELL_TIMEOUT_MS })
+          : await $.tool.call({ tool: 'PowerShell', command, description, timeout: SHELL_TIMEOUT_MS })
+      if (r.deny !== undefined) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: r.deny })
+      if (r.isError === true) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: shellError(r.text ?? '') })
+      const ran = r.result as { interrupted?: boolean; backgroundTaskId?: string; timedOutAfterMs?: number; backgroundedByUser?: boolean } | undefined
+      if (ran?.interrupted === true || ran?.backgroundTaskId !== undefined || ran?.timedOutAfterMs !== undefined || ran?.backgroundedByUser === true) {
+        leftRunning = true
+        throw new StillRunning(step[0] ?? 'git')
+      }
+    } finally {
+      // A commit still running may yet read its message file: keep it then.
+      if (file !== null && !leftRunning) await $.fs.write(file, '').catch(() => undefined)
     }
-    if (verdict.decision === 'ask' && !warnedAsk) {
-      warnedAsk = true
-      $.ui.toast(`This repo has git hooks, so JEI runs git through Claude's shell. Allow ${tool}(git *) to skip the prompt.`)
-    }
-    const r = tool === 'Bash' ? await $.tool.call({ tool: 'Bash', command, description }) : await $.tool.call({ tool: 'PowerShell', command, description })
-    if (r.deny !== undefined) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: r.deny })
-    if (r.isError === true) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: shellError(r.text ?? '') })
   }
 }
 
@@ -135,20 +182,28 @@ function act($: EngineInterface, fn: () => Promise<unknown>): () => void {
   }
 }
 
-/** Runs `fn` with `label` in the repository row, then refreshes; a second operation waits its turn. */
-async function busy($: EngineInterface, label: string, fn: () => Promise<void>, refresh = true): Promise<void> {
-  const held = (await readGitUi($)).busy
+/**
+ * Runs `fn` with `label` in the repository row, then refreshes. The check and
+ * the set are one state update, so two presses never both run; a second
+ * operation is refused with a toast. False when refused.
+ */
+async function busy($: EngineInterface, label: string, fn: () => Promise<void>, refresh = true): Promise<boolean> {
+  let held: string | null = null
+  await updateGitUi($, (u) => {
+    held = u.busy
+    return u.busy === null ? { ...u, busy: label } : u
+  })
   if (held !== null) {
     $.ui.toast(`Still working: ${held}`)
-    return
+    return false
   }
-  await updateGitUi($, (u) => ({ ...u, busy: label }))
   try {
     await fn()
   } finally {
     await updateGitUi($, (u) => ({ ...u, busy: null }))
     if (refresh) await refreshAfterChange($, [], true)
   }
+  return true
 }
 
 async function repoOrToast($: EngineInterface): Promise<Repo | null> {
@@ -186,14 +241,14 @@ async function unstageRows($: EngineInterface, rows: readonly FileRow[]): Promis
   })
 }
 
-/** Discard runs only from the confirm row's Discard. */
+/** Discard runs only from the confirm row's Discard; a busy tab keeps the question. */
 async function discardNow($: EngineInterface, paths: readonly string[]): Promise<void> {
   const g = await repoOrToast($)
-  await setAsk($, null)
   if (g === null) return
   const wanted = new Set(paths)
   const entries = g.status.entries.filter((e) => wanted.has(e.path))
   await busy($, 'Discarding…', async () => {
+    await setAsk($, null)
     try {
       await discard(hostFor($, g.root), g.root, entries)
     } catch (err) {
@@ -206,33 +261,60 @@ function failure(err: unknown): string {
   return err instanceof GitError ? err.firstLine : firstLine(err)
 }
 
-/** Commits as the mode says; a sensitive file asks first unless `anyway`. */
-async function commitNow($: EngineInterface, options: Options, anyway = false): Promise<void> {
-  const g = await repoOrToast($)
-  if (g === null) return
+const RUNNING_WHAT: Readonly<Record<string, string>> = { commit: 'Commit', push: 'Push', pull: 'Pull' }
+
+function stillRunning(what: string): string {
+  return `${what} is still running in the background; check the terminal.`
+}
+
+/**
+ * Commits as the mode says, from a snapshot read now (not the one on screen).
+ * Files that look sensitive ask first; `confirmed` is what the person said
+ * Commit anyway to, and only covers those paths: a new one asks again.
+ */
+async function commitNow($: EngineInterface, options: Options, confirmed: readonly string[] | null = null): Promise<void> {
+  if ((await repoOrToast($)) === null) return
   const ui = await readGitUi($)
   const message = ui.message.trim()
   if (message === '') {
     $.ui.toast('Write a commit message first.')
     return
   }
-  const changed = g.status.entries.some((e) => e.index !== 'ignored' && e.worktree !== 'ignored')
-  if (!changed && ui.mode !== 'amend') {
-    $.ui.toast('No changes to commit.')
-    return
-  }
-  const plan = commitPlan(snapOf(g), { message, mode: ui.mode, smartCommit: options.smartCommit })
-  if (!anyway && plan.sensitive.length > 0) {
-    await setAsk($, { kind: 'sensitive', paths: plan.sensitive })
-    return
-  }
-  await setAsk($, null)
+  const cwd = await readCwd($)
   await busy($, 'Committing…', async () => {
+    let fresh: GitSnapshot
     try {
-      await runHookAware($, g.root, plan.steps, plan.viaAgentShell)
+      fresh = await snapshot(hostFor($, cwd), cwd)
+    } catch (err) {
+      $.ui.toast(`Commit failed: ${trimDot(failure(err))}.`)
+      return
+    }
+    if (fresh.root === null) {
+      $.ui.toast('This folder is not a git repository.')
+      return
+    }
+    await setGit($, gitState(fresh))
+    const changed = fresh.status.entries.some((e) => e.index !== 'ignored' && e.worktree !== 'ignored')
+    if (!changed && ui.mode !== 'amend') {
+      $.ui.toast('No changes to commit.')
+      return
+    }
+    const plan = commitPlan(fresh, { message, mode: ui.mode, smartCommit: options.smartCommit })
+    const covered = confirmed !== null && plan.sensitive.every((p) => confirmed.includes(p))
+    if (plan.sensitive.length > 0 && !covered) {
+      await setAsk($, { kind: 'sensitive', paths: plan.sensitive })
+      return
+    }
+    await setAsk($, null)
+    try {
+      await runHookAware($, fresh.root, plan.steps, plan.viaAgentShell)
       await updateGitUi($, (u) => ({ ...u, message: '' }))
       $.ui.toast(ui.mode === 'commit-push' ? 'Committed and pushed.' : 'Committed.')
     } catch (err) {
+      if (err instanceof StillRunning) {
+        $.ui.toast(stillRunning(RUNNING_WHAT[err.step] ?? 'Commit'))
+        return
+      }
       const pushed = err instanceof GitError && err.argv.includes('push')
       $.ui.toast(`${pushed ? 'Push' : 'Commit'} failed: ${trimDot(failure(err))}.`)
     }
@@ -242,8 +324,8 @@ async function commitNow($: EngineInterface, options: Options, anyway = false): 
 async function syncNow($: EngineInterface, choice?: 'merge' | 'rebase'): Promise<void> {
   const g = await repoOrToast($)
   if (g === null) return
-  await setAsk($, null)
   await busy($, 'Syncing…', async () => {
+    await setAsk($, null)
     try {
       const host = hostFor($, g.root)
       const r = await sync(host, g.root, g.status.branch, choice, (steps) => runHookAware($, g.root, steps, g.hooks))
@@ -251,7 +333,8 @@ async function syncNow($: EngineInterface, choice?: 'merge' | 'rebase'): Promise
       else if ('divergence' in r) await setAsk($, { kind: 'divergence' })
       else $.ui.toast(`Sync failed: ${trimDot(r.error)}.`)
     } catch (err) {
-      $.ui.toast(`Sync failed: ${trimDot(failure(err))}.`)
+      if (err instanceof StillRunning) $.ui.toast(stillRunning('Sync'))
+      else $.ui.toast(`Sync failed: ${trimDot(failure(err))}.`)
     }
   })
 }
@@ -526,16 +609,20 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     if (ask.kind === 'discard') {
       const one = ask.paths[0] ?? ''
       const untracked = !ask.all && g.status.entries.some((x) => x.path === one && x.worktree === 'untracked')
+      const deleted = ask.paths.filter((p) => g.status.entries.some((x) => x.path === p && x.worktree === 'untracked')).length
       const q = ask.all
-        ? `Discard all changes (${plural(ask.paths.length, 'file')})?`
+        ? `Discard all changes (${plural(ask.paths.length, 'file')}${deleted > 0 ? `, ${deleted} untracked will be deleted` : ''})?`
         : `${untracked ? 'Delete the untracked file' : 'Discard changes to'} ${fitPath(baseName(one), Math.max(1, inner - 28))}?`
       asked.push(line(q, { color: color('warning') }, 'ask-text')) // destructive: the question carries the emphasis
       asked.push(...buttons('ask-buttons', [{ key: 'confirm-discard', label: 'Discard', run: act($, () => discardNow($, ask.paths)) }, cancel]))
     } else if (ask.kind === 'sensitive') {
-      asked.push(line(`These files look sensitive: ${ask.paths.join(', ')}`, { color: color('warning') }, 'ask-text'))
+      // The whole list, never cut: names flow onto as many rows as they need.
+      wrapWords([...'These files look sensitive:'.split(' '), ...ask.paths.map((p, i) => (i < ask.paths.length - 1 ? `${p},` : p))], inner).forEach((text, i) =>
+        asked.push(line(text, { color: color('warning') }, `ask-text-${i}`)),
+      )
       asked.push(
         ...buttons('ask-buttons', [
-          { key: 'sensitive-commit', label: 'Commit anyway', run: act($, () => commitNow($, options, true)) },
+          { key: 'sensitive-commit', label: 'Commit anyway', run: act($, () => commitNow($, options, ask.paths)) },
           { ...cancel, key: 'sensitive-cancel' },
         ]),
       )
@@ -781,4 +868,25 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
 /** The Changes or Staged row a diff came from, and its neighbours, for `j`/`k`. */
 export function groupRows(g: Repo, staged: boolean): FileRow[] {
   return groupsOf(g)[staged ? 'staged' : 'changes']
+}
+
+/**
+ * Words flowed into lines of at most `width` cells, 1 space apart; the first
+ * word is kept whole when it fits. A word wider than the line is cut with a
+ * middle ellipsis (paths keep their basename).
+ */
+export function wrapWords(words: readonly string[], width: number): string[] {
+  const out: string[] = []
+  let cur = ''
+  for (const raw of words) {
+    const w = cellWidth(raw) > width ? fitPath(raw, Math.max(1, width)) : raw
+    if (cur === '') cur = w
+    else if (cellWidth(cur) + 1 + cellWidth(w) <= width) cur = `${cur} ${w}`
+    else {
+      out.push(cur)
+      cur = w
+    }
+  }
+  if (cur !== '') out.push(cur)
+  return out
 }

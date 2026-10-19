@@ -10,7 +10,7 @@ import { scrollDiff } from '../hosts/claude-code/diff.tsx'
 import { focusFiles, scrollFiles } from '../hosts/claude-code/files.tsx'
 import { focusGit, scrollGitList } from '../hosts/claude-code/git.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
-import { initPane, PANE_ID, readCwd, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
+import { initPane, PANE_ID, readCwd, resetGitUi, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
 
 const TITLE = 'JEI'
 
@@ -39,6 +39,7 @@ export const register: Register = (on, raw) => {
     })
     await setCwd($, e.cwd)
     autoOpenArmed = (await initPane($, options.defaultTab)) && options.startOpen
+    await resetGitUi($)
     void refreshGit($).catch(() => undefined)
     return next(e)
   })

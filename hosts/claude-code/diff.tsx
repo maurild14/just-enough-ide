@@ -36,12 +36,14 @@ function diffOf($: EngineInterface, root: string, d: Target): Promise<Loaded> {
 
 /** What the last drawing showed: the file's row count and its hunk header rows. */
 let lastTotal = 0
+/** Rows the last window showed. */
+let lastRows = 1
 let lastStarts: number[] = []
 
 /** Scroll keys and the wheel in the diff view move its first row. True when handled. */
 export async function scrollDiff($: EngineInterface, by: number): Promise<boolean> {
   if (currentView(await readPane($)) !== 'git.diff') return false
-  const most = Math.max(0, lastTotal - 1)
+  const most = Math.max(0, lastTotal - lastRows)
   await updateGitUi($, (u) => ({ ...u, diffTop: Math.max(0, Math.min(most, u.diffTop + by)) }))
   return true
 }
@@ -177,6 +179,7 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
   const rows = Math.max(1, frame.bodyRows - body.length)
   const w = diffWindow(file, ui.diffTop, rows)
   lastTotal = w.total
+  lastRows = rows
   lastStarts = w.hunkStarts
   body.push(
     <Box key="diff" paddingLeft={1} paddingRight={1}>

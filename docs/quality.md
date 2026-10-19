@@ -32,7 +32,8 @@ Add one row per item, newest first, and delete the row when it is fixed.
 
 | Date | Area | Issue | Severity (low, medium, high) |
 | --- | --- | --- | --- |
-| 2026-10-19 | Git (Claude Code) | The hooks path passes the commit message as one single-quoted word to the agent's shell. Windows PowerShell 5.1 strips embedded double quotes from native-command arguments, so a message containing `"` may lose them there (PowerShell 7.3+ and Bash are fine). Unverified on a real session. | low |
+| 2026-10-19 | Git (Claude Code) | The host has no file delete, so the hooks path leaves an empty `<gitdir>/JEI_COMMIT_MSG` after a commit (it is overwritten by the next one). | low |
+| 2026-10-19 | Git (Claude Code) | Through the agent's shell, core's git environment (`LC_ALL=C` and the rest) cannot be set: divergence detection may miss on non-English locales in repos with hooks. | low |
 | 2026-10-19 | Git (Claude Code) | A failed shell-tool step is read from the result's `text` (an `Exit code N` line is dropped); the exact text format of a failing Bash or PowerShell call is not in the types, so the toast line is unverified until manual QA (Task 18). | low |
 | 2026-10-19 | Diff (Claude Code) | The diff window counts rows, but `Code` soft-wraps long lines (design.md), so a window of wide lines can draw more rows than the body has; the engine then scrolls the pane. Same as the Files preview. Check in manual QA. | low |
 | 2026-10-19 | Files (Claude Code) | Whether arrow keys raise `ui.scroll` or walk the focus ring in a pane whose tree fits is unverified (the kit never paints); both are handled. Check in manual QA (Task 18). | low |

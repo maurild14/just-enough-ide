@@ -152,10 +152,11 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 | Git | Detached | `Detached at a41f9c2.` (`warning`) |
 | Git | No upstream | `No upstream branch.` (`warning`) |
 | Git | Failure | `Push failed: <first git line>.` (`error`) |
-| Git | Discard (confirm) | `Discard changes to user.ts?` / `Discard all changes (3 files)?` (`warning`) with `Discard` and `Cancel` |
-| Git | Sensitive files | `These files look sensitive: .env` (`warning`) with `Commit anyway` and `Cancel` |
+| Git | Discard (confirm) | `Discard changes to user.ts?` / `Discard all changes (3 files, 1 untracked will be deleted)?` (`warning`) with `Discard` and `Cancel` |
+| Git | Sensitive files | `These files look sensitive: .env` (`warning`), the whole list wrapped over rows, with `Commit anyway` and `Cancel` |
 | Git | Diverged | `Your branch and its upstream have diverged.` (`warning`) with `Merge`, `Rebase`, `Ask Claude` and `Cancel` |
 | Git | Busy | `Committing…`, `Syncing…`, `Generating…` in the repository row (`muted`); Commit is drawn dim and cannot be pressed while the message is empty |
+| Git | Left running | `Commit is still running in the background; check the terminal.` (toast; the message is kept) |
 | Diff | Capped | `Diff truncated at 5,000 lines.` (`warning`) |
 
 ## 9. Motion: activity shimmer
