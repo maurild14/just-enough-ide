@@ -23,6 +23,7 @@ Never mix them: `claude plugin test` loads every `*.test.ts` in the plugin folde
 
 - The sample repo is `acme-app`; authors are `Ana Rivera <ana@example.com>` and `Leo Park <leo@example.com>`. No real names, emails, paths or projects.
 - Text fixtures live in `test/fixtures/` (git porcelain samples in `git/*.txt`, diffs in `diff/*.diff`, later LSP outputs). A change in a tool's output format should fail a fixture test, not users.
+- Git fixtures (`test/fixtures/git/status-*.txt`) are real `git status --porcelain=v2 -z --branch --untracked-files=all` output, generated once from a throwaway `acme-app` repo (local identity Ana Rivera, `commit.gpgsign false`, a bare repo as `origin`) kept outside this repo. They keep their raw NUL separators, so `.gitattributes` marks `test/fixtures/**` as `-text` and git never rewrites them. Check a new fixture holds no machine path or username before committing. Cases a fixture cannot reach cheaply (every unmerged code, `?` and `!` records, a newline in a path) are inline strings in the spec.
 - The **fake host** (in `test/`) implements `Host` over a temp directory, with real `git` for git specs and scripted answers where a test needs them. Specs create their temp repos fresh and delete them.
 
 ## Width and height matrix

@@ -57,6 +57,13 @@ Every runner call is cancellable (signals or generation counters, `core/latest.t
 
 **OpenCode.** Two entries linked by one RPC contract (`hosts/opencode/rpc.ts`, `JeiRpc`). The server entry runs git and file work next to the files, observes tool hooks and events, and answers RPC calls. The TUI entry only draws: it owns the keymap layer and dialogs and calls the server through `context.client.rpc`. Server-pushed updates use the registration's `emit`. This keeps JEI working when the TUI is attached to a remote server.
 
+## Git layer
+
+Status: current for `run.ts` and `status.ts`; `diff.ts` and `commands.ts` are draft (Tasks 5, 6).
+
+- `core/git/run.ts`: `gitArgv(root, args)` builds `['git', '--no-optional-locks', '-C', root, ...args]`; `git(host, root, args, options?)` runs it with `GIT_ENV` (`GIT_OPTIONAL_LOCKS=0`) merged under the caller's env and throws `GitError` on a non-zero exit. `GitError` carries `argv`, `exitCode`, `stderr` and `firstLine` (first non-empty stderr line, then stdout, then `git exited with <code>`).
+- `core/git/status.ts`: `parseStatus` reads `STATUS_ARGS` output (`status --porcelain=v2 -z --branch --untracked-files=all`) into `{ branch, entries }`. `branch.head` is `null` when detached, `branch.oid` is `null` before the first commit. Every unmerged code (`UU`, `AA`, `DD`, `AU`, `UA`, `DU`, `UD`) maps to `conflicted` on both sides. `folderStatus` rolls entries up to each ancestor folder (conflicted > modified > added > untracked; deleted and renamed count as modified; ignored is skipped). `isRepo` returns the root exactly as git prints it (newline trimmed), or `null` outside a repo.
+
 ## Dependency direction
 
 ```

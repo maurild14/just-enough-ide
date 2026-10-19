@@ -10,7 +10,8 @@ Update a row in the same commit that changes the area. `git log` is the history;
 | --- | --- | --- | --- | --- |
 | Repo scaffolding, CI scripts | built | built | 0.1 (Tasks 1, 2) | Bootstrap done; CI workflow, Dependabot, issue forms and PR template added (Claude Code CI job non-blocking). |
 | `core/` foundations (Host, options, keys, paths, argv, fuzzy) | built | built | 0.1 (Task 3) | Shared by both hosts. Keys cover Files, Git and diff; Search and Symbols carry navigation only. |
-| Git runner, status, diff parsing, commands | not built | not built | 0.1 (Tasks 4-6) | |
+| Git runner, status parser | built | built | 0.1 (Task 4) | `core/git/run.ts` (runner, `GitError`), `core/git/status.ts` (porcelain v2 parser, folder roll-up, `isRepo`). Fixtures in `test/fixtures/git/`. |
+| Git diff parsing, commands | not built | not built | 0.1 (Tasks 5, 6) | |
 | Files model, activity, refresh guard, pane state | not built | not built | 0.1 (Tasks 7-9) | |
 | Pane shell, tabs, hint line, `/jei` | not built | not built | 0.1 (Tasks 10, 15) | |
 | Files tab (tree, status, shimmer, follow, preview, mention, open) | not built | not built | 0.1 (Tasks 11, 16) | |
