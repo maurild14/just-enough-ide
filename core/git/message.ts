@@ -16,15 +16,15 @@ export function commitPrompt(diff: string, maxChars: number): string {
 }
 
 /**
- * Strips a leading "Commit message:", takes fenced content when a fence is present
- * (ignoring prose around it; an unterminated fence runs to the end), then strips
+ * Strips a leading "Commit message:", unwraps a fence only when the text starts with one
+ * (an unterminated fence runs to the end; fences later in a body are kept), then strips
  * surrounding quotes or backticks.
  */
 export function cleanMessage(raw: string): string {
   let s = raw.trim().replace(/^commit message:\s*/i, '')
-  const open = /(^|\n)```[^\n]*\n/.exec(s)
+  const open = /^```[^\n]*\n/.exec(s)
   if (open) {
-    const rest = s.slice(open.index + open[0].length)
+    const rest = s.slice(open[0].length)
     const close = rest.indexOf('\n```')
     s = (close === -1 ? rest.replace(/\n?```\s*$/, '') : rest.slice(0, close)).trim()
   }
