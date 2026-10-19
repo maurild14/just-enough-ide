@@ -11,14 +11,15 @@ function unquote(body: string): string {
   const bytes: number[] = []
   const enc = new TextEncoder()
   const simple: Record<string, number> = { n: 10, t: 9, r: 13, a: 7, b: 8, f: 12, v: 11, '"': 34, '\\': 92 }
-  for (let i = 0; i < body.length; i++) {
-    const c = body[i]!
+  const chars = Array.from(body)
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i]!
     if (c !== '\\') {
       bytes.push(...enc.encode(c))
       continue
     }
-    const n = body[i + 1] ?? ''
-    const oct = /^[0-7]{1,3}/.exec(body.slice(i + 1))
+    const n = chars[i + 1] ?? ''
+    const oct = /^[0-7]{1,3}/.exec(chars.slice(i + 1, i + 4).join(''))
     if (oct) {
       bytes.push(parseInt(oct[0], 8) & 0xff)
       i += oct[0].length
@@ -151,7 +152,20 @@ export function parseNumstat(z: string): NumstatEntry[] {
   return out
 }
 
-/** Keeps at most `maxLines` hunk lines: whole hunks before the cut, the cut hunk sliced. */
+/** A hunk cut to its first `n` lines, with the header counts recomputed (meta lines do not count). */
+function slicedHunk(h: Hunk, n: number): Hunk {
+  const lines = h.lines.slice(0, n)
+  const oldCount = lines.filter((l) => l.kind === 'ctx' || l.kind === 'del').length
+  const newCount = lines.filter((l) => l.kind === 'ctx' || l.kind === 'add').length
+  const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(h.header)
+  const header = m ? `@@ -${m[1]},${oldCount} +${m[2]},${newCount} @@${m[3]}` : h.header
+  return { header, lines }
+}
+
+/**
+ * Keeps at most `maxLines` hunk lines: whole hunks before the cut, the cut hunk sliced (its header is
+ * recomputed). `file.added`/`file.removed` stay the full-file totals, not counts of the kept lines.
+ */
 export function capDiff(file: DiffFile, maxLines: number): { file: DiffFile; truncated: boolean } {
   const total = file.hunks.reduce((n, h) => n + h.lines.length, 0)
   if (total <= maxLines) return { file, truncated: false }
@@ -163,7 +177,7 @@ export function capDiff(file: DiffFile, maxLines: number): { file: DiffFile; tru
       hunks.push(h)
       left -= h.lines.length
     } else {
-      hunks.push({ header: h.header, lines: h.lines.slice(0, left) })
+      hunks.push(slicedHunk(h, left))
       left = 0
     }
   }
@@ -181,9 +195,18 @@ export function untrackedDiffArgs(path: string, platform: Platform): string[] {
 
 const PREFIX = { add: '+', del: '-', ctx: ' ', meta: '' } as const
 
-/** Re-serializes one file as unified text (`---`/`+++` header, then hunks) for a `diff` code block. */
+/**
+ * Re-serializes one file as unified text (`---`/`+++` header, then hunks) for a `diff` code block.
+ * New and deleted files are detected from the first hunk header (`-0,0` / `+0,0`). CRLF is not preserved.
+ */
 export function toUnifiedText(file: DiffFile): string {
-  const out = [`--- a/${file.origPath ?? file.path}`, `+++ b/${file.path}`]
+  const first = file.hunks[0]?.header ?? ''
+  const isNew = /^@@ -0,0 /.test(first)
+  const isDeleted = / \+0,0 @@/.test(first)
+  const out = [
+    isNew ? '--- /dev/null' : `--- a/${file.origPath ?? file.path}`,
+    isDeleted ? '+++ /dev/null' : `+++ b/${file.path}`,
+  ]
   for (const h of file.hunks) {
     out.push(h.header)
     for (const l of h.lines) out.push(PREFIX[l.kind] + l.text)

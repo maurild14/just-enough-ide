@@ -109,6 +109,56 @@ test('capDiff', () => {
   expect(whole.file.hunks[0]).toBe(f!.hunks[0]!)
   const cut = capDiff(f!, first + 2)
   expect(cut.file.hunks[1]!.lines).toHaveLength(2)
+  expect(cut.file.hunks[0]!.header).toBe(f!.hunks[0]!.header)
+  // second hunk starts at old 32 / new 33; first 2 lines are ctx 32, 33 -> counts 2/2
+  expect(cut.file.hunks[1]!.header).toMatch(/^@@ -32,2 \+33,2 @@/)
+  expect(cut.file.added).toBe(f!.added)
+  expect(toUnifiedText(cut.file)).toContain(cut.file.hunks[1]!.header)
+})
+
+test('capDiff recomputes counts ignoring meta lines', () => {
+  const [f] = fx('no-newline.diff')
+  const r = capDiff(f!, 2)
+  expect(r.file.hunks[0]!.header).toBe('@@ -1,1 +1,0 @@')
+  expect(r.file.hunks[0]!.lines.map((l) => l.kind)).toEqual(['del', 'meta'])
+})
+
+test('lookalike content lines stay inside the hunk', () => {
+  const t = [
+    'diff --git a/p b/p',
+    '--- a/p',
+    '+++ b/p',
+    '@@ -1,2 +1,2 @@',
+    '-- old',
+    '++ new',
+    ' diff --git a/q b/q',
+    'diff --git a/r b/r',
+    '--- a/r',
+    '+++ b/r',
+    '@@ -1 +1 @@',
+    '-x',
+    '+y',
+    '',
+  ].join('\n')
+  const fs = parseUnifiedDiff(t)
+  expect(fs.map((f) => f.path)).toEqual(['p', 'r'])
+  expect(fs[0]!.hunks[0]!.lines).toEqual([
+    { kind: 'del', text: '- old', oldNo: 1 },
+    { kind: 'add', text: '+ new', newNo: 1 },
+    { kind: 'ctx', text: 'diff --git a/q b/q', oldNo: 2, newNo: 2 },
+  ])
+  expect(fs[1]).toMatchObject({ added: 1, removed: 1 })
+})
+
+test('raw astral characters survive unquoting', () => {
+  const [f] = parseUnifiedDiff('diff --git "a/\u{1F600}\\303\\261.ts" "b/\u{1F600}\\303\\261.ts"\n')
+  expect(f!.path).toBe('\u{1F600}ñ.ts')
+})
+
+test('toUnifiedText uses /dev/null for new and deleted files', () => {
+  expect(toUnifiedText(fx('new-file.diff')[0]!).startsWith('--- /dev/null\n+++ b/new thing.ts\n')).toBe(true)
+  const del = parseUnifiedDiff('diff --git a/g b/g\n--- a/g\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye\n')[0]!
+  expect(toUnifiedText(del).startsWith('--- a/g\n+++ /dev/null\n')).toBe(true)
 })
 
 test('toUnifiedText round-trips hunks', () => {
