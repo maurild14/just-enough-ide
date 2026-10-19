@@ -40,6 +40,13 @@ Requirements: Bun, Git, and (for the Claude Code half) the `claude` CLI.
   names in code, fixtures or screenshots. Fixtures use the sample repo
   `acme-app` and fictional authors.
 
+## Continuous integration
+
+CI (`.github/workflows/ci.yml`) runs tests on three operating systems, the type
+check, the docs check and a secret scan. The Claude Code job is non-blocking
+because the CLI may need a signed-in account in CI: run
+`bun run validate && bun run test:claude` before every release.
+
 ## Commits
 
 [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`,

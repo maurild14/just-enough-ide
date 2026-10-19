@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/maurild14/just-enough-ide/blob/main/SECURITY.md
+    about: Please do not open a public issue for vulnerabilities. Follow SECURITY.md.

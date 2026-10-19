@@ -35,4 +35,4 @@ What the kits cannot see (real paint, real terminals, a real agent) is checked b
 
 ## CI
 
-GitHub Actions run `bun test` on Ubuntu, macOS and Windows; `claude plugin validate` and `claude plugin test` on Ubuntu; the OpenCode type check; and a gitleaks scan. The local `typecheck:claude` script needs types Claude Code lays at `.claude-plugin/types/` (gitignored, never committed), so CI checks the Claude Code half with `claude plugin validate` instead.
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request: `bun run test` on Ubuntu, macOS and Windows; `bun run typecheck` (core + OpenCode); `bun run check:docs`; `claude plugin validate` and `claude plugin test` on Ubuntu; and a gitleaks scan of the full history. The Claude Code job is `continue-on-error` because the CLI may need a signed-in account in CI, so run `bun run validate && bun run test:claude` before every release. The local `typecheck:claude` script needs types Claude Code lays at `.claude-plugin/types/` (gitignored, never committed), so CI checks the Claude Code half with `claude plugin validate` instead.
