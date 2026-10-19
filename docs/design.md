@@ -135,6 +135,7 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 | Files | Empty folder | `This folder is empty.` |
 | Files | Filter, no match | `No files match "user".` |
 | Files | Read failure | `Can't read this folder.` |
+| Files | Preview read failure | `Can't read this file: <first error line>.` when available, otherwise `Can't read this file.` (`error`) |
 | Files | Preview too large | `Too large to preview (3.4 MB).` |
 | Files | Binary | `Binary file. Press o to open it.` |
 | Files | Empty file | `This file is empty.` |

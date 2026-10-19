@@ -52,7 +52,8 @@ export async function loadPreview(
   // Size alone settles empty, image and too-large: those files are never read.
   const early = previewKind(name, info.size, new Uint8Array(0))
   if (early === 'empty' || early === 'image' || early === 'too-large') return { kind: early }
-  const head = (await host.readHead(abs, PREVIEW_MAX_BYTES)) ?? new Uint8Array(0)
+  const head = await host.readHead(abs, PREVIEW_MAX_BYTES)
+  if (head === null) return { kind: 'error' }
   const kind = previewKind(name, info.size, head)
   if (kind === 'binary') return { kind }
   const text = new TextDecoder().decode(head)

@@ -1,4 +1,4 @@
-export type PreviewKind = 'code' | 'markdown' | 'csv' | 'tsv' | 'image' | 'binary' | 'too-large' | 'empty'
+export type PreviewKind = 'code' | 'markdown' | 'csv' | 'tsv' | 'image' | 'binary' | 'too-large' | 'empty' | 'error'
 
 export const PREVIEW_MAX_BYTES = 2 * 1024 * 1024
 

@@ -47,6 +47,17 @@ test('allFiles in a repo lists tracked, untracked and not ignored files', async 
   expect((await allFiles(r.host, r.dir)).sort()).toEqual(['.gitignore', 'new.txt', 'src/a.ts'])
 })
 
+test('an unreadable in-root file is an error; missing, directory and rejected paths stay empty', async () => {
+  const host = new FakeHost()
+  const root = makeTemp()
+  writeFiles(root, { 'locked.txt': 'abc', 'src/a.txt': 'x' })
+  host.readHead = async () => null
+  expect(await loadPreview(host, root, 'locked.txt')).toEqual({ kind: 'error' })
+  expect(await loadPreview(host, root, 'missing.txt')).toEqual({ kind: 'empty' })
+  expect(await loadPreview(host, root, 'src')).toEqual({ kind: 'empty' })
+  expect(await loadPreview(host, root, '../locked.txt')).toEqual({ kind: 'empty' })
+})
+
 test('allFiles outside a repo walks breadth-first and skips .git and node_modules', async () => {
   const host = new FakeHost()
   const dir = makeTemp('plain')

@@ -215,6 +215,26 @@ test('a mentions the selected file in the prompt', async ($, on) => {
   ])
 })
 
+test('an unreadable file shows an error notice on both surfaces and at every pane width', async ($, on) => {
+  await world($, on)
+  for (const surface of SURFACES) {
+    await $.command.run(jei(`${ROOT}/src/index.ts`))
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(120), requestId: 'jei' })
+    await ui.press({ key: 'row-src/index.ts' })
+    for (const width of WIDTHS) {
+      for (const height of [10, 5]) {
+        await ui.redraw(paneProps(width, height))
+        expect(await ui.find({ type: 'Text', text: "Can't read this file." })).toBeDefined()
+        expect(await ui.find({ type: 'Code' })).toBeUndefined()
+        for (const w of lineWidths((await ui.drawn()) as Node)) expect(w).toBeLessThanOrEqual(width)
+      }
+    }
+    await ui.redraw(paneProps(120))
+    await ui.press({ key: 'back' })
+    await ui.unmount()
+  }
+})
+
 test('o opens the file and a failure becomes a toast', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(jei(`${ROOT}/src/api/user.ts`))

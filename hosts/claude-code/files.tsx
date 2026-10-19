@@ -75,7 +75,7 @@ export function hostFor($: EngineInterface, root: string): Host {
 // events (activity.ts). A hot reload empties them, which only costs a re-read.
 
 type Listing = { entries: DirEntry[]; ignored: string[]; failed: boolean }
-type Preview = (Awaited<ReturnType<typeof loadPreview>> & { size?: number }) | { kind: 'error'; message: string }
+type Preview = Awaited<ReturnType<typeof loadPreview>> & { size?: number; message?: string }
 
 const listings = new Map<string, Promise<Listing>>()
 /** Folders whose last read failed: dropped on the next toggle or refresh, never retried per frame. */
@@ -377,7 +377,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
       case 'empty':
         return notice('This file is empty.')
       case 'error':
-        return { header, body: [line(`Can't read this file: ${pv.message}.`, { color: color('error') }, 'notice')], actions }
+        return { header, body: [line(pv.message ? `Can't read this file: ${pv.message}.` : "Can't read this file.", { color: color('error') }, 'notice')], actions }
     }
   }
 
