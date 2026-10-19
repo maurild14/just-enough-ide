@@ -23,7 +23,7 @@ const diff = (path = 'src/app.ts') => ({ file: { path, binary: false, added: 2, 
   { header: '@@ -20,0 +20,1 @@', lines: [{ kind: 'add', text: 'later', newNo: 20 }] },
 ] }, truncated: false })
 
-function fixture() {
+function fixture(options: Record<string, unknown> = {}) {
   const layers: (() => Layer)[] = []
   const listeners = new Set<() => void>()
   const memory = new Map<string, unknown>()
@@ -36,20 +36,20 @@ function fixture() {
   let selection: unknown = undefined
   let edited: string | undefined = undefined
   const handlers: Record<string, (input: any) => Promise<unknown>> = {
-    state: async () => ({ cwd: '/acme-app', options: parseOptions({ defaultTab: 'git' }), git, activity: {} }),
+    state: async () => ({ cwd: '/acme-app', options: parseOptions({ ...options, defaultTab: 'git' }), git, activity: {} }),
     generate: async () => ({ message: 'feat: update app' }), commitPlan: async () => ({ steps: [], sensitive: [], viaAgentShell: false }),
     diff: async (input) => diff(input.path), sync: async () => ({ ok: true }),
   }
   const api = Object.fromEntries(['state', 'stage', 'unstage', 'discard', 'diff', 'generate', 'commitPlan', 'commit', 'init', 'sync', 'open'].map((method) => [method, async (input: any) => { calls.push({ method, input }); return handlers[method]?.(input) ?? {} }]))
   api.events = { on(name: string, fn: () => void) { if (name === 'changed') listeners.add(fn); return () => listeners.delete(fn) } } as any
   const ctx = {
-    options: { defaultTab: 'git' }, theme: { text: { base: 'white', muted: 'gray', action: { primary: { base: 'blue' } }, feedback: { error: { base: 'red' }, warning: { base: 'yellow' }, success: { base: 'green' }, info: { base: 'magenta' } } },
+    options: { ...options, defaultTab: 'git' }, theme: { text: { base: 'white', muted: 'gray', action: { primary: { base: 'blue' } }, feedback: { error: { base: 'red' }, warning: { base: 'yellow' }, success: { base: 'green' }, info: { base: 'magenta' } } },
       background: { action: { primary: { base: 'blue' } } }, diff: { text: { added: RGBA.fromHex('#12ef34'), removed: 'red', context: 'white', hunkHeader: 'cyan' }, lineNumber: { text: 'gray' } } },
     storage: { memory(key: string, config: { initial: object }) { if (!memory.has(key)) { const [s, set] = createStore(config.initial); memory.set(key, [s, (fn: (draft: object) => void) => set(produce(fn))]) } return memory.get(key) } },
     client: { rpc: () => api, session: { async prompt(input: unknown) { sent.push(input) } } },
     keymap: { layer(factory: () => Layer) { const l = createMemo(factory); layers.push(l); onCleanup(() => layers.splice(layers.indexOf(l), 1)) } },
     ui: { slot(value: Claim) { claim = value; return () => {} }, router: { current: () => ({ type: 'session', sessionID: 'session-a' }) }, panel: { open: () => true },
-      dialog: { async confirm(input: unknown) { confirms.push(input); return confirmation }, async select(input: unknown) { selects.push(input); return selection }, async prompt(input: unknown) { prompts.push(input); return edited } },
+      dialog: { async confirm(input: unknown) { confirms.push(input); return handlers.confirm ? handlers.confirm(input) : confirmation }, async select(input: unknown) { selects.push(input); return selection }, async prompt(input: unknown) { prompts.push(input); return edited } },
       toast: { show(input: unknown) { notices.push(input) } } },
   } as unknown as Context
   async function mount(w = 80, h = 24) {
@@ -345,4 +345,96 @@ test('a pending commit stays busy across a tab remount and preserves a newer dra
   input.focus(); await r.mockInput.typeText(' next'); input.submit(); await r.flush()
   expect(f.calls.filter((c) => c.method === 'commit')).toHaveLength(1)
   finish({}); await r.flush(); expect(input.value).toContain('next')
+})
+
+for (const separator of ['\n\n', '\r\n\r\n']) test(`generated body survives native subject editing (${JSON.stringify(separator)})`, async () => {
+  const f = fixture(); const subject = 'feat: preserve generated draft'; const body = 'Body detail. '.repeat(110)
+  f.handlers.generate = async () => ({ message: subject + separator + body })
+  const r = await f.mount(); f.key('g'); await r.flush()
+  const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
+  expect(input.value).toBe(subject)
+  expect(r.captureCharFrame()).toContain('Edit subject (body kept)')
+  input.value = ''; input.submit(); await r.flush()
+  expect(f.calls.some((c) => c.method === 'commit')).toBe(false)
+  input.value = subject
+  f.choose('commit'); f.key('c'); await r.flush(); await r.mockInput.typeText(' safely'); input.submit(); await r.flush()
+  expect(f.calls.find((c) => c.method === 'commit')?.input.message).toBe(subject + ' safely' + separator + body.trimEnd())
+})
+
+test('a generated subject longer than the native default limit survives editing, resize and tab remount', async () => {
+  const f = fixture(); const subject = 'feat: ' + 'x'.repeat(1100)
+  f.handlers.generate = async () => ({ message: subject })
+  const r = await f.mount(); f.key('g'); await r.flush(); f.key('2'); await r.flush(); f.key('4'); await r.flush()
+  const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
+  expect(input.value).toBe(subject)
+  for (const h of [2, 5, 10, 24]) for (const w of [24, 40, 80, 120]) {
+    f.setWidth(w); r.resize(w, h); await r.flush(); expect(input.value).toBe(subject)
+    expect(r.captureCharFrame().split('\n').every((line) => cellWidth(line) <= w)).toBe(true)
+  }
+  input.focus(); await r.mockInput.typeText(' edited'); input.submit(); await r.flush()
+  expect(f.calls.find((c) => c.method === 'commit')?.input.message).toBe(subject + ' edited')
+})
+
+test('sensitive approval is rechecked after each dialog and newly arriving paths require another approval', async () => {
+  const f = fixture(); const r = await f.mount(); let plans = 0
+  f.handlers.commitPlan = async () => ({ steps: [], sensitive: plans++ === 0 ? ['.env'] : ['.env', 'id_rsa'], viaAgentShell: false })
+  f.handlers.confirm = async () => f.confirms.length === 1
+  f.key('g'); await r.flush(); f.choose('commit'); f.key('c'); await r.flush()
+  const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
+  input.submit(); input.submit(); await r.flush()
+  expect(f.confirms).toHaveLength(2)
+  expect(f.confirms[0].message).toContain('.env'); expect(f.confirms[0].message).not.toContain('id_rsa')
+  expect(f.confirms[1].message).toContain('.env'); expect(f.confirms[1].message).toContain('id_rsa')
+  expect(f.calls.some((c) => c.method === 'commit')).toBe(false)
+  delete f.handlers.confirm; f.confirm(true); input.submit(); await r.flush()
+  expect(f.calls.filter((c) => c.method === 'commit')).toHaveLength(1)
+  expect(f.calls.find((c) => c.method === 'commit')?.input.allowSensitive).toBe(true)
+  expect(plans).toBe(4)
+})
+
+test('the commit waits for approval of newly arriving sensitive files and then replans once more', async () => {
+  const f = fixture(); const r = await f.mount(); let plans = 0; let approveNew!: (value: boolean) => void
+  f.handlers.commitPlan = async () => ({ steps: [], sensitive: plans++ === 0 ? ['.env'] : ['.env', 'id_rsa'], viaAgentShell: false })
+  f.handlers.confirm = async () => f.confirms.length === 1 ? true : new Promise((resolve) => { approveNew = resolve })
+  f.key('g'); await r.flush(); f.choose('commit'); f.key('c'); await r.flush()
+  const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
+  input.submit(); await r.flush(); input.submit(); await r.flush()
+  expect(f.confirms).toHaveLength(2); expect(f.calls.some((c) => c.method === 'commit')).toBe(false)
+  approveNew(true); await r.flush()
+  expect(plans).toBe(3)
+  expect(f.calls.filter((c) => c.method === 'commit').map((c) => c.input.allowSensitive)).toEqual([true])
+})
+
+test('the message placeholder follows branch and width, and smart-commit guidance follows options and mode', async () => {
+  const f = fixture(); f.setGit(repo([entry('app.ts')]))
+  const r = await f.mount(80)
+  const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
+  expect(input.placeholder).toBe('Message (enter to commit on "main")')
+  expect(r.captureCharFrame()).toContain('Nothing staged. Commit stages all changes.')
+  for (const width of [24, 40, 80, 120]) {
+    f.setWidth(width); r.resize(width, 24); await r.flush()
+    expect(input.placeholder).toBe(width >= 60 ? 'Message (enter to commit on "main")' : 'Message')
+    expect(r.captureCharFrame().split('\n').every((line) => cellWidth(line) <= width)).toBe(true)
+  }
+  f.choose('amend'); f.key('c'); await r.flush()
+  expect(r.captureCharFrame()).not.toContain('Nothing staged. Commit stages all changes.')
+  const disabled = fixture({ smartCommit: false }); disabled.setGit(repo([entry('app.ts')]))
+  const off = await disabled.mount(120); expect(off.captureCharFrame()).not.toContain('Nothing staged. Commit stages all changes.')
+  const staged = fixture(); const stagedView = await staged.mount(120)
+  expect(stagedView.captureCharFrame()).not.toContain('Nothing staged. Commit stages all changes.')
+  f.key('esc'); const long = repo([entry('app.ts')]); long.status.branch.head = 'feature/' + 'x'.repeat(120)
+  f.setGit(long); f.changed(); await r.flush(); expect(input.placeholder).toBe('Message')
+})
+
+for (const kind of [['add'], { toString: 'add' }]) test(`diff rejects non-string line kind ${JSON.stringify(kind)}`, async () => {
+  const f = fixture(); const value = diff()
+  value.file.hunks[0]!.lines[0]!.kind = kind as unknown as string
+  f.handlers.diff = async () => value
+  const r = await f.mount(120); f.key('down'); f.key('enter'); await r.flush()
+  expect(r.captureCharFrame()).toContain("Can't show this diff: Invalid diff reply.")
+  for (const height of [2, 5, 10, 24]) for (const width of [24, 40, 80, 120]) {
+    f.setWidth(width); r.resize(width, height); await r.flush()
+    expect(r.captureCharFrame()).not.toContain('+after')
+    expect(r.captureCharFrame().split('\n').every((line) => cellWidth(line) <= width)).toBe(true)
+  }
 })

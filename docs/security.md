@@ -13,6 +13,8 @@ Source: `PRD.md` §9. To report a vulnerability, follow `SECURITY.md`.
 
 ## Safe behavior
 
+On OpenCode, sensitive-file approval covers the exact list shown. After each approval the TUI requests another fresh plan; any newly sensitive path requires a new confirmation before `allowSensitive: true` is sent. Cancel stops the commit, and the busy guard remains held across the approval/replan sequence. The server also replans immediately before executing the existing commit RPC.
+
 - **Secrets in commits.** Before a smart commit stages everything, paths that look sensitive (`core/git/sensitive.ts`) are listed and the user must confirm with "Commit anyway". Matching is on the basename, case-insensitive: `.env`, `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa*`, `id_ed25519*`, `credentials.json`, `.npmrc`, `.netrc`. The committed templates `.env.example`, `.env.sample` and `.env.template` are not flagged. Both hosts implement the confirmation; OpenCode obtains a fresh server commit plan and passes `allowSensitive` only after approval, while the server replans immediately before executing.
 - **Destructive actions** (discard, discard all, delete, checkout over local changes) always confirm. JEI never stashes on its own.
 - **No surprise permission dialogs.** The Claude Code LSP and shell-tool permissions are checked with `$.tool.check` first; the pane explains and asks.

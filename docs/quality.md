@@ -34,6 +34,7 @@ Add one row per item, newest first, and delete the row when it is fixed.
 
 | Date | Area | Issue | Severity (low, medium, high) |
 | --- | --- | --- | --- |
+| 2026-10-19 | Git (OpenCode) | Native commit entry edits the subject only; generated bodies and separators are preserved and committed in full. Add a multiline editor if body editing is needed. Review regressions cover long drafts, reapproval races, responsive guidance and strict diff kinds. | low |
 | 2026-10-19 | Git/diff (OpenCode) | Real-host input focus, dialog routing, hook paint and terminal color fidelity still require manual QA in Task 18. Renderer coverage includes native input/mouse, cancels, races, wrapping and all required sizes; the existing server/core real-git specs cover hook and command semantics. | low |
 | 2026-10-19 | Files (OpenCode) | Real-host paint, filter focus routing and terminal color fidelity still require manual QA in Task 18; renderer coverage includes native syntax highlighting, wrapping, scrolling and all preview kinds at 24/40/80/120 columns and short heights. | low |
 | 2026-10-19 | Git (Claude Code) | The host has no file delete, so the hooks path leaves an empty `<gitdir>/JEI_COMMIT_MSG` after a commit (it is overwritten by the next one). | low |

@@ -26,7 +26,7 @@ function readDiff(raw: unknown): { file: DiffFile | null; truncated: boolean } {
     if (typeof h.header !== 'string' || !Array.isArray(h.lines)) throw new Error('Invalid diff reply.')
     return { header: h.header, lines: h.lines.map((raw): DiffLine => {
       const l = record(raw)
-      if (!['add', 'del', 'ctx', 'meta'].includes(String(l.kind)) || typeof l.text !== 'string' ||
+      if (typeof l.kind !== 'string' || !['add', 'del', 'ctx', 'meta'].includes(l.kind) || typeof l.text !== 'string' ||
         l.oldNo !== undefined && (!natural(l.oldNo) || l.oldNo < 1) || l.newNo !== undefined && (!natural(l.newNo) || l.newNo < 1)) throw new Error('Invalid diff reply.')
       return { kind: l.kind as DiffLine['kind'], text: l.text, oldNo: l.oldNo as number | undefined, newNo: l.newNo as number | undefined }
     }) }

@@ -69,6 +69,8 @@ The TUI shell (Task 15) is `hosts/opencode/tui.tsx`, re-exported by root `tui.ts
 
 ## Git layer
 
+OpenCode retains the full commit draft independently of the native input: the input edits its subject, while the stored line separators/body remain intact. The pane passes the parsed smart-commit option to Git for option/mode-aware guidance. Sensitive confirmation is followed by a fresh plan and exact path-coverage comparison; new paths cause another confirmation before an approved commit is sent. Diff line-kind narrowing requires an actual string before enum membership, avoiding coercion of malformed RPC values.
+
 OpenCode's `git.tsx` owns commit message/mode and busy state in session `storage.memory`, plus local editing, collapsed groups and the selection-anchored list window. It invokes only the existing RPC methods and host dialogs; core/server still own all Git command construction, fresh discard/commit planning and path enforcement. Status paths become project-relative with `insideRel`, retaining leading whitespace. Successful or partially failed mutations immediately refetch the pane. `diff.tsx` separately guards the target and revision requests with `latest`, validates the typed `DiffFile`, and lays out cell-wrapped lines using shared fit helpers and `diffWindow` hunk positions. Logical row/character anchors preserve scroll through resize; core `reviewText` and `toUnifiedText` produce Ask context. No host adapter imports the other host.
 
 Status: current for `run.ts`, `status.ts`, `diff.ts`, `commands.ts`, `hooks.ts`, `sensitive.ts`, `sync.ts` and `message.ts`.

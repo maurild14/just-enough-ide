@@ -147,7 +147,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     }>
       <Show when={state().tab !== 'git' || !snapshot() || error()} fallback={
         <Git ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} git={snapshot()!.git}
-          state={state()} dispatch={dispatch} revision={revision()} refresh={refreshAfterChange} width={width()}
+          state={state()} dispatch={dispatch} revision={revision()} refresh={refreshAfterChange} smartCommit={snapshot()!.options.smartCommit} width={width()}
           height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (height() >= 10 ? 1 : 0)} header={height() >= 6}
           focused={props.input.focused} bind={(run, isEditing) => { gitAction = run; editing = isEditing }} />
       }>

@@ -44,14 +44,18 @@ function readGit(raw: unknown, cwd: string) {
 
 export function Git(props: {
   ctx: Plugin.Context; api: RpcClient<typeof JeiRpc>; sessionID: string; cwd: string; git: Record<string, unknown>
-  state: PaneState; dispatch: (action: PaneAction) => void; revision: number; refresh: () => Promise<void>
+  state: PaneState; dispatch: (action: PaneAction) => void; revision: number; refresh: () => Promise<void>; smartCommit: boolean
   width: number; height: number; header: boolean; focused: boolean; bind: (run: (action: string) => void, editing: () => boolean) => void
 }) {
   const draft = createMemo(() => props.ctx.storage.memory<{ message: string; mode: CommitMode; busy: string }>(`jei.git.${props.sessionID}`, { initial: { message: '', mode: 'commit', busy: '' } }))
   const message = () => draft()[0].message
+  const subject = createMemo(() => message().split(/[\r\n]/, 1)[0]!)
+  const body = createMemo(() => message().slice(subject().length))
   const mode = () => draft()[0].mode
   const busy = () => draft()[0].busy
   const setMessage = (message: string) => draft()[1]((d) => { d.message = message })
+  // shortcut: the native input edits only the subject; add a multiline editor when body editing is needed.
+  const setSubject = (subject: string) => setMessage(subject + body())
   const setMode = (mode: CommitMode) => draft()[1]((d) => { d.mode = mode })
   const [editing, setEditing] = createSignal(false)
   let diffAction: (action: string) => void = () => {}
@@ -79,6 +83,7 @@ export function Git(props: {
   })
   const items = createMemo(() => {
     const all: Row[] = [{ id: 'message' }, { id: 'commit-now' }, { id: 'commit' }, { id: 'generate-message' }, { id: 'sync' }]
+    if (props.smartCommit && mode() !== 'amend' && !groups().staged.length && groups().changes.length) all.push({ id: 'smart-commit-note' })
     for (const group of ['staged', 'changes'] as const) if (groups()[group].length) {
       all.push({ id: `group-${group}`, group })
       if (!collapsed().has(group)) all.push(...groups()[group])
@@ -115,16 +120,20 @@ export function Git(props: {
     if (!stopped) try { await props.api[method]({ paths }) } finally { await props.refresh() }
   }
   async function commit() {
-    const text = message().trim(); if (!text) return
+    const text = message().trim(); if (!subject().trim()) return
     const selectedMode = mode()
     const [, update] = draft()
     await perform('Commit', async () => {
       async function approval(): Promise<boolean | undefined> {
-        const plan = record(await props.api.commitPlan({ message: text, mode: selectedMode }))
-        if (!Array.isArray(plan.sensitive) || !plan.sensitive.every((p): p is string => typeof p === 'string')) throw new Error('Invalid Git reply.')
-        if (stopped) return undefined
-        if (!plan.sensitive.length) return false
-        return await props.ctx.ui.dialog.confirm({ title: 'Sensitive files', message: `These files look sensitive:\n${plan.sensitive.join('\n')}`, label: { confirm: 'Commit anyway', cancel: 'Cancel' } }) ? true : undefined
+        let approved: readonly string[] = []
+        while (!stopped) {
+          const plan = record(await props.api.commitPlan({ message: text, mode: selectedMode }))
+          if (!Array.isArray(plan.sensitive) || !plan.sensitive.every((p): p is string => typeof p === 'string')) throw new Error('Invalid Git reply.')
+          if (stopped) return undefined
+          if (plan.sensitive.every((p) => approved.includes(p))) return plan.sensitive.length > 0
+          if (!await props.ctx.ui.dialog.confirm({ title: 'Sensitive files', message: `These files look sensitive:\n${plan.sensitive.join('\n')}`, label: { confirm: 'Commit anyway', cancel: 'Cancel' } })) return undefined
+          approved = plan.sensitive
+        }
       }
       let allowSensitive = await approval()
       if (stopped || allowSensitive === undefined) return
@@ -215,7 +224,8 @@ export function Git(props: {
   const actions = (r: Row) => !r.path && r.group && inner() >= 65 ? r.group === 'staged' ? 'Unstage all  ' : 'Stage all  Discard all  ' : ''
   const tail = (r: Row) => r.path ? counts(r) : r.group ? `${actions(r)}${groups()[r.group].length}` : ''
   const rowText = (r: Row) => {
-    if (!r.group) return r.id === 'clean' ? 'No changes.' : r.id === 'message' ? 'Edit message' : r.id === 'commit-now' ? MODES.find((m) => m.value === mode())!.title : r.id === 'commit' ? 'Commit mode' : r.id === 'sync' ? 'Sync' : '✦ Generate'
+    if (r.id === 'smart-commit-note') return 'Nothing staged. Commit stages all changes.'
+    if (!r.group) return r.id === 'clean' ? 'No changes.' : r.id === 'message' ? body() ? 'Edit subject (body kept)' : 'Edit message' : r.id === 'commit-now' ? MODES.find((m) => m.value === mode())!.title : r.id === 'commit' ? 'Commit mode' : r.id === 'sync' ? 'Sync' : '✦ Generate'
     if (!r.path) return `${collapsed().has(r.group) ? '▸' : '▾'} ${r.group === 'staged' ? 'Staged' : 'Changes'}`
     return `${STATUS[r.status!]} ${r.path}`
   }
@@ -226,6 +236,10 @@ export function Git(props: {
   function nextFile(by: 1 | -1) {
     const d = props.state.diff!; const rows = groups()[d.staged ? 'staged' : 'changes']; const at = rows.findIndex((r) => r.path === d.path)
     if (rows[at + by]) openDiff(rows[at + by]!)
+  }
+  const placeholder = () => {
+    const full = `Message (enter to commit on "${repo().value?.branch.head ?? 'HEAD'}")`
+    return props.width >= 60 && cellWidth(full) <= props.width ? full : 'Message'
   }
   return <Show when={!isDiff()} fallback={<Diff ctx={props.ctx} api={props.api} sessionID={props.sessionID} cwd={props.cwd} target={props.state.diff!}
     revision={props.revision} width={props.width} height={props.height} header={props.header} back={() => props.dispatch({ type: 'back' })} next={nextFile} bind={(run) => { diffAction = run }} />}>
@@ -239,13 +253,13 @@ export function Git(props: {
       <Show when={!repo().error}><text height={1} onMouseDown={() => invoke('activate')}>{fitEnd('Initialize repository', props.width)}</text></Show>
     </>}>
       <box height={1} flexShrink={0} onMouseDown={() => setEditing(true)}>
-        <input id="git-message" width={props.width} value={message()} placeholder="Message" focused={props.focused && editing()}
-          on:focused={() => setEditing(true)} on:blurred={() => setEditing(false)} onInput={setMessage} onSubmit={() => { void commit() }} />
+        <input id="git-message" width={props.width} maxLength={Number.MAX_SAFE_INTEGER} value={subject()} placeholder={placeholder()} focused={props.focused && editing()}
+          on:focused={() => setEditing(true)} on:blurred={() => setEditing(false)} onInput={setSubject} onSubmit={() => { void commit() }} />
       </box>
       <box flexGrow={1} minHeight={1} overflow="hidden" flexDirection="column">
           <For each={window()}>{(row) => <box height={1} flexShrink={0} width={props.width} flexDirection="row" backgroundColor={selected() === row.id ? theme().background?.action.primary.base : undefined}>
             <text height={1} width={props.width - cellWidth(tail(row))}
-            fg={row.id === 'commit-now' ? !message().trim() || busy() ? theme().text.muted : theme().text.action.primary.base : theme().text.base}
+            fg={row.id === 'commit-now' ? !subject().trim() || busy() ? theme().text.muted : theme().text.action.primary.base : theme().text.base}
             onMouseDown={() => { setEditing(false); props.dispatch({ type: 'select', view: 'git', id: row.id }); invoke('activate') }}>
             {' '}<span style={{ fg: row.status === 'added' || row.status === 'untracked' ? theme().text.feedback.success.base : row.status === 'deleted' ? theme().text.feedback.error.base : row.status === 'conflicted' ? theme().text.feedback.info.base : row.status ? theme().text.feedback.warning.base : theme().text.muted }}>{row.path ? STATUS[row.status!] + ' ' : ''}</span>
             {padEnd(row.path ? fitPath(row.path, inner() - cellWidth(tail(row)) - 3) : fitEnd(rowText(row), inner() - cellWidth(tail(row)) - 1), inner() - cellWidth(tail(row)) - (row.path ? 3 : 1))}
