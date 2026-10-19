@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { isInside, joinPath, parentDirs, relativeTo, toPosix } from './paths.ts'
+import { isInside, joinPath, parentDirs, projectRel, relativeTo, toPosix } from './paths.ts'
 
 test('toPosix', () => expect(toPosix('a\\b\\c')).toBe('a/b/c'))
 
@@ -58,4 +58,17 @@ test('absolute and relative roots never match each other', () => {
   expect(isInside('', '/etc/passwd')).toBe(false)
   expect(isInside('//srv/share', 'srv/share/x')).toBe(false)
   expect(isInside('//srv/share', '//srv/share/x')).toBe(true)
+})
+
+test('projectRel keeps typed paths inside the root', () => {
+  expect(projectRel('/work/acme-app', 'src/api/user.ts')).toBe('src/api/user.ts')
+  expect(projectRel('/work/acme-app', './src/../src/api')).toBe('src/api')
+  expect(projectRel('/work/acme-app', '/work/acme-app/src/api/user.ts')).toBe('src/api/user.ts')
+  expect(projectRel('C:\\work\\acme-app', 'C:\\Work\\acme-app\\src\\a.ts')).toBe('src/a.ts')
+  expect(projectRel('C:\\work\\acme-app', 'src\\a.ts')).toBe('src/a.ts')
+  expect(projectRel('/work/acme-app', '/work/acme-app')).toBe('')
+  expect(projectRel('/work/acme-app', '/etc/passwd')).toBeNull()
+  expect(projectRel('/work/acme-app', '../other/x.ts')).toBeNull()
+  expect(projectRel('/work/acme-app', 'src/../../x.ts')).toBeNull()
+  expect(projectRel('/work/acme-app', 'D:/work/acme-app/x.ts')).toBeNull()
 })

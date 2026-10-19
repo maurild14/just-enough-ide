@@ -165,3 +165,46 @@ test('/jei toggles, and /jei <path> opens Files', async ($, on) => {
   expect((await ui.find({ key: 'tab-1' }))?.props.variant).toBe('primary')
   await ui.unmount()
 })
+
+test('/jei brings a pane that is open behind another forward instead of closing it', async ($, on) => {
+  const opens: string[] = []
+  on('ui.open', (_$, e) => {
+    opens.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', () => {
+    throw new Error('must not close')
+  })
+  on('ui.panes', () => ({ value: [{ id: 'jei', title: 'JEI', isShown: false, isFocused: false, isPlaced: true }] }))
+  expect((await $.command.run(jei())).text).toBe('JEI opened.')
+  expect(opens).toEqual(['jei'])
+})
+
+test('/jei says why when the pane cannot be shown', async ($, on) => {
+  on('ui.open', () => ({ value: { isPlaced: false, reason: 'no-surface' } }))
+  expect((await $.command.run(jei('git'))).text).toBe('JEI is open but not shown yet: no-surface.')
+})
+
+test('/jei <path> reveals paths inside the project and refuses the rest', async ($, on) => {
+  // The test's $ has no state noun: watch the plugin's writes as they pass beneath it.
+  const written: Record<string, unknown> = {}
+  on('state.set', (_$, e, next) => {
+    written[e.key] = e.value
+    return next(e)
+  })
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('classic.CwdChanged', () => ({}))
+  await $.classic.CwdChanged({ old_cwd: '/work', new_cwd: '/work/acme-app' })
+
+  expect((await $.command.run(jei('/work/acme-app/src/api/user.ts'))).text).toBe('JEI opened on Files.')
+  expect((written.tree as { expanded: string[] }).expanded).toEqual(['src', 'src/api'])
+  const pane = written.pane as { tab: string; selected: { files?: string } }
+  expect(pane.tab).toBe('files')
+  expect(pane.selected.files).toBe('src/api/user.ts')
+
+  for (const key of Object.keys(written)) delete written[key]
+  for (const outside of ['/etc/passwd', '../other/x.ts', 'src/../../x.ts']) {
+    expect((await $.command.run(jei(outside))).text).toBe('That path is outside the project.')
+  }
+  expect(written).toEqual({})
+})

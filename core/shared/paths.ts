@@ -81,3 +81,16 @@ export function parentDirs(rel: string): string[] {
   for (let i = 1; i < segs.length; i++) out.push(segs.slice(0, i).join('/'))
   return out
 }
+
+/**
+ * A path typed by a person (absolute, or relative to `root`) as a posix rel
+ * inside `root`, or null when it is outside or escapes with `..`. The root
+ * itself gives ''.
+ */
+export function projectRel(root: string, path: string): string | null {
+  const p = toPosix(path.trim())
+  const absolute = /^([A-Za-z]:)?\//.test(p)
+  const full = absolute ? p : joinPath(root, p)
+  if (!isInside(root, full)) return null
+  return relativeTo(root, full)
+}

@@ -3,17 +3,30 @@ import { parseJeiArgument } from '../core/command.ts'
 import { reducePane } from '../core/pane.ts'
 import { parseOptions } from '../core/options.ts'
 import { reveal } from '../core/files/tree.ts'
-import { renderPane, TAB_NAMES } from '../hosts/claude-code/pane.tsx'
-import { initPane, PANE_ID, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
+import { projectRel } from '../core/shared/paths.ts'
+import { TAB_NAMES } from '../core/shared/tabs.ts'
+import { renderPane } from '../hosts/claude-code/pane.tsx'
+import { initPane, PANE_ID, readCwd, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
 
 const TITLE = 'JEI'
 
-const openPane = ($: EngineInterface) => $.ui.open({ id: PANE_ID, title: TITLE, focus: true })
+const reason = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
+/** Opens (or brings forward) the pane; null when it shows, else the answer to give. */
+async function openPane($: EngineInterface): Promise<string | null> {
+  try {
+    const r = await $.ui.open({ id: PANE_ID, title: TITLE, focus: true })
+    return r.isPlaced ? null : `JEI is open but not shown yet: ${r.reason}.`
+  } catch (err) {
+    return `JEI could not open: ${reason(err)}.`
+  }
+}
 
 // Wiring only: what each hook does lives in hosts/claude-code/ and core/.
 export const register: Register = (on, raw) => {
   const options = parseOptions(raw)
-  let autoOpenTried = false
+  // Armed only by a fresh session, so a hot reload never reopens a pane the person closed.
+  let autoOpenArmed = false
 
   on('session.start', async ($, e, next) => {
     await $.command.register({
@@ -21,15 +34,15 @@ export const register: Register = (on, raw) => {
       description: 'Toggle the JEI pane: /jei [files|search|symbols|git|<path>]',
     })
     await setCwd($, e.cwd)
-    await initPane($, options.defaultTab)
+    autoOpenArmed = (await initPane($, options.defaultTab)) && options.startOpen
     return next(e)
   })
 
   // Open on start only where the surface docks the pane beside the transcript;
   // the first prompt-hint draw is the first moment the viewport is known.
   on('ui.render', { component: 'PromptHint' }, ($, e, next) => {
-    if (!autoOpenTried && options.startOpen && e.viewport?.isFullscreen === true) {
-      autoOpenTried = true
+    if (autoOpenArmed && e.viewport?.isFullscreen === true) {
+      autoOpenArmed = false
       void $.ui.open({ id: PANE_ID, title: TITLE }).catch(() => undefined)
     }
     return next(e)
@@ -38,23 +51,30 @@ export const register: Register = (on, raw) => {
   on('command.run', { command: 'jei' }, async ($, e) => {
     const arg = parseJeiArgument(e.args ?? '') // a plugin's $.command.run may leave args out
     if (arg.toggle) {
-      const open = (await $.ui.panes()).some((p) => p.id === PANE_ID && p.isPlaced)
-      if (open) {
-        await $.ui.close({ id: PANE_ID })
+      const mine = (await $.ui.panes()).find((p) => p.id === PANE_ID)
+      if (mine?.isPlaced && mine.isShown) {
+        try {
+          await $.ui.close({ id: PANE_ID })
+        } catch (err) {
+          return { text: `JEI could not close: ${reason(err)}.` }
+        }
         return { text: 'JEI closed.' }
       }
-      await openPane($)
-      return { text: 'JEI opened.' }
+      return { text: (await openPane($)) ?? 'JEI opened.' }
+    }
+    let rel: string | null = null
+    if (arg.reveal !== undefined) {
+      rel = projectRel(await readCwd($), arg.reveal)
+      if (rel === null) return { text: 'That path is outside the project.' }
     }
     const tab = arg.tab ?? 'files'
     await updatePane($, (s) => reducePane(s, { type: 'tab', tab }))
-    if (arg.reveal) {
-      const rel = arg.reveal
-      await updateTree($, (t) => ({ ...t, expanded: [...reveal(new Set(t.expanded), rel)] }))
-      await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id: rel }))
+    if (rel) {
+      const id = rel
+      await updateTree($, (t) => ({ ...t, expanded: [...reveal(new Set(t.expanded), id)] }))
+      await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id }))
     }
-    await openPane($)
-    return { text: `JEI opened on ${TAB_NAMES[tab]}.` }
+    return { text: (await openPane($)) ?? `JEI opened on ${TAB_NAMES[tab]}.` }
   })
 
   // Observes only: a failure must never hold up the cd, so the catch passes it on.

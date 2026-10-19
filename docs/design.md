@@ -69,7 +69,7 @@ Truncation always reads the ellipsis width from the active glyph set. Diff lines
  ↑↓ move · enter open · a mention · f filter   hint line (pinned)
 ```
 
-- **Tab bar:** tabs are separated by 2 spaces. The active tab is `accent` and bold. Where a host draws tabs as its own buttons with chrome (Claude Code's `[ 1 Files ]`), the gap shrinks to 1, then 0, before the labels shorten, so the bar always fits.
+- **Tab bar:** tabs are separated by 2 spaces. The active tab is `accent` and bold.
 - **Rule:** a single `muted` horizontal line. It is the only border in JEI. Dialogs and confirms use one `muted` rule above them and no box.
 - **Header row:** shows what the body is about. Files: root name and filter. Search: the query field and its toggles. Symbols: the file name and `LSP` or `approximate`. Git: the repository row. Diff view: file, source and +/−.
 - **Gutters:** column 0 is the gutter. It shows the touched marker `•` in the activity color, otherwise a space. Keep 1 empty column on the right. Content never touches the right edge.
@@ -103,6 +103,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 - Single names, commit subjects, branch names and messages use an end ellipsis: `fix: validate us…`.
 - Search match text is centered on the first match, with an ellipsis on each side that was cut.
 - Row data is never mutated: truncation exists only in the rendered string.
+- Both hosts build the tab bar with `core/shared/tabs.ts` (`tabBar`): when a form does not fit, the gap shrinks to 1, then 0, before the labels shorten.
 - Both hosts build these strings with `core/shared/fit.ts` (`cellWidth`, `fitEnd`, `fitPath`, `padEnd`), never with string length. Every result is at most the requested width in cells.
 
 **Hint line.** Items are `key label` pairs in priority order, separated by ` · `. Drop the lowest-priority items from the end until the line fits; the hint never ends with a catch-all item. Below 32 columns the hint shows only keys (`↑↓ enter a`). The full key list for every view is in the PRD and `core/keys.ts`.

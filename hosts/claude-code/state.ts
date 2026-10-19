@@ -46,10 +46,15 @@ export function setCwd($: StateHost, dir: string): Promise<string> {
   return update($, cwd, () => dir)
 }
 
-/** Writes the opening tab once per session; a pane state already written is kept. */
-export async function initPane($: StateHost, tab: Tab): Promise<void> {
+/**
+ * Writes the opening tab once per session; a pane state already written is
+ * kept. True when this is a fresh session (nothing was written before).
+ */
+export async function initPane($: StateHost, tab: Tab): Promise<boolean> {
   const held = await $.state.get({ plugin: 'jei', key: 'pane' })
-  if (held.version === 0) await update($, pane, () => initialPane(tab))
+  if (held.version !== 0) return false
+  await update($, pane, () => initialPane(tab))
+  return true
 }
 
 /** A core GitSnapshot as JSON state: the count Maps become records. */

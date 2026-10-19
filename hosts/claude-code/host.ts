@@ -23,6 +23,8 @@ export function claudeHost($: EngineInterface, platform: Platform): Host {
       if (options.stdin !== undefined) init.stdin = options.stdin
       if (options.timeoutMs !== undefined) init.timeoutMs = options.timeoutMs
       const r = await $.process.run(argv, init)
+      // A cut stdout would parse as a short list; fail loudly instead.
+      if (r.isStdoutTruncated) throw new Error(`Output too large: ${argv.slice(0, 3).join(' ')}`)
       return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr }
     },
 
@@ -34,7 +36,9 @@ export function claudeHost($: EngineInterface, platform: Platform): Host {
     async stat(path: string): Promise<FileStat | null> {
       try {
         const s = await $.fs.stat(path, { resolve: true })
-        return { kind: s.kind, size: s.size, realPath: s.realPath ?? path }
+        // No realPath means the engine could not (or would not) resolve it: fail closed.
+        if (s.realPath === undefined) return null
+        return { kind: s.kind, size: s.size, realPath: s.realPath }
       } catch {
         return null
       }
@@ -58,7 +62,7 @@ export function claudeHost($: EngineInterface, platform: Platform): Host {
     },
 
     async complete(prompt: string, model: string): Promise<string> {
-      const r = await $.model.complete({ model: model || 'haiku', prompt })
+      const r = await $.model.complete({ model: model || 'haiku', prompt, timeoutMs: 30_000 })
       if (!r.isAnswered) throw new Error(`The model gave no answer (${r.reason}).`)
       return r.text
     },
