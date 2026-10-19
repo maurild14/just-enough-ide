@@ -8,9 +8,8 @@ import type { DirEntry, FileStat, Host, Platform, RunOptions, RunResult } from '
 
 // An empty global config keeps the developer's own git settings out of the specs
 // (the null device path is not accepted by git on Windows).
-const EMPTY_CONFIG = join(realpathSync.native(mkdtempSync(join(tmpdir(), 'jei-cfg-'))), 'gitconfig')
+const EMPTY_CONFIG = join(tmpdir(), 'jei-empty-gitconfig')
 writeFileSync(EMPTY_CONFIG, '')
-process.on('exit', () => rmSync(dirname(EMPTY_CONFIG), { recursive: true, force: true }))
 
 export class FakeHost implements Host {
   readonly platform: Platform = process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux'
