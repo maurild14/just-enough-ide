@@ -16,7 +16,7 @@ JEI is drawn in character cells. There are no pixels and no fonts to pick, and t
 
 ## 2. Color roles
 
-Views use semantic tokens only. No view contains an RGB, hex or ANSI code. Both hosts supply theme colors (dark and light). Each host adapter maps the tokens to its theme in one place, `theme.ts`. When a host gives no value for a token, the fallback is the ANSI 16-color name shown below, so the terminal palette still applies.
+Views use semantic tokens only. No view contains a literal RGB, hex or ANSI color. Both hosts supply theme colors (dark and light). Claude Code maps roles in `theme.ts`; OpenCode's activity accent mapping lives in `colors.ts` and uses the resolved context theme. When a host gives no value for a token, the fallback is the ANSI 16-color name shown below, so the terminal palette still applies.
 
 | Token | Used for | Fallback |
 | --- | --- | --- |
@@ -170,7 +170,7 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 - Claude Code paints with theme keys only, which cannot be mixed, so it always uses the 3-step form (`shimmerPhase` in `core/activity/log.ts`), redrawn every 250 ms only while a row glows.
 - There is no other animation: no spinners, no sliding, no blinking cursor except the host's own.
 
-The OpenCode shell follows these height rules using its root box's measured height, rather than assuming the terminal height equals the panel height. The tab bar uses `tabBar`, the single text hint uses `hintLine` (which retains Esc), and all remaining shell rows use `fitEnd` or `fitPath`. The active tab is bold in the resolved theme's primary action text color; tabs also accept clicks. At this stage only the shell is rendered; Files and Git content and shimmer painting arrive in Tasks 16-17.
+The OpenCode shell follows these height rules using its root box's measured height, rather than assuming the terminal height equals the panel height. The tab bar uses `tabBar`, the single text hint uses `hintLine` (which retains Esc), and all remaining shell rows use `fitEnd` or `fitPath`. The active tab is bold in the resolved theme's primary action text color; tabs also accept clicks. Files (Task 16) adds a selection-anchored tree, eight-step theme-colored shimmer and previews; Git content follows in Task 17. OpenCode's Markdown preview displays highlighted literal source, and images display `Image preview is not available in OpenCode.`. Its binary notice is `Binary file — no preview.`; too-large previews say `Too large to preview.` because the RPC does not carry size. Code wraps and scrolls by native visual rows; CSV/TSV use the shared `fitTable` helper.
 
 ## 10. Test checklist
 

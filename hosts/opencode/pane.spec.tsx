@@ -28,7 +28,7 @@ function fixture(options: Record<string, unknown> = {}) {
   let opens = 0
   let reply: () => Promise<unknown> = async () => ({ cwd: '/acme-app', options: parseOptions(options), git: { root: null }, activity: {} })
   const ctx = {
-    options, theme: { text: { base: 'white', muted: 'gray', action: { primary: { base: 'blue' } }, feedback: { error: { base: 'red' } } } },
+    options, theme: { text: { base: 'white', muted: 'gray', action: { primary: { base: 'blue' } }, feedback: { error: { base: 'red' }, info: { base: 'magenta' }, warning: { base: 'yellow' }, success: { base: 'green' } } } },
     renderer: undefined,
     storage: { memory(key: string, config: { initial: object }) {
       if (!memory.has(key)) {
@@ -37,7 +37,10 @@ function fixture(options: Record<string, unknown> = {}) {
       }
       return memory.get(key)
     } },
-    client: { rpc: () => ({ state: () => reply(), events: { on(name: string, fn: (event: { data: unknown }) => void) {
+    client: { rpc: () => ({ state: () => reply(),
+      listDir: async ({ rel }: { rel: string }) => ({ entries: rel === '' ? [{ name: 'src', kind: 'dir', size: 0 }] : rel === 'src' ? ['app.ts', 'long-component.ts', '界界界界界界界界界界界界界界界界.ts'].map((name) => ({ name, kind: 'file', size: 1 })) : [], ignored: [] }),
+      preview: async () => ({ kind: 'empty' }),
+      events: { on(name: string, fn: (event: { data: unknown }) => void) {
       const handlers = listeners.get(name) ?? new Set()
       listeners.set(name, handlers)
       handlers.add(fn)
@@ -126,12 +129,12 @@ test('/jei opens the requested tab or path and toggles without losing selection'
   expect(r.captureSpans().lines[0]!.spans.some((s) => s.text.includes('4 Git') && (s.attributes & 1))).toBe(true)
   await f.command('jei.toggle', './src/long-component.ts')
   await r.flush()
-  expect(r.captureCharFrame()).toContain('src/long-component.ts')
+  expect(r.captureCharFrame()).toContain('long-component.ts')
   await f.command('jei.toggle')
   expect(f.panel()).toBeUndefined()
   await f.command('jei.toggle')
   await r.flush()
-  expect(r.captureCharFrame()).toContain('src/long-component.ts')
+  expect(r.captureCharFrame()).toContain('long-component.ts')
 })
 
 test('bindings follow focus and the current view, including Esc at short heights', async () => {
@@ -162,7 +165,7 @@ test('Esc dispatches core back from a nested view and keeps the selected path', 
   const commands = f.layers.flatMap((l) => l().commands ?? [])
   expect(commands.some((c) => c.bind === 'm')).toBe(false)
   expect(commands.some((c) => c.bind === 'f')).toBe(true)
-  expect(r.captureCharFrame()).toContain('src/app.ts')
+  expect(r.captureCharFrame()).toContain('app.ts')
 })
 
 test('the width/height matrix and live resize preserve the requested Files selection', async () => {
@@ -218,7 +221,7 @@ test('changed refetches discard stale replies and malformed replies show an erro
   await r.flush()
   replies[0]!({ cwd: '/acme-app/stale', options: {}, git: { root: null }, activity: {} })
   await r.flush()
-  expect(r.captureCharFrame()).toContain('/acme-app/fresh')
+  expect(r.captureCharFrame()).toContain('fresh')
   f.setReply(async () => ({ cwd: 42 }))
   f.emit('changed')
   await r.flush()

@@ -11,6 +11,8 @@ import { parseOptions } from '../../core/options.ts'
 import { currentView, initialPane, reducePane, type PaneAction, type PaneState } from '../../core/pane.ts'
 import { fitEnd, fitPath } from '../../core/shared/fit.ts'
 import { TAB_NAMES, tabBar } from '../../core/shared/tabs.ts'
+import { projectRel } from '../../core/shared/paths.ts'
+import { Files } from './files.tsx'
 import { JeiRpc } from './rpc.ts'
 
 type Context = Plugin.Context
@@ -51,6 +53,9 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   const [activity, setActivity] = createSignal(new ActivityLog(), { equals: false })
   const [now, setNow] = createSignal(Date.now())
   const [error, setError] = createSignal('')
+  const [revision, setRevision] = createSignal(0)
+  let filesAction: (action: string) => void = () => {}
+  let editing: () => boolean = () => false
   const dimensions = useTerminalDimensions()
   const [height, setHeight] = createSignal(dimensions().height)
   const width = () => Math.max(0, Math.floor(props.input.width))
@@ -82,18 +87,21 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
       if (!stopped) setError(error instanceof Error ? error.message.split(/\r?\n/)[0]! : 'Unable to load JEI.')
     }
   }
-  const changed = props.api.events.on('changed', () => { void refetch() })
+  const changed = props.api.events.on('changed', () => { setRevision((n) => n + 1); void refetch() })
   onCleanup(changed)
   const touched = props.api.events.on('activity', (event) => {
     try {
       const data = record(event.data)
       if (typeof data.rel !== 'string') throw new Error('Invalid JEI activity.')
+      const rel = snapshot() ? projectRel(snapshot()!.cwd, data.rel) : data.rel
+      if (rel === null || !rel) throw new Error('Invalid JEI activity.')
       const activityKind = kind(data.kind)
       if (!allows(options.activity, activityKind)) return
-      live.set(data.rel, ++received)
-      activity().touch(data.rel, activityKind, Date.now())
+      live.set(rel, ++received)
+      activity().touch(rel, activityKind, Date.now())
       setActivity(activity())
       setNow(Date.now())
+      if (options.followAgent) dispatch({ type: 'select', view: 'files', id: rel })
     } catch { setError('Invalid JEI activity.') }
   })
   onCleanup(touched)
@@ -107,10 +115,11 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   props.ctx.keymap.layer(() => ({
     enabled: props.input.focused,
     commands: [
-      ...Object.entries(TAB_KEYS).map(([key, tab]) => ({ bind: key, title: TAB_NAMES[tab], run: () => { dispatch({ type: 'tab', tab }) } })),
+      ...Object.entries(TAB_KEYS).map(([key, tab]) => ({ bind: key, title: TAB_NAMES[tab], enabled: () => !editing(), run: () => { dispatch({ type: 'tab', tab }) } })),
       ...KEYS[currentView(state())].map(({ key, action, label }) => ({ bind: key, title: label, run: () => {
-        if (action === 'back') dispatch({ type: 'back' })
-      } })),
+        if (state().tab === 'files') filesAction(action)
+        else if (action === 'back') dispatch({ type: 'back' })
+      }, enabled: () => !editing() || ['back', 'move-up', 'move-down', 'activate'].includes(action) })),
     ],
   }))
   const tabs = createMemo(() => tabBar(width(), width(), state().tab))
@@ -126,8 +135,15 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
       </box>
     </Show>
     <Show when={height() >= 8}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{'─'.repeat(width())}</text></Show>
-    <Show when={height() >= 6}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{fitEnd(snapshot()?.cwd ?? 'JEI', width())}</text></Show>
-    <box flexGrow={1} minHeight={1}><text height={1} fg={error() ? props.ctx.theme.text.feedback.error.base : props.ctx.theme.text.base}>{fitEnd(body(), width())}</text></box>
+    <Show when={state().tab !== 'files' || !snapshot() || error()} fallback={
+      <Files ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} options={snapshot()!.options} git={snapshot()!.git}
+        state={state()} dispatch={dispatch} activity={activity()} now={now()} revision={revision()} width={width()}
+        height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (height() >= 10 ? 1 : 0)} header={height() >= 6}
+        focused={props.input.focused} bind={(run, isEditing) => { filesAction = run; editing = isEditing }} />
+    }>
+      <Show when={height() >= 6}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{fitEnd(snapshot()?.cwd ?? 'JEI', width())}</text></Show>
+      <box flexGrow={1} minHeight={1}><text height={1} fg={error() ? props.ctx.theme.text.feedback.error.base : props.ctx.theme.text.base}>{fitEnd(body(), width())}</text></box>
+    </Show>
     <Show when={height() >= 10}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{hintLine(currentView(state()), width())}</text></Show>
   </box>
 }
