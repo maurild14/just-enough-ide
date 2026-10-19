@@ -22,6 +22,8 @@ export function commitPrompt(diff: string, maxChars: number): string {
  */
 export function cleanMessage(raw: string): string {
   let s = raw.trim().replace(/^commit message:\s*/i, '')
+  const inline = /^```([^`\n]+)```$/.exec(s) // a fence on one line: ```feat: x```
+  if (inline) s = (inline[1] ?? '').trim()
   const open = /^```[^\n]*\n/.exec(s)
   if (open) {
     const rest = s.slice(open[0].length)

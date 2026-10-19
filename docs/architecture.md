@@ -90,6 +90,13 @@ Status: current for `core/activity/`, `core/latest.ts`, `core/pane.ts` and `core
 - `core/pane.ts`: `reducePane` is pure. `tab` resets the stack to the tab's root view but keeps `selected` (per-view selection survives tab switches). `open-diff` pushes `git.diff` and records `diff`; `preview` pushes `files.preview` and selects the file in Files; both switch tab when needed. `back` pops (restoring `git` with `selected.git` intact) and is a no-op on a root view.
 - `core/command.ts`: `parseJeiArgument` trims; empty toggles; a tab name (any case) opens that tab; anything else reveals a posix-normalized path (no leading `./`) in Files.
 
+## Services
+
+Status: current for `core/git/service.ts` and `core/files/service.ts`. These are the only core entry points the adapters call besides pure helpers; each takes a `Host` and returns plain data.
+
+- `core/git/service.ts`: `snapshot(host, cwd)` returns `{ root: null }` outside a repo, else `{ root, status, numstat, staged, hooks }` (status, `diff --numstat` and `diff --cached --numstat` counts keyed by path, `usesHooks`). `stage`, `unstage` skip git for no paths; `discard` runs `discardPlan` (callers confirm first). `fileDiff` returns one `DiffFile` capped at 5,000 lines (`DIFF_MAX_LINES`); untracked files use `--no-index` and exit 1 counts as success. `generateMessage` sends the staged diff (the working diff when nothing is staged) cut to 12,000 characters to `host.complete` and runs `cleanMessage`. `commitPlan` is pure: steps from `commitSteps` (with `publish` set to the branch head for `commit-push` without an upstream), `sensitive` is the sensitive subset of what the commit will include (every changed path when the smart commit runs `add -A`, else the staged paths), `viaAgentShell` is `snap.hooks`. `runSteps` stops at the first `GitError`. `sync` reads `pull.rebase`/`pull.ff`, runs `syncSteps` and returns `{ ok: true }`, `{ ok: false, divergence: true }` (only without a `choice`) or `{ ok: false, error: <first line> }`; a detached HEAD gives `Detached HEAD: check out a branch to sync.`; with `choice` it runs `resolveDivergence`.
+- `core/files/service.ts`: `listDir` lists a folder and asks `git check-ignore --stdin -z` which listed paths are ignored (none outside a repo). `loadPreview` stats first (size settles empty, image and too-large without reading), reads at most `PREVIEW_MAX_BYTES`, and returns `text` plus `language`, or `rows` (200 at most) for csv/tsv; a missing path or a folder is `empty`. `allFiles` is `ls-files -co --exclude-standard -z` in a repo, else a breadth-first walk capped at 20,000 entries that skips `.git` and `node_modules`. `openFile` runs `openArgv` and ignores the exit code (some openers exit 1 on success).
+
 ## Dependency direction
 
 ```
@@ -114,12 +121,13 @@ index.ts  tui.ts  rpc.ts                          OpenCode entries (re-export ho
 core/
   host.ts  keys.ts  options.ts  latest.ts  pane.ts
   shared/{paths.ts, fuzzy.ts, argv.ts, fit.ts}
-  git/{run.ts, status.ts, diff.ts, commands.ts, hooks.ts, message.ts, sensitive.ts}
+  git/{run.ts, status.ts, diff.ts, commands.ts, hooks.ts, message.ts, sensitive.ts, sync.ts, service.ts}
   activity/{classify.ts, shell.ts, log.ts}
-  files/{tree.ts, preview.ts, csv.ts, open.ts, icons.ts, mention.ts}
+  files/{tree.ts, preview.ts, csv.ts, open.ts, icons.ts, mention.ts, service.ts}
 hosts/claude-code/    host.ts, state.ts, pane.tsx, files.tsx, git.tsx, diff.tsx, activity.ts, *.test.tsx
 hosts/opencode/       host.ts, rpc.ts, server.ts, tui.tsx, pane.tsx, files.tsx, git.tsx, diff.tsx, *.spec.ts(x)
 types/index.d.ts      Claude Code PluginState contract
+test/fake-host.ts     spec-only Host over a temp dir and real git
 test/fixtures/        git porcelain samples, diff samples, LSP text samples
 docs/                 this documentation; docs/plans/ holds implementation plans
 scripts/              dev scripts (check-docs.ts)

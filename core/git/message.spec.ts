@@ -31,4 +31,5 @@ test('cleanMessage', () => {
   expect(cleanMessage('feat: x\n\nUse:\n```\nfoo\n```')).toBe('feat: x\n\nUse:\n```\nfoo\n```')
   expect(cleanMessage('Commit message:\n```\nfix: y\n```')).toBe('fix: y')
   expect(cleanMessage("feat: it's fine")).toBe("feat: it's fine")
+  expect(cleanMessage('```feat: x```')).toBe('feat: x')
 })
