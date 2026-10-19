@@ -1,6 +1,6 @@
 import { expect, test, type Engine, type Mounted } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { lineWidths, type Node } from './measure.ts'
+import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
 
 const SURFACES = ['terminal', 'desktop'] as const
 const WIDTHS = [24, 40, 80, 120] as const
@@ -293,7 +293,7 @@ test('commit: modes in the menu; plain commit runs git directly', async ($, on) 
   const calls = await world($, on, repo())
   const ui = await gitPane($, 'terminal')
   const menu = await ui.find({ type: 'Select', key: 'commit-mode' })
-  expect((menu?.props.options as { label: string }[]).map((o) => o.label)).toEqual(['Commit', 'Commit & Push', 'Commit (amend)'])
+  expect((menu?.props.options as { label: string }[]).map((o) => o.label)).toEqual(['Only', '& Push', 'Amend'])
   await ui.input({ key: 'message', text: "fix: don't drop the name", kind: 'change' })
   await ui.press({ key: 'commit' })
   expect(gitRuns(calls, 'commit')).toEqual([['git', '--no-optional-locks', '-C', ROOT, 'commit', '-m', "fix: don't drop the name"]])
@@ -306,6 +306,31 @@ test('commit: modes in the menu; plain commit runs git directly', async ($, on) 
   expect(gitRuns(calls, 'push')).toHaveLength(1)
   await ui.select({ key: 'commit-mode', value: 'commit' })
   await ui.unmount()
+})
+
+test('the commit row is one Commit control and a mode chooser at every width', async ($, on) => {
+  await world($, on, repo())
+  for (const width of WIDTHS) {
+    const ui = await gitPane($, 'terminal', width)
+    for (const message of ['', 'feat: one control']) {
+      await ui.input({ key: 'message', text: message, kind: 'change' })
+      for (const mode of ['commit', 'commit-push', 'amend']) {
+        await ui.select({ key: 'commit-mode', value: mode })
+        const tree = (await ui.drawn()) as Node
+        const text = [0, 1, 2]
+          .map((i) => findKey(tree, `commit-row-${i}`))
+          .filter((n): n is Node => n !== undefined)
+          .map(drawnLine)
+          .join(' ')
+        expect(text).toContain('[ Commit ]')
+        expect(text.match(/Commit/g)).toHaveLength(1)
+        for (const w of lineWidths(tree)) expect(w).toBeLessThanOrEqual(width)
+      }
+    }
+    await ui.select({ key: 'commit-mode', value: 'commit' })
+    await ui.input({ key: 'message', text: '', kind: 'change' })
+    await ui.unmount()
+  }
 })
 
 test('commit-push with no upstream publishes the branch', async ($, on) => {
@@ -504,6 +529,73 @@ test('no line is wider than the pane at 24, 40, 80 and 120 columns', async ($, o
       await ui.press({ key: 'back' })
       await ui.unmount()
     }
+  }
+})
+
+/** The hint row as the terminal paints it. */
+async function hintOf(ui: Ui): Promise<string> {
+  const box = findKey((await ui.drawn()) as Node, 'hint')
+  return box ? drawnLine(box) : ''
+}
+
+/** A plain hotkey Button with nothing after its colon (`g: ` then the end, another key or a separator). */
+const dangling = (line: string) => /(^|\s)[a-z0-9]: (?=$|[a-z0-9]: |· |\[ )/.test(line)
+
+test('the Git hint: labels while they fit, then keycaps, never a dangling key', async ($, on) => {
+  await world($, on, repo())
+  const expected: Record<number, string> = {
+    120: ' ↑↓ move · enter open · s: stage · u: unstage · d: discard · c: commit · g: generate · e: sync',
+    // The owner's docked pane: every letter label fits once the navigation words go bare.
+    90: ' ↑↓ enter · s: stage · u: unstage · d: discard · c: commit · g: generate · e: sync',
+    80: ' s: stage · u: unstage · d: discard · c: commit · g: generate · e: sync',
+    // A labelled prefix, then the rest as keycaps after a separator.
+    60: ' s: stage · u: unstage · d: discard · [ c ] [ g ] [ e ]',
+    40: ' [ s ] [ u ] [ d ] [ c ] [ g ] [ e ]',
+  }
+  for (const [width, line] of Object.entries(expected)) {
+    const ui = await gitPane($, 'terminal', Number(width))
+    const hint = await hintOf(ui)
+    expect(hint).toBe(line)
+    expect(dangling(hint)).toBe(false)
+    expect(hint.length).toBeLessThanOrEqual(Number(width) - 1)
+    await ui.unmount()
+  }
+  // Too narrow for six keycaps: the keys stay pressable as a bare strip.
+  const narrow = await gitPane($, 'terminal', 24)
+  expect(await hintOf(narrow)).toBe(' s: u: d: c: g: e: ')
+  await narrow.unmount()
+  // Short panes are bare: keycaps, no labels.
+  for (const width of [40, 80]) {
+    const short = await gitPane($, 'terminal', width, 5)
+    expect(await hintOf(short)).toBe(' [ s ] [ u ] [ d ] [ c ] [ g ] [ e ]')
+    await short.unmount()
+  }
+  // The diff view follows the same forms.
+  for (const [width, line] of [
+    [40, ' [ n ] [ p ] [ j ] [ k ] [ a ] [ o ]'],
+    [120, ' ↑↓ scroll · n: next hunk · p: prev hunk · j: next file · k: prev file · a: ask · o: open in editor'],
+  ] as const) {
+    const ui = await gitPane($, 'terminal', width)
+    await ui.press({ key: 'change-src/api/user.ts' })
+    expect(await hintOf(ui)).toBe(line)
+    await ui.press({ key: 'back' })
+    await ui.unmount()
+  }
+})
+
+test('the hint keeps every key and never drops one as the pane widens', async ($, on) => {
+  await world($, on, repo())
+  let last = 0
+  for (let width = 24; width <= 130; width++) {
+    const ui = await gitPane($, 'terminal', width)
+    const hint = await hintOf(ui)
+    expect(hint.length).toBeLessThanOrEqual(width - 1)
+    if (width >= 32) expect(dangling(hint)).toBe(false)
+    for (const k of ['s', 'u', 'd', 'c', 'g', 'e']) expect(await ui.find({ key: `key-${k}` })).toBeDefined()
+    const count = (hint.match(/(^|\s|\[ )([a-z0-9]|↑↓|enter)(?=:| |$)/g) ?? []).length
+    expect(count).toBeGreaterThanOrEqual(last)
+    last = count
+    await ui.unmount()
   }
 })
 

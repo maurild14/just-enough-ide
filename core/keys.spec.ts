@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { fitHint, hintLine, KEYS, TAB_KEYS, type View } from './keys.ts'
+import { hintLine, KEYS, TAB_KEYS, type View } from './keys.ts'
 
 const views = Object.keys(KEYS) as View[]
 const named = ['enter', 'esc', 'up', 'down']
@@ -85,13 +85,15 @@ test('hint line edge widths', () => {
   expect(hintLine('git', 0)).toBe('')
 })
 
-test('fitHint labels the longest prefix that fits, then drops from the end', () => {
-  const costs = [{ bare: 2, labelled: 7 }, { bare: 3, labelled: 12 }, { bare: 3, labelled: 9 }]
-  // 7 + 3 + 12 + 3 + 9 = 34
-  expect(fitHint(costs, 40)).toEqual({ count: 3, labelled: 3 })
-  expect(fitHint(costs, 33)).toEqual({ count: 3, labelled: 2 }) // 7+3+12+1+3 = 26
-  expect(fitHint(costs, 40, true)).toEqual({ count: 3, labelled: 0 })
-  expect(fitHint(costs, 20)).toEqual({ count: 3, labelled: 0 }) // below 32: bare, 2+1+3+1+3 = 10
-  expect(fitHint(costs, 6)).toEqual({ count: 2, labelled: 0 })
-  expect(fitHint(costs, 0)).toEqual({ count: 0, labelled: 0 })
+test('the OpenCode hint line never shows a colon and separates the bare tail', () => {
+  for (const view of views)
+    for (const w of [24, 40, 80, 120]) {
+      const line = hintLine(view, w)
+      expect(line).not.toContain(':')
+      // A labelled prefix and a bare tail meet at ` · `, never at a lone space after a label.
+      const words = new Set(KEYS[view].flatMap((k) => k.label.split(' ')))
+      const parts = line.split(' · ')
+      for (const part of parts.slice(0, -1)) expect(words.has(part.split(' ').at(-1)!) || part.split(' ').length === 1).toBe(true)
+    }
+  expect(hintLine('git', 80)).toBe('↑↓ move · enter open · s stage · u unstage · d discard · c commit · g e esc')
 })

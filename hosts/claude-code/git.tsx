@@ -19,10 +19,15 @@ export type Group = 'staged' | 'changes'
 /** One file row of a group: its element key is its id. */
 export type FileRow = { id: string; group: Group; entry: StatusEntry; status: FileStatus; added: number | null; removed: number | null }
 
-const MODES: readonly { value: JeiCommitMode; label: string }[] = [
-  { value: 'commit', label: 'Commit' },
-  { value: 'commit-push', label: 'Commit & Push' },
-  { value: 'amend', label: 'Commit (amend)' },
+/**
+ * Commit modes: `label` is the mode `Select`'s option, read after the
+ * `[ Commit ]` Button (`[ Commit ] & Push ▾`), so the row says Commit once;
+ * `title` names the Button where no Select is drawn.
+ */
+const MODES: readonly { value: JeiCommitMode; label: string; title: string }[] = [
+  { value: 'commit', label: 'Only', title: 'Commit' },
+  { value: 'commit-push', label: '& Push', title: 'Commit & Push' },
+  { value: 'amend', label: 'Amend', title: 'Commit (amend)' },
 ]
 /** Cells a terminal Button draws around its label: `[ ` and ` ]`. */
 const CHROME = 4
@@ -670,7 +675,8 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
       line(ui.message === '' ? placeholder : ui.message, { dim: ui.message === '' }, 'message')
     ),
   })
-  const modeLabel = MODES.find((m) => m.value === ui.mode)?.label ?? 'Commit'
+  // With the mode Select beside it the Button is the verb alone; without one it names the mode.
+  const modeLabel = Select ? 'Commit' : (MODES.find((m) => m.value === ui.mode)?.title ?? 'Commit')
   const canCommit = ui.message.trim() !== '' && ui.busy === null
   const controls: { el: RenderElement; w: number }[] = []
   controls.push(

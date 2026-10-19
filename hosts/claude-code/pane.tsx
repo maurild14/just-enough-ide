@@ -1,5 +1,5 @@
 import type { EngineInterface, RenderElement, RenderInput } from 'claude-code'
-import { fitHint, hintLine, KEYS, type Tab, type View } from '../../core/keys.ts'
+import { hintLine, KEYS, type Tab, type View } from '../../core/keys.ts'
 import type { Options } from '../../core/options.ts'
 import { currentView, reducePane } from '../../core/pane.ts'
 import { toPosix } from '../../core/shared/paths.ts'
@@ -37,20 +37,36 @@ function bodyOf(view: View): string[] {
 
 const SEP = ' · '
 type HintItem = { keyText: string; label: string; run?: () => void }
+/**
+ * How a hint item is drawn: `label` (`↑↓ move`, a letter key's plain Button
+ * `s: stage`), `bare` (a navigation word's key alone), `chip` (a letter key's
+ * Button `[ s ]`, its hotkey not drawn) or `strip` (a plain Button with no
+ * label, `s: `). `sep` is the text drawn before it.
+ */
+export type HintPart = HintItem & { form: 'label' | 'bare' | 'chip' | 'strip'; sep: string }
+
+/** Cells a part draws, its separator included. A labelless plain Button draws `k: `. */
+function partWidth(p: HintPart): number {
+  const key = cellWidth(p.keyText)
+  const body =
+    p.form === 'label' ? key + (p.run ? 2 : 1) + cellWidth(p.label) : p.form === 'chip' ? key + BUTTON_CHROME : p.form === 'strip' ? key + 2 : key
+  return cellWidth(p.sep) + body
+}
 
 /**
  * The hint line of a view whose letter keys are Buttons: on this host a key
- * reaches a pane only through a Button's `hotkey`, drawn plain as `a: label`
- * (`a: ` bare, 3 cells). Items keep core's priority order; Esc is the host's
- * own (docs/decisions/0009), so it is not listed. `fitHint` picks the labelled
- * prefix; `bareOnly` keeps every key on a short pane.
+ * reaches a pane only through a Button's `hotkey`, and a plain one always
+ * draws `k: ` before its label, so a letter key is never shown as `k: ` with
+ * nothing after it while anything else fits (docs/design.md section 5). The
+ * first form that fits `width` wins: every label; the navigation words bare;
+ * no navigation words; the longest labelled prefix of letter keys and the
+ * rest as keycaps `[ c ]` after ` · `; keycaps only (spaced, then tight); a
+ * strip of labelless keys `s: u: `; then that strip cut from the end. Every
+ * letter key shows in all but the last, so the count never drops as width
+ * grows. Esc is the host's own (docs/decisions/0009), so it is not listed.
+ * `bareOnly` (a short pane) starts at the keycaps.
  */
-export function hintItems(
-  view: View,
-  width: number,
-  actions: readonly FilesAction[],
-  bareOnly = false,
-): { items: HintItem[]; labelled: number } {
+export function hintItems(view: View, width: number, actions: readonly FilesAction[], bareOnly = false): HintPart[] {
   const all: HintItem[] = []
   for (const k of KEYS[view]) {
     if (k.key === 'esc') continue
@@ -61,24 +77,23 @@ export function hintItems(
       if (action) all.push({ keyText, label: k.label, run: action.run })
     } else all.push({ keyText, label: k.label })
   }
-  // A bare Button draws `k: `: its trailing space is the gap to the next item, so it costs
-  // the key plus 1 and the fit runs 1 cell short (the last item's trailing space).
-  const fitOf = (list: HintItem[]) => {
-    const costs = list.map((i) => {
-      const key = cellWidth(i.keyText)
-      return i.run ? { bare: key + 1, labelled: key + 2 + cellWidth(i.label) } : { bare: key, labelled: key + 1 + cellWidth(i.label) }
-    })
-    return fitHint(costs, Math.max(0, width - 1), bareOnly)
+  const nav = all.filter((i) => !i.run)
+  const keys = all.filter((i) => i.run)
+  const as = (list: HintItem[], form: HintPart['form'], sep: string): HintPart[] => list.map((i, n) => ({ ...i, form, sep: n === 0 ? '' : sep }))
+  const join = (...groups: HintPart[][]): HintPart[] =>
+    groups.filter((g) => g.length > 0).flatMap((g, n) => (n === 0 ? g : [{ ...g[0]!, sep: SEP }, ...g.slice(1)]))
+
+  const forms: HintPart[][] = []
+  if (!bareOnly) {
+    forms.push(join(as(nav, 'label', SEP), as(keys, 'label', SEP)))
+    forms.push(join(as(nav, 'bare', ' '), as(keys, 'label', SEP)))
+    for (let k = keys.length; k >= 0; k--) forms.push(join(as(keys.slice(0, k), 'label', SEP), as(keys.slice(k), 'chip', ' ')))
   }
-  const fit = fitOf(all)
-  if (fit.count < all.length) {
-    // Too narrow for every key: the letter keys stay (they are the only way to press them), the
-    // navigation words (arrows, enter) go first.
-    const keys = all.filter((i) => i.run)
-    const kfit = fitOf(keys)
-    if (kfit.count > all.slice(0, fit.count).filter((i) => i.run).length) return { items: keys.slice(0, kfit.count), labelled: kfit.labelled }
-  }
-  return { items: all.slice(0, fit.count), labelled: fit.labelled }
+  forms.push(as(keys, 'chip', ' '), as(keys, 'chip', ''))
+  const last = keys.length > 0 ? as(keys, 'strip', '') : as(nav, 'bare', ' ')
+  for (let n = last.length; n >= 0; n--) forms.push(last.slice(0, n))
+  const fits = (parts: HintPart[]) => parts.reduce((sum, p) => sum + partWidth(p), 0) <= width
+  return forms.find((f) => f.length > 0 && fits(f)) ?? []
 }
 
 /**
@@ -127,21 +142,19 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
         </Text>
       )
     }
-    const { items, labelled } = hintItems(view, inner, content.actions, bareHint)
+    const parts = hintItems(view, inner, content.actions, bareHint)
     return (
       <Box flexDirection="row">
         <Text dimColor>{inner > 0 ? ' ' : ''}</Text>
-        {items.flatMap((item, i) => {
-          // A bare Button ends in its own space, so a bare item after it needs no gap.
-          const prevBare = i > 0 && i - 1 >= labelled && items[i - 1]!.run !== undefined
-          const sep = i === 0 || (prevBare && i >= labelled) ? [] : [<Text dimColor>{i < labelled ? SEP : ' '}</Text>]
-          const shown = i < labelled ? item.label : ''
-          const el = item.run ? (
-            <Button key={`key-${item.keyText}`} plain dimColor hotkey={item.keyText} label={shown} onPress={item.run} />
+        {parts.flatMap((p) => {
+          const el = !p.run ? (
+            <Text dimColor>{p.form === 'label' ? `${p.keyText} ${p.label}` : p.keyText}</Text>
+          ) : p.form === 'chip' ? (
+            <Button key={`key-${p.keyText}`} dimColor hotkey={p.keyText} label={p.keyText} onPress={p.run} />
           ) : (
-            <Text dimColor>{shown ? `${item.keyText} ${shown}` : item.keyText}</Text>
+            <Button key={`key-${p.keyText}`} plain dimColor hotkey={p.keyText} label={p.form === 'label' ? p.label : ''} onPress={p.run} />
           )
-          return [...sep, el]
+          return p.sep ? [<Text dimColor>{p.sep}</Text>, el] : [el]
         })}
       </Box>
     )

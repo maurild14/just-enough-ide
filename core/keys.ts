@@ -136,27 +136,3 @@ export function hintLine(view: View, columns: number): string {
   const best = Math.max(...options.map((o) => o.count))
   return options.filter((o) => o.count === best).pop()?.text ?? ''
 }
-
-/** One hint item's width in cells, bare (key only) and with its label. */
-export type HintCost = { bare: number; labelled: number }
-
-/**
- * Key-agnostic hint fitter for hosts that draw hint items themselves: the
- * longest prefix of `labelled` items (joined by ` · `) followed by bare items
- * (joined by a space) that fits `width`. Below 32 cells, or when `bareOnly`,
- * nothing is labelled. When even all-bare does not fit, items drop from the end.
- * Returns how many items to show and how many of them carry their label.
- */
-export function fitHint(costs: readonly HintCost[], width: number, bareOnly = false): { count: number; labelled: number } {
-  const total = (n: number, k: number) => {
-    let sum = 0
-    for (let i = 0; i < n; i++) sum += (i < k ? costs[i]!.labelled : costs[i]!.bare) + (i === 0 ? 0 : i < k ? SEP.length : 1)
-    return sum
-  }
-  for (let k = width >= 32 && !bareOnly ? costs.length : 0; k >= 0; k--) {
-    if (total(costs.length, k) <= width) return { count: costs.length, labelled: k }
-  }
-  let n = costs.length
-  while (n > 0 && total(n, 0) > width) n--
-  return { count: n, labelled: 0 }
-}
