@@ -79,6 +79,17 @@ Status: current for `core/files/` and `core/shared/fit.ts`.
 - `core/files/open.ts`: `openArgv` returns the OS opener for an empty command. Otherwise it splits the command, replaces `{path}` and `{line}` inside words (the rest of the word is kept) and appends the path when no word has `{path}`. With no line, `:{line}` is stripped from a word that has `{path}`, and a word that has `{line}` but no `{path}` is dropped.
 - `core/files/icons.ts`: `iconFor` returns one cell: `▸ ▾ ·` for `plain` and `auto` (`auto` is plain in 0.1), and a small Nerd Font map for `nerd`. `core/files/mention.ts`: `mentionText` joins posix rels as `@a @"my file" ` with one trailing space.
 
+## Activity, pane state and command
+
+Status: current for `core/activity/`, `core/latest.ts`, `core/pane.ts` and `core/command.ts`.
+
+- `core/activity/classify.ts`: `classifyTool(tool, input)` maps a tool call to `{ kind: 'read' | 'write' | 'git', paths }` or `null`. Ids are case-insensitive: `read`; `edit`, `write`, `multiedit`, `NotebookEdit` (`notebook_path`), `patch` (paths may be empty); `grep`, `glob`, `list` (read, paths from `path` or empty, the adapter fills them from the result); `bash`, `PowerShell`, `shell` go to `classifyShell`. Unknown ids fall back to read when the input has `filePath`, `file_path` or `path`, to the shell classifier when it has `command`, else `null`. Paths are raw (absolute or as given); the adapter converts them with `relativeTo`.
+- `core/activity/shell.ts`: `classifyShell` splits a command line outside quotes on `|`, `||`, `&&`, `;` and `&`, tokenizes each segment with `splitCommand`, drops redirections and flags (and the value of known value flags such as `head -n 5`), and reads file words of `cat head tail less more bat type Get-Content` (`-Path`/`-LiteralPath` value) and `rg`/`grep` (first word is the pattern unless `-e`/`-f`). `git` with `commit push pull checkout switch merge rebase reset` is kind `git` (wins over reads); `status diff log show` and everything else give `null`. Nothing is executed.
+- `core/activity/log.ts`: `ActivityLog` takes `now` as an argument everywhere (no clock inside). `glow` falls linearly from 1 to 0 over `GLOW_MS` (2000); `isGlowing` tells adapters whether to keep a redraw timer; `touched` stays true for the session; `toJSON`/`from` round-trip. `allows(setting, kind)` applies the `activity` option (`git` shows unless `none`).
+- `core/latest.ts`: `latest(fn)` is the refresh guard. Only the most recent call yields `{ value, stale: false }`; an older call yields `{ stale: true }` even when it rejects; a rejected latest call rejects.
+- `core/pane.ts`: `reducePane` is pure. `tab` resets the stack to the tab's root view but keeps `selected` (per-view selection survives tab switches). `open-diff` pushes `git.diff` and records `diff`; `preview` pushes `files.preview` and selects the file in Files; both switch tab when needed. `back` pops (restoring `git` with `selected.git` intact) and is a no-op on a root view.
+- `core/command.ts`: `parseJeiArgument` trims; empty toggles; a tab name (any case) opens that tab; anything else reveals a posix-normalized path (no leading `./`) in Files.
+
 ## Dependency direction
 
 ```

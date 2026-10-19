@@ -1,0 +1,63 @@
+import type { Tab, View } from './keys.ts'
+
+export type PaneState = {
+  tab: Tab
+  stack: View[]
+  selected: Partial<Record<View, string>>
+  diff?: { path: string; staged: boolean; untracked: boolean }
+}
+
+export type PaneAction =
+  | { type: 'tab'; tab: Tab }
+  | { type: 'open-diff'; path: string; staged: boolean; untracked: boolean }
+  | { type: 'preview'; rel: string }
+  | { type: 'back' }
+  | { type: 'select'; view: View; id: string }
+
+export function initialPane(tab: Tab): PaneState {
+  return { tab, stack: [tab], selected: {} }
+}
+
+export function currentView(s: PaneState): View {
+  return s.stack[s.stack.length - 1] ?? s.tab
+}
+
+/** Push `view` on top of `tab`'s root, replacing it when it is already on top. */
+function push(s: PaneState, tab: Tab, view: View): View[] {
+  const base = s.tab === tab ? s.stack : [tab]
+  return currentViewOf(base) === view ? base : [...base, view]
+}
+
+function currentViewOf(stack: View[]): View | undefined {
+  return stack[stack.length - 1]
+}
+
+/** Pure reducer. Switching tabs resets the stack but keeps every `selected` entry. */
+export function reducePane(s: PaneState, a: PaneAction): PaneState {
+  switch (a.type) {
+    case 'tab':
+      return { tab: a.tab, stack: [a.tab], selected: s.selected }
+    case 'select':
+      return { ...s, selected: { ...s.selected, [a.view]: a.id } }
+    case 'preview':
+      return {
+        tab: 'files',
+        stack: push(s, 'files', 'files.preview'),
+        selected: { ...s.selected, files: a.rel },
+      }
+    case 'open-diff':
+      return {
+        tab: 'git',
+        stack: push(s, 'git', 'git.diff'),
+        selected: s.selected,
+        diff: { path: a.path, staged: a.staged, untracked: a.untracked },
+      }
+    case 'back': {
+      if (s.stack.length <= 1) return s
+      const stack = s.stack.slice(0, -1)
+      const next: PaneState = { tab: s.tab, stack, selected: s.selected }
+      if (s.diff && stack.includes('git.diff')) next.diff = s.diff
+      return next
+    }
+  }
+}

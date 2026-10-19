@@ -13,7 +13,7 @@ Update a row in the same commit that changes the area. `git log` is the history;
 | Git runner, status parser | built | built | 0.1 (Task 4) | `core/git/run.ts` (runner, `GitError`), `core/git/status.ts` (porcelain v2 parser, folder roll-up, `isRepo`). Fixtures in `test/fixtures/git/`. |
 | Git diff parsing, commands | built | built | 0.1 (Tasks 5, 6) | Diff parsing (`core/git/diff.ts`, fixtures in `test/fixtures/diff/`); commands, sync, hook detection, sensitive paths and commit-message helpers (`commands.ts`, `sync.ts`, `hooks.ts`, `sensitive.ts`, `message.ts`). `readHookSignals` is specced with an in-memory host; real-git specs come in Task 9. |
 | Files model: tree rows, preview, CSV, open, icons, mention, `fit` helpers | built | built | 0.1 (Task 7) | `core/files/*` and `core/shared/fit.ts`. `glyphs: auto` is plain until Nerd Font detection exists. |
-| Activity, refresh guard, pane state | not built | not built | 0.1 (Tasks 8-9) | |
+| Activity, refresh guard, pane state, `/jei` argument | built | built | 0.1 (Task 8) | `core/activity/*`, `core/latest.ts`, `core/pane.ts`, `core/command.ts`. Host wiring (hooks, timers, `relativeTo` on raw paths) comes with the adapters. |
 | Pane shell, tabs, hint line, `/jei` | not built | not built | 0.1 (Tasks 10, 15) | |
 | Files tab (tree, status, shimmer, follow, preview, mention, open) | not built | not built | 0.1 (Tasks 11, 16) | |
 | Git tab: repository row, Changes, commit, generated message | not built | not built | 0.1 (Tasks 12, 17) | |
