@@ -1,0 +1,78 @@
+export function toPosix(path: string): string {
+  return path.replaceAll('\\', '/')
+}
+
+export function joinPath(dir: string, name: string): string {
+  const d = toPosix(dir)
+  const n = toPosix(name).replace(/^\/+/, '')
+  if (d === '') return n
+  return d.endsWith('/') ? d + n : `${d}/${n}`
+}
+
+type Norm = { prefix: string; segs: string[] }
+
+function normalize(path: string): Norm {
+  const p = toPosix(path)
+  let prefix = ''
+  let rest = p
+  const drive = /^[A-Za-z]:/.exec(p)
+  if (p.startsWith('//')) {
+    prefix = '//'
+    rest = p.slice(2)
+  } else if (drive) {
+    prefix = drive[0]
+    rest = p.slice(2)
+    if (rest.startsWith('/')) prefix += '/'
+  } else if (p.startsWith('/')) {
+    prefix = '/'
+  }
+  const absolute = prefix.endsWith('/')
+  const segs: string[] = []
+  for (const seg of rest.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') {
+      if (segs.length > 0 && segs[segs.length - 1] !== '..') segs.pop()
+      else if (!absolute) segs.push('..')
+    } else segs.push(seg)
+  }
+  return { prefix, segs }
+}
+
+// Windows-style roots (drive letter or UNC) compare case-insensitively.
+function foldsCase(n: Norm): boolean {
+  return /^[A-Za-z]:/.test(n.prefix) || n.prefix === '//'
+}
+
+/** Number of leading segments of `path` that make up `root`, or -1 when not inside. */
+function insideCount(root: string, path: string): number {
+  const r = normalize(root)
+  const p = normalize(path)
+  const fold = foldsCase(r) || foldsCase(p)
+  const key = (s: string) => (fold ? s.toLowerCase() : s)
+  if (key(r.prefix) !== key(p.prefix)) return -1
+  if (r.segs.length > p.segs.length) return -1
+  for (let i = 0; i < r.segs.length; i++) {
+    if (key(r.segs[i]!) !== key(p.segs[i]!)) return -1
+  }
+  return r.segs.length
+}
+
+/** Posix path relative to root, no leading `./`. A path outside root comes back normalized and posix. */
+export function relativeTo(root: string, path: string): string {
+  const n = insideCount(root, path)
+  const p = normalize(path)
+  if (n < 0) return p.prefix + p.segs.join('/')
+  return p.segs.slice(n).join('/')
+}
+
+export function isInside(root: string, path: string): boolean {
+  return insideCount(root, path) >= 0
+}
+
+/** 'a/b/c.ts' -> ['a', 'a/b'] */
+export function parentDirs(rel: string): string[] {
+  const segs = toPosix(rel).split('/').filter(Boolean)
+  const out: string[] = []
+  for (let i = 1; i < segs.length; i++) out.push(segs.slice(0, i).join('/'))
+  return out
+}

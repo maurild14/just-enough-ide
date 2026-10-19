@@ -9,7 +9,7 @@ Update a row in the same commit that changes the area. `git log` is the history;
 | Area | Claude Code | OpenCode | Planned for | Notes |
 | --- | --- | --- | --- | --- |
 | Repo scaffolding, CI scripts | built | built | 0.1 (Tasks 1, 2) | Bootstrap done; CI workflow, Dependabot, issue forms and PR template added (Claude Code CI job non-blocking). |
-| `core/` foundations (Host, options, keys, paths, argv) | not built | not built | 0.1 (Task 3) | Shared by both hosts. |
+| `core/` foundations (Host, options, keys, paths, argv, fuzzy) | built | built | 0.1 (Task 3) | Shared by both hosts. Keys cover Files, Git and diff; Search and Symbols carry navigation only. |
 | Git runner, status, diff parsing, commands | not built | not built | 0.1 (Tasks 4-6) | |
 | Files model, activity, refresh guard, pane state | not built | not built | 0.1 (Tasks 7-9) | |
 | Pane shell, tabs, hint line, `/jei` | not built | not built | 0.1 (Tasks 10, 15) | |

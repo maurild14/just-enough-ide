@@ -12,12 +12,26 @@ Everything that is not drawing or talking to a host lives in `core/`: git output
 
 ## The Host interface
 
-Status: draft — built in milestone 0.1 (plan Task 3). Defined in `core/host.ts`; the process, file and model half only:
+Status: current. Defined in `core/host.ts`; the process, file and model half only:
 
 - `platform`: `'win32' | 'darwin' | 'linux'`
 - `run(argv, { cwd, env, stdin, timeoutMs, signal })` returns `{ exitCode, stdout, stderr }`
 - `list(dir)`, `stat(path)`, `readHead(path, maxBytes)`, `readText(path)`
 - `complete(prompt, model)`: one-shot model call for the generated commit message
+
+## Key map and actions
+
+`core/keys.ts` holds the one key map. `KEYS[view]` lists `{ key, action, label }` in hint-line priority (lowest priority last); adapters dispatch on `action`. `TAB_KEYS` maps `1`-`4` to tabs. `hintLine(view, columns)` builds the hint line for any width >= 1: below 32 columns it shows keys only, otherwise `key label` pairs joined by ` · `, dropping items from the end until it fits.
+
+| View | key: action |
+| --- | --- |
+| `files` | `up`: move-up, `down`: move-down, `enter`: activate, `a`: mention, `o`: open-editor, `f`: filter, `h`: toggle-hidden, `esc`: back |
+| `files.preview` | `up`: scroll-up, `down`: scroll-down, `a`: mention, `o`: open-editor, `m`: toggle-markdown-source, `esc`: back |
+| `git` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: stage, `u`: unstage, `d`: discard, `c`: commit, `g`: generate-message, `e`: sync, `esc`: back |
+| `git.diff` | `up`: scroll-up, `down`: scroll-down, `n`: next-hunk, `p`: prev-hunk, `j`: next-file, `k`: prev-file, `a`: ask-review, `o`: open-editor, `esc`: back |
+| `search`, `symbols` | `up`: move-up, `down`: move-down, `enter`: activate, `esc`: back (more keys arrive in 0.3 and 0.4) |
+
+Action names are stable; rename one only with every consumer in the same change.
 
 ## Adapters
 
