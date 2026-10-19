@@ -69,7 +69,7 @@ Truncation always reads the ellipsis width from the active glyph set. Diff lines
  ↑↓ move · enter open · a mention · f filter   hint line (pinned)
 ```
 
-- **Tab bar:** tabs are separated by 2 spaces. The active tab is `accent` and bold.
+- **Tab bar:** tabs are separated by 2 spaces. The active tab is `accent` and bold. Where a host draws tabs as its own buttons with chrome (Claude Code's `[ 1 Files ]`), the gap shrinks to 1, then 0, before the labels shorten, so the bar always fits.
 - **Rule:** a single `muted` horizontal line. It is the only border in JEI. Dialogs and confirms use one `muted` rule above them and no box.
 - **Header row:** shows what the body is about. Files: root name and filter. Search: the query field and its toggles. Symbols: the file name and `LSP` or `approximate`. Git: the repository row. Diff view: file, source and +/−.
 - **Gutters:** column 0 is the gutter. It shows the touched marker `•` in the activity color, otherwise a space. Keep 1 empty column on the right. Content never touches the right edge.
