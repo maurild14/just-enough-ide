@@ -103,6 +103,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 - Single names, commit subjects, branch names and messages use an end ellipsis: `fix: validate us…`.
 - Search match text is centered on the first match, with an ellipsis on each side that was cut.
 - Row data is never mutated: truncation exists only in the rendered string.
+- Both hosts build these strings with `core/shared/fit.ts` (`cellWidth`, `fitEnd`, `fitPath`, `padEnd`), never with string length. Every result is at most the requested width in cells.
 
 **Hint line.** Items are `key label` pairs in priority order, separated by ` · `. Drop the lowest-priority items from the end until the line fits; the hint never ends with a catch-all item. Below 32 columns the hint shows only keys (`↑↓ enter a`). The full key list for every view is in the PRD and `core/keys.ts`.
 

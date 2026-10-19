@@ -69,6 +69,16 @@ Status: current for `run.ts`, `status.ts`, `diff.ts`, `commands.ts`, `hooks.ts`,
 - `core/git/hooks.ts`: `readHookSignals(host, root)` uses only the Host: `config --get core.hooksPath` (exit 1 means unset), `.git/hooks` located through `rev-parse --git-path hooks` (correct in linked worktrees), `.husky/`, `lefthook.yml` / `.lefthook.yml`, `.pre-commit-config.yaml`, and `.gitattributes` text. `usesHooks` ignores `*.sample` hook files and treats `filter=lfs` as a hook-like signal.
 - `core/git/sensitive.ts` and `core/git/message.ts`: see `docs/security.md` for the sensitive list; `commitPrompt` asks for one Conventional Commits message (subject up to 72 characters) with the diff cut to `maxChars` and a truncation note, `cleanMessage` strips a leading "Commit message:", unwraps a fence only when the text starts with one (unterminated accepted; a fence inside a body is kept) and strips surrounding quotes; `commitPrompt` never cuts a surrogate pair.
 
+## Files layer
+
+Status: current for `core/files/` and `core/shared/fit.ts`.
+
+- `core/shared/fit.ts`: the responsive helpers both hosts use so a row never overflows. `cellWidth` counts terminal cells (East Asian wide and fullwidth and emoji are 2, combining marks and joiners 0, the rest 1; compact range tables, no dependency). `fitEnd(s, width, ellipsis?)` ends with an ellipsis. `fitPath(rel, width, ellipsis?)` uses a middle ellipsis that keeps the file name (`src/…/user.ts`) and, when the name alone is too wide, end-ellipsizes the name and keeps its extension. `padEnd` pads by cells and never truncates. Every `fitEnd` and `fitPath` result is at most `width` cells for any width of 0 or more. The optional `ellipsis` is the active glyph set's ellipsis (`…` or `...`). See `docs/design.md` section 5.
+- `core/files/tree.ts`: `treeRows` flattens the expanded tree from `listings` (key `''` is the root). Dirs come first, then names case-insensitively. `.git` is never shown; dot entries and `ignored` paths show only with `showHidden`. Past `limit` entries in one folder a single `{ rel, depth, more }` row follows with the count; its `rel` is `<folder>/…`, and the host builds the text. `filterRows` ranks every known path with `fuzzyScore`; `reveal` returns a copy of `expanded` plus the ancestors of a path; `IGNORED_ARGS` is the `git check-ignore` tail (paths on stdin).
+- `core/files/preview.ts`: `previewKind` decides in this order: size 0 is `empty`, an image extension is `image` (even when large, because it is never read), over `PREVIEW_MAX_BYTES` is `too-large`, a NUL in the first 8 KiB is `binary`, then markdown, csv, tsv, else `code`. `languageOf` maps a name to a highlight id. `core/files/csv.ts`: `parseDelimited` handles quoted fields, doubled quotes, CRLF and a BOM, and stops at `maxRows`.
+- `core/files/open.ts`: `openArgv` returns the OS opener for an empty command. Otherwise it splits the command, replaces `{path}` and `{line}` inside words (the rest of the word is kept) and appends the path when no word has `{path}`. With no line, `:{line}` is stripped from a word that has `{path}`, and a word that has `{line}` but no `{path}` is dropped.
+- `core/files/icons.ts`: `iconFor` returns one cell: `▸ ▾ ·` for `plain` and `auto` (`auto` is plain in 0.1), and a small Nerd Font map for `nerd`. `core/files/mention.ts`: `mentionText` joins posix rels as `@a @"my file" ` with one trailing space.
+
 ## Dependency direction
 
 ```
@@ -92,10 +102,10 @@ hooks/{hooks.json, register.tsx}                  Claude Code entry, wiring only
 index.ts  tui.ts  rpc.ts                          OpenCode entries (re-export hosts/opencode/*)
 core/
   host.ts  keys.ts  options.ts  latest.ts  pane.ts
-  shared/{paths.ts, fuzzy.ts, argv.ts}
+  shared/{paths.ts, fuzzy.ts, argv.ts, fit.ts}
   git/{run.ts, status.ts, diff.ts, commands.ts, hooks.ts, message.ts, sensitive.ts}
   activity/{classify.ts, shell.ts, log.ts}
-  files/{tree.ts, preview.ts, csv.ts, open.ts, mention.ts}
+  files/{tree.ts, preview.ts, csv.ts, open.ts, icons.ts, mention.ts}
 hosts/claude-code/    host.ts, state.ts, pane.tsx, files.tsx, git.tsx, diff.tsx, activity.ts, *.test.tsx
 hosts/opencode/       host.ts, rpc.ts, server.ts, tui.tsx, pane.tsx, files.tsx, git.tsx, diff.tsx, *.spec.ts(x)
 types/index.d.ts      Claude Code PluginState contract
