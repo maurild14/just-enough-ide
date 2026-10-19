@@ -31,7 +31,9 @@
     "typecheck": "tsc -p hosts/opencode/tsconfig.json --noEmit",
     "typecheck:claude": "tsc -p tsconfig.json --noEmit",
     "validate": "claude plugin validate .",
-    "test:claude": "claude plugin test ."
+    "test:claude": "claude plugin test .",
+    "check:docs": "bun scripts/check-docs.ts",
+    "sync:agents": "bun -e \"await Bun.write('CLAUDE.md', Bun.file('AGENTS.md'))\""
   },
   "peerDependencies": {
     "@opencode/plugin": "^2.0.32",

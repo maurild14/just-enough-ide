@@ -1,0 +1,177 @@
+# JEI design guide
+
+> Purpose: how every JEI view looks and behaves at any pane size · Status: current · Last reviewed: 2026-10-19
+
+Status: the Files and Git (repository row, Changes, diff) views are built in milestone 0.1 (plan Tasks 11, 12, 16, 17); the Graph and Branches are draft, built in 0.2; Search is draft, built in 0.3; Symbols is draft, built in 0.4. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
+
+JEI is drawn in character cells. There are no pixels and no fonts to pick, and the colors come from the host. This guide covers how every view looks and how it behaves at any pane size. If a view breaks one of these rules, treat it as a bug.
+
+## 1. Principles
+
+1. **Text first.** Show names, letters and numbers. Glyphs add meaning only where text would cost more columns.
+2. **Quiet by default.** Use one accent color. Everything that isn't selected, changed or active is plain or muted. Draw no boxes.
+3. **Never break.** At any width or height, every line fits, nothing wraps and the selected row stays visible.
+4. **Color is never the only signal.** Every colored state also has a letter, glyph or word, so `NO_COLOR` still works.
+5. **Motion only means "the agent just did this".** The activity shimmer is the only animation.
+
+## 2. Color roles
+
+Views use semantic tokens only. No view contains an RGB, hex or ANSI code. Both hosts supply theme colors (dark and light). Each host adapter maps the tokens to its theme in one place, `theme.ts`. When a host gives no value for a token, the fallback is the ANSI 16-color name shown below, so the terminal palette still applies.
+
+| Token | Used for | Fallback |
+| --- | --- | --- |
+| `fg` | Default text | default |
+| `muted` | Secondary text: folders, line numbers, authors, times, hint line, empty-state copy, rules | bright black |
+| `accent` | Active tab, focused field, primary action (Commit), match highlight | blue |
+| `selection` | Selected row: background and foreground pair, full row width | reverse video |
+| `added` | `A`, `+` counts, added diff lines | green |
+| `removed` | `D`, `−` counts, removed diff lines | red |
+| `modified` | `M`, `R` | yellow |
+| `untracked` | `U` | green, dim |
+| `conflict` | `C` | magenta, bold |
+| `warning` | Detached HEAD, no upstream, results truncated, hook mode | yellow |
+| `error` | Failed operations | red |
+| `activity.read` | Shimmer for reads (purple) | magenta |
+| `activity.write` | Shimmer for writes (orange) | yellow |
+| `activity.git` | Shimmer for git actions (green) | green |
+
+Bold is allowed only for the active tab and conflicts. Never use italic, blink or underline for meaning, because many terminals drop them.
+
+## 3. Glyphs
+
+Every glyph is a single cell wide. Measure width with a wcwidth function, never with string length, because CJK names take 2 cells. Do not use emoji. `glyphs: auto` picks `nerd` when a Nerd Font is detected, `plain` when the terminal is UTF-8, and ASCII otherwise.
+
+| Meaning | Plain Unicode | ASCII |
+| --- | --- | --- |
+| Folder collapsed / expanded | `▸` / `▾` | `>` / `v` |
+| Git status | `M A D R U C` | same letters |
+| Ahead / behind | `↑2 ↓1` | `^2 v1` |
+| Branch | `⎇ main` (Nerd: `` ``) | `main` |
+| Dirty branch | `main*` | `main*` |
+| Agent commit | `✦` | `@` |
+| Graph commit, line, fork | `● │ ─ ╭ ╮ ╰ ╯` | `* \| - / \ / \` |
+| Touched this session | `•` | `.` |
+| Ellipsis | `…` (1 cell) | `...` (3 cells) |
+| Counts in Git rows | `+12 −3` (U+2212) | `+12 -3` |
+| Separators (rule, hint line) | `─`, `·` | `-`, `-` |
+
+Truncation always reads the ellipsis width from the active glyph set. Diff lines keep git's own `+`/`-` in every set.
+
+## 4. Layout grid
+
+```
+1 Files  2 Search  3 Symbols  4 Git      tab bar      (pinned)
+──────────────────────────────────────   rule, muted  (pinned)
+ ⎇ main*  ↑1 ↓2                 Sync     header row   (pinned)
+ ▾ src                             M     body         (scrolls)
+•  ▸ api                           M
+   user.ts                         A
+ ↑↓ move · enter open · a mention · f filter   hint line (pinned)
+```
+
+- **Tab bar:** tabs are separated by 2 spaces. The active tab is `accent` and bold.
+- **Rule:** a single `muted` horizontal line. It is the only border in JEI. Dialogs and confirms use one `muted` rule above them and no box.
+- **Header row:** shows what the body is about. Files: root name and filter. Search: the query field and its toggles. Symbols: the file name and `LSP` or `approximate`. Git: the repository row. Diff view: file, source and +/−.
+- **Gutters:** column 0 is the gutter. It shows the touched marker `•` in the activity color, otherwise a space. Keep 1 empty column on the right. Content never touches the right edge.
+- **Indent:** 2 cells per tree level (1 cell below 32 columns). Indent stops growing at `floor(width / 4)`, so deeper levels share that indent.
+- **Right-hand columns:** status letters, counts, +/−, line numbers and times are right-aligned. Each column's width is the widest value among the visible rows, so numbers line up. Columns have 1 space between them below 60 columns and 2 spaces from 60 up. The left text truncates first, and right-hand columns are never cut mid-value.
+- **Groups (Git: Staged, Changes, Graph; Search: files):** a header row with a chevron, the name in sentence case and a right-aligned count, all `muted` apart from the chevron. There are no blank lines inside lists, and one blank line between Git sections only at heights of 24 or more.
+- **Selection:** the `selection` pair fills the row from gutter to gutter. Only one row is selected per view.
+
+## 5. Responsive rules (width)
+
+These widths are pane widths, not terminal widths. Rows are rendered from a pure `layout(width, height, state)` function.
+
+| Element | ≥100 (L) | 60–99 (M) | 32–59 (S) | <32 (XS) |
+| --- | --- | --- | --- | --- |
+| Tab bar | `1 Files  2 Search  3 Symbols  4 Git` | same | active tab named, rest numbers: `1 Files  2  3  4` | numbers only: `1 2 3 4` |
+| Nerd icons | yes | yes | no | no |
+| Files row | name, roll-up count, status | name, status | name, status | name, status; indent 1 |
+| Git change row | `M` name, folder, `+12 −3` | `M` name, folder, `+12 −3` | `M` name, `+12 −3` | `M` name |
+| Graph row | lanes ✦ subject, refs, author, time, hash | lanes ✦ subject, HEAD ref, time | 1 lane `●` ✦ subject, time | `●` ✦ subject |
+| Repository row | repo, branch, ↑↓, `Sync` | branch, ↑↓, `Sync` | branch, ↑↓ | branch (↑↓ when it fits) |
+| Search file row | path, count, timing in header | path, count | path, count | basename, count |
+| Search match row | line no, match text | line no, match text | line no, match text | match text |
+| Symbols row | kind word, name, line | kind word, name, line | kind letter (`f c m t v`), name, line | kind letter, name |
+| Commit field placeholder | `Message (enter to commit on "main")` | same | `Message` | `Message` |
+| Diff gutter | old and new line numbers | new line number | none | none |
+
+**Drop order.** When a row still does not fit inside its breakpoint, it drops parts in this order: author, then hash, then ref badges other than HEAD, then folder, then time, then +/−, then roll-up counts, then the touched marker. Status letters, the selection and the row's name are never dropped. Instead the name is truncated, down to 1 character plus the ellipsis.
+
+**Truncation.**
+- Paths use a middle ellipsis that keeps the whole basename: `src/…/user.ts`. If the basename alone does not fit, it gets an end ellipsis that keeps the extension where possible: `very-long-na….ts`.
+- Single names, commit subjects, branch names and messages use an end ellipsis: `fix: validate us…`.
+- Search match text is centered on the first match, with an ellipsis on each side that was cut.
+- Row data is never mutated: truncation exists only in the rendered string.
+
+**Hint line.** Items are `key label` pairs in priority order, separated by ` · `. Drop the lowest-priority items from the end until the line fits; the hint never ends with a catch-all item. Below 32 columns the hint shows only keys (`↑↓ enter a`). The full key list for every view is in the PRD and `core/keys.ts`.
+
+**Hard rules.**
+- No list or chrome row ever wraps, and no line is wider than the pane.
+- The only text that wraps is preview and diff content. It soft-wraps at the pane width, and continuation lines show a `muted` `│` in the line-number gutter, or a space where there is no gutter.
+
+## 6. Height rules
+
+- The tab bar and header row stay pinned, the hint line stays pinned at the bottom, and only the body scrolls.
+- When rows run short, hide parts in this order. Below 10 rows, hide the hint line first; the keys still work. Below 8, hide the rule. Below 6, hide the header row; its key facts move into the tab bar's right side if they fit. Below 3, render only the body.
+- The body always keeps at least 1 row. Scrolling keeps 1 row of context above and below the selection when the body has 5 or more rows.
+- Expanded inline items (a commit's files, call hierarchy) never push the selected row out of view.
+
+## 7. Resize behavior
+
+- Recompute the whole layout on every width or height change, synchronously and without debouncing. Column widths are never cached between sizes.
+- Scrolling is anchored to the selected row's id, not its index. After a resize, the selected row keeps its screen offset when it can. Otherwise it is clamped to the nearest visible position.
+- Expansion, filters, queries, the commit message and the diff position all survive a resize. Shrinking and then growing back gives output identical to a fresh render at the final size.
+
+## 8. Empty, loading and error states
+
+States are one `muted` line in the body, a short sentence ending in a period, with no exclamation marks. Errors use `error` and add git's or the OS's first error line, truncated at the end. Loading shows static text with no spinner.
+
+| View | State | Copy |
+| --- | --- | --- |
+| Any | Loading | `Loading…` |
+| Files | Empty folder | `This folder is empty.` |
+| Files | Filter, no match | `No files match "user".` |
+| Files | Read failure | `Can't read this folder.` |
+| Files | Preview too large | `Too large to preview (3.4 MB).` |
+| Files | Binary | `Binary file. Press o to open it.` |
+| Search | Idle | `Type to search the project.` |
+| Search | No results | `No results for "getUser".` |
+| Search | Capped | `Showing the first 2,000 matches.` (`warning`) |
+| Search | No ripgrep | `ripgrep not found. Using git grep.` / `Install ripgrep to search.` |
+| Symbols | Nothing selected | `Select a file to see its outline.` |
+| Symbols | None found | `No symbols in user.ts.` |
+| Symbols | LSP permission | `Exact symbols need permission to use the LSP tool.` |
+| Git | Not a repo | `This folder is not a git repository.` with an `Initialize repository` action |
+| Git | Clean | `No changes.` |
+| Git | Nothing staged | `Nothing staged. Commit stages all changes.` |
+| Git | Detached | `Detached at a41f9c2.` (`warning`) |
+| Git | No upstream | `No upstream branch.` (`warning`) |
+| Git | Failure | `Push failed: <first git line>.` (`error`) |
+
+## 9. Motion: activity shimmer
+
+- When a row is touched, the name's foreground starts in the activity color and returns to `fg` in **8 steps of 250 ms (2 s in total)**. In truecolor, each step mixes linearly from the token's color to `fg` in the theme layer. With 16 colors there are **3 steps**: bold activity color (0–700 ms), activity color (700–1400 ms), dim activity color (1400–2000 ms).
+- When it ends, the gutter shows `•` in the dim activity color for the rest of the session. That marker is the only thing that persists.
+- Touching the row again restarts the fade. Only visible rows animate, and rows that scroll off show their end state when they return.
+- On the selected row, only the gutter marker shimmers, so the selection stays readable.
+- `activity: none`, or the host's reduced-motion setting, skips the fade and shows the marker straight away.
+- There is no other animation: no spinners, no sliding, no blinking cursor except the host's own.
+
+## 10. Test checklist
+
+Render every view (Files tree, Files preview, Search, Quick Open, Symbols, Git, Diff, confirm dialogs and every state in §8) as snapshots in all three glyph sets.
+
+- **Widths:** 24, 40, 80, 120, and 200 as a smoke test. **Heights:** 10, 24 and 5.
+- For each render, assert all of the following:
+  - [ ] Every line's display width (wcwidth) is ≤ the pane width, with no partial wide character at the edge.
+  - [ ] The output is exactly `height` lines, and only preview and diff content has continuation lines.
+  - [ ] The selected row is inside the body viewport.
+  - [ ] The tab bar and hint line are each ≤ the width, and the hint never ends in a catch-all item.
+  - [ ] Status letters are present on every changed row at every width.
+  - [ ] Right-hand columns are right-aligned: the same column ends at the same cell on every row.
+  - [ ] Truncated paths keep the basename (middle ellipsis), and subjects use an end ellipsis.
+  - [ ] Each `NO_COLOR` snapshot still distinguishes every state by text.
+  - [ ] Views contain no raw color values (a lint rule forbids hex, RGB and ANSI escapes outside `theme.ts`).
+- **Resize sequence:** 120 → 24 → 10 rows → 120. After it, the selection id is unchanged and the final output equals a fresh render.
+- **Shimmer:** a touch produces 8 frames in truecolor and 3 frames with 16 colors, then a static `•`. `activity: none` produces 0 frames.

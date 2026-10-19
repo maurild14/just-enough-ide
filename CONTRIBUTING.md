@@ -3,6 +3,8 @@
 Thanks for helping. JEI is one codebase for two hosts, Claude Code and OpenCode.
 Please read this page and the [Code of Conduct](CODE_OF_CONDUCT.md) first.
 
+Working with an AI agent, or want the in-depth docs? Start at `AGENTS.md` and the index in `docs/README.md`.
+
 ## Setup
 
 ```
