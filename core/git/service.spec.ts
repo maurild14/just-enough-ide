@@ -258,3 +258,14 @@ test('a non-git failure while reading config is rethrown', async () => {
   })
   await expect(sync(host, r.dir, branch)).rejects.toThrow('spawn failed')
 })
+
+test('sync runs its steps through a caller runner when given one', async () => {
+  const { r } = await remotePair()
+  const s = await snap(r)
+  const seen: string[][] = []
+  const res = await sync(r.host, r.dir, { ...s.status.branch, behind: 0, ahead: 1 }, undefined, async (steps) => {
+    seen.push(...steps)
+  })
+  expect(res).toEqual({ ok: true })
+  expect(seen).toEqual([['push']])
+})

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { capDiff, parseNumstat, parseUnifiedDiff, toUnifiedText, untrackedDiffArgs, workingDiffArgs } from './diff.ts'
+import { capDiff, diffWindow, parseNumstat, parseUnifiedDiff, reviewText, toUnifiedText, untrackedDiffArgs, workingDiffArgs } from './diff.ts'
 
 const raw = (name: string) => readFileSync(new URL(`../../test/fixtures/diff/${name}`, import.meta.url), 'utf8')
 const fx = (name: string) => parseUnifiedDiff(raw(name))
@@ -173,4 +173,40 @@ test('args', () => {
   expect(workingDiffArgs('a.ts', true)).toEqual(['diff', '--no-color', '--no-ext-diff', '--cached', '--', 'a.ts'])
   expect(untrackedDiffArgs('n.txt', 'win32')).toEqual(['diff', '--no-color', '--no-index', '--', 'NUL', 'n.txt'])
   expect(untrackedDiffArgs('n.txt', 'linux')).toEqual(['diff', '--no-color', '--no-index', '--', '/dev/null', 'n.txt'])
+})
+
+const two = parseUnifiedDiff(
+  ['diff --git a/a.ts b/a.ts', '--- a/a.ts', '+++ b/a.ts', '@@ -1,3 +1,3 @@', ' one', '-two', '+TWO', ' three', '@@ -10,2 +10,3 @@ fn', ' ten', '+new', ' eleven', ''].join('\n'),
+)[0]!
+
+test('diffWindow: whole file, hunk header rows and total', () => {
+  const w = diffWindow(two, 0, 50)
+  expect(w.total).toBe(9)
+  expect(w.hunkStarts).toEqual([0, 5])
+  expect(w.text).toBe(['@@ -1,3 +1,3 @@', ' one', '-two', '+TWO', ' three', '@@ -10,2 +10,3 @@ fn', ' ten', '+new', ' eleven', ''].join('\n'))
+})
+
+test('diffWindow: a window starting mid-hunk gets a header of its own that parses', () => {
+  const w = diffWindow(two, 3, 3)
+  expect(w.text).toBe(['@@ -3,1 +2,2 @@', '+TWO', ' three', ''].join('\n'))
+  const parsed = parseUnifiedDiff(`diff --git a/a.ts b/a.ts\n${w.text}`)[0]!
+  expect(parsed.hunks[0]!.lines.map((l) => l.kind)).toEqual(['add', 'ctx'])
+  const tail = diffWindow(two, 4, 4)
+  expect(tail.text).toBe(['@@ -3,1 +3,1 @@', ' three', '@@ -10,1 +10,1 @@ fn', ' ten', ''].join('\n'))
+})
+
+test('diffWindow clamps top and rows', () => {
+  expect(diffWindow(two, 99, 2).text).toBe(['@@ -11,1 +12,1 @@', ' eleven', ''].join('\n'))
+  expect(diffWindow(two, -5, 1).text).toBe('@@ -1,0 +1,0 @@\n')
+  expect(diffWindow({ ...two, hunks: [] }, 0, 5)).toEqual({ text: '', total: 0, hunkStarts: [] })
+})
+
+test('reviewText caps at max characters', () => {
+  const t = reviewText('src/api/user.ts', 'x'.repeat(20_000), 8000)
+  expect(t.length).toBeLessThanOrEqual(8000)
+  expect(t.startsWith('Review this diff of src/api/user.ts:\n\n```diff\n')).toBe(true)
+  expect(t.endsWith('\n```\n')).toBe(true)
+  expect(t).toContain('[diff truncated]')
+  const small = reviewText('a.ts', '@@ -1 +1 @@\n-a\n+b\n', 8000)
+  expect(small).toBe('Review this diff of a.ts:\n\n```diff\n@@ -1 +1 @@\n-a\n+b\n```\n')
 })

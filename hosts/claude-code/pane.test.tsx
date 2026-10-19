@@ -93,7 +93,7 @@ test('short panes drop the hint, then the rule, then the header', async ($) => {
   for (const surface of SURFACES) {
     const tall = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 10), requestId: 'jei' })
     expect(await tall.find({ key: 'hint' })).toBeDefined()
-    await tall.press({ key: 'tab-4' }) // a view without letter actions
+    await tall.press({ key: 'tab-2' }) // a view without letter actions (Search)
     await tall.unmount()
     const short = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 7), requestId: 'jei' })
     expect(await short.find({ key: 'hint' })).toBeUndefined()

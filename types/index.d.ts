@@ -50,6 +50,29 @@ export type JeiGit =
     }
   | { root: null }
 
+/** core/git/commands.ts CommitMode: what the Commit button does. */
+export type JeiCommitMode = 'commit' | 'commit-push' | 'amend'
+
+/** An inline question in the Git tab, answered by its Buttons. */
+export type JeiAsk =
+  | { kind: 'discard'; paths: string[]; all: boolean }
+  | { kind: 'sensitive'; paths: string[] }
+  | { kind: 'divergence' }
+
+/**
+ * The Git tab as the person left it: the commit message and mode, an open
+ * question, the operation running (its label), collapsed groups and the
+ * first diff row in view.
+ */
+export type JeiGitUi = {
+  message: string
+  mode: JeiCommitMode
+  ask: JeiAsk | null
+  busy: string | null
+  collapsed: string[]
+  diffTop: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     jei: {
@@ -58,6 +81,7 @@ declare module 'claude-code' {
       activity: JeiActivity
       git: JeiGit | null
       tree: JeiTree
+      gitUi: JeiGitUi
       preview: JeiPreview
       /** Bumped by the shimmer clock and by refreshed caches: a redraw. */
       tick: number

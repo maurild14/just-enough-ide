@@ -106,7 +106,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 - Both hosts build the tab bar with `core/shared/tabs.ts` (`tabBar`): when a form does not fit, the gap shrinks to 1, then 0, before the labels shorten.
 - Both hosts build these strings with `core/shared/fit.ts` (`cellWidth`, `fitEnd`, `fitPath`, `padEnd`), never with string length. Every result is at most the requested width in cells.
 
-**Hint line.** Items are `key label` pairs in priority order, separated by ` · `. On Claude Code a letter key is a plain hotkey `Button`, drawn `a: mention` (bare `a: `), and Esc is not listed because the host keeps it (back to the prompt; ADR 0009). Drop the lowest-priority items from the end until the line fits; the hint never ends with a catch-all item. Below 32 columns the hint shows only keys (`↑↓ enter a`). The full key list for every view is in the PRD and `core/keys.ts`.
+**Hint line.** Items are `key label` pairs in priority order, separated by ` · `. On Claude Code a letter key is a plain hotkey `Button`, drawn `a: mention` (bare `a: `), and Esc is not listed because the host keeps it (back to the prompt; ADR 0009). There, when not every item fits, the navigation words (`↑↓`, `enter`) drop before any letter key, because a letter key works only while its Button is drawn. Drop the lowest-priority items from the end until the line fits; the hint never ends with a catch-all item. Below 32 columns the hint shows only keys (`↑↓ enter a`). The full key list for every view is in the PRD and `core/keys.ts`.
 
 **Hard rules.**
 - No list or chrome row ever wraps, and no line is wider than the pane.
@@ -152,6 +152,11 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 | Git | Detached | `Detached at a41f9c2.` (`warning`) |
 | Git | No upstream | `No upstream branch.` (`warning`) |
 | Git | Failure | `Push failed: <first git line>.` (`error`) |
+| Git | Discard (confirm) | `Discard changes to user.ts?` / `Discard all changes (3 files)?` (`warning`) with `Discard` and `Cancel` |
+| Git | Sensitive files | `These files look sensitive: .env` (`warning`) with `Commit anyway` and `Cancel` |
+| Git | Diverged | `Your branch and its upstream have diverged.` (`warning`) with `Merge`, `Rebase`, `Ask Claude` and `Cancel` |
+| Git | Busy | `Committing…`, `Syncing…`, `Generating…` in the repository row (`muted`); Commit is drawn dim and cannot be pressed while the message is empty |
+| Diff | Capped | `Diff truncated at 5,000 lines.` (`warning`) |
 
 ## 9. Motion: activity shimmer
 

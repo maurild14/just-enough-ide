@@ -46,6 +46,14 @@ export async function refreshGit($: EngineInterface): Promise<void> {
   if (!r.stale) await setGit($, gitState(r.value))
 }
 
+// Other caches a refresh drops (the diff view's), registered by their modules so this one imports none of them.
+const forgetters: (() => void)[] = []
+
+/** Registers a cache to drop on every refresh. */
+export function onRefresh(forget: () => void): void {
+  forgetters.push(forget)
+}
+
 /**
  * After a change on disk: drop stale caches (everything for `all`, a shell
  * command), re-read git, re-read the filter's file list only while the filter
@@ -56,6 +64,7 @@ export async function refreshAfterChange($: EngineInterface, rels: readonly stri
   if (root === '') return
   if (all) forgetAll(root)
   else forgetPaths(root, rels)
+  for (const forget of forgetters) forget()
   let fileList: Promise<void> | undefined
   if ((await readTree($)).filtering) fileList = refreshFileList(hostFor($, root), root).catch(() => undefined)
   else forgetFileList(root)

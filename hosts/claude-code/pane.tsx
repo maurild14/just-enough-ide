@@ -5,7 +5,9 @@ import { currentView, reducePane } from '../../core/pane.ts'
 import { toPosix } from '../../core/shared/paths.ts'
 import { cellWidth, fitEnd } from '../../core/shared/fit.ts'
 import { tabBar, TAB_NAMES } from '../../core/shared/tabs.ts'
+import { renderDiff } from './diff.tsx'
 import { renderFiles, type FilesAction } from './files.tsx'
+import { renderGit } from './git.tsx'
 import { readCwd, readPane, updatePane } from './state.ts'
 
 export type PaneRender = RenderInput<'Pane'>
@@ -59,11 +61,23 @@ export function hintItems(
       if (action) all.push({ keyText, label: k.label, run: action.run })
     } else all.push({ keyText, label: k.label })
   }
-  const costs = all.map((i) => {
-    const bare = cellWidth(i.keyText) + (i.run ? 2 : 0)
-    return { bare, labelled: bare + (i.run ? 0 : 1) + cellWidth(i.label) }
-  })
-  const fit = fitHint(costs, width, bareOnly)
+  // A bare Button draws `k: `: its trailing space is the gap to the next item, so it costs
+  // the key plus 1 and the fit runs 1 cell short (the last item's trailing space).
+  const fitOf = (list: HintItem[]) => {
+    const costs = list.map((i) => {
+      const key = cellWidth(i.keyText)
+      return i.run ? { bare: key + 1, labelled: key + 2 + cellWidth(i.label) } : { bare: key, labelled: key + 1 + cellWidth(i.label) }
+    })
+    return fitHint(costs, Math.max(0, width - 1), bareOnly)
+  }
+  const fit = fitOf(all)
+  if (fit.count < all.length) {
+    // Too narrow for every key: the letter keys stay (they are the only way to press them), the
+    // navigation words (arrows, enter) go first.
+    const keys = all.filter((i) => i.run)
+    const kfit = fitOf(keys)
+    if (kfit.count > all.slice(0, fit.count).filter((i) => i.run).length) return { items: keys.slice(0, kfit.count), labelled: kfit.labelled }
+  }
   return { items: all.slice(0, fit.count), labelled: fit.labelled }
 }
 
@@ -85,33 +99,42 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const bar = tabBar(columns, room, state.tab, BUTTON_CHROME)
 
   const isFiles = view === 'files' || view === 'files.preview'
+  const isGit = view === 'git' || view === 'git.diff'
   // Letter keys live on the hint's Buttons, so a view with letter actions keeps
   // its hint (bare below 10 rows) down to 3 rows (docs/design.md section 6).
-  const showHint = isFiles ? rows >= 3 : rows >= 10
+  const showHint = isFiles || isGit ? rows >= 3 : rows >= 10
   const bareHint = rows < 10
   const showRule = rows >= 8
   const showHeader = rows >= 6
   const showBar = rows >= 3
 
   const pinned = (showBar ? 1 : 0) + (showRule ? 1 : 0) + (showHeader ? 1 : 0) + (showHint ? 1 : 0)
-  const files = isFiles
-    ? await renderFiles($, e, { columns, inner, bodyRows: Math.max(1, rows - pinned), isFocused: e.props.isFocused }, options)
-    : null
+  const frame = { columns, inner, bodyRows: Math.max(1, rows - pinned), isFocused: e.props.isFocused }
+  // Tabs that draw their own header, body and letter actions.
+  const content = isFiles
+    ? await renderFiles($, e, frame, options)
+    : view === 'git'
+      ? await renderGit($, e, frame, options)
+      : view === 'git.diff'
+        ? await renderDiff($, e, frame, options)
+        : null
 
   const hintRow = (): RenderElement => {
-    if (files === null) {
+    if (content === null) {
       return (
         <Text dimColor wrap="truncate-end">
           {row(hintLine(view, inner))}
         </Text>
       )
     }
-    const { items, labelled } = hintItems(view, inner, files.actions, bareHint)
+    const { items, labelled } = hintItems(view, inner, content.actions, bareHint)
     return (
       <Box flexDirection="row">
         <Text dimColor>{inner > 0 ? ' ' : ''}</Text>
         {items.flatMap((item, i) => {
-          const sep = i === 0 ? [] : [<Text dimColor>{i < labelled ? SEP : ' '}</Text>]
+          // A bare Button ends in its own space, so a bare item after it needs no gap.
+          const prevBare = i > 0 && i - 1 >= labelled && items[i - 1]!.run !== undefined
+          const sep = i === 0 || (prevBare && i >= labelled) ? [] : [<Text dimColor>{i < labelled ? SEP : ' '}</Text>]
           const shown = i < labelled ? item.label : ''
           const el = item.run ? (
             <Button key={`key-${item.keyText}`} plain dimColor hotkey={item.keyText} label={shown} onPress={item.run} />
@@ -155,11 +178,11 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
         </Box>
       )}
       {showHeader && (
-        <Box key="header">{files ? files.header : <Text wrap="truncate-end">{row(headerOf(view, root))}</Text>}</Box>
+        <Box key="header">{content ? content.header : <Text wrap="truncate-end">{row(headerOf(view, root))}</Text>}</Box>
       )}
       <Box flexDirection="column" flexGrow={1}>
-        {files
-          ? files.body
+        {content
+          ? content.body
           : bodyOf(view).map((text, i) => (
               <Box key={`body-${i}`}>
                 <Text dimColor wrap="truncate-end">

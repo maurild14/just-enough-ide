@@ -6,7 +6,9 @@ import { reveal } from '../core/files/tree.ts'
 import { projectRel } from '../core/shared/paths.ts'
 import { TAB_NAMES } from '../core/shared/tabs.ts'
 import { refreshGit, registerActivity } from '../hosts/claude-code/activity.ts'
+import { scrollDiff } from '../hosts/claude-code/diff.tsx'
 import { focusFiles, scrollFiles } from '../hosts/claude-code/files.tsx'
+import { focusGit, scrollGitList } from '../hosts/claude-code/git.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
 import { initPane, PANE_ID, readCwd, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
 
@@ -93,14 +95,17 @@ export const register: Register = (on, raw) => {
   // The matchers spell PANE_ID as a literal so the validator can read it.
   on('ui.render', { component: 'Pane', requestId: 'jei' }, ($, e) => renderPane($, e, options))
 
-  // The ring landing on a Files row selects it; the ring always moves on.
+  // The ring landing on a Files or Git row selects it; the ring always moves on.
   on('ui.focus', { requestId: 'jei' }, async ($, e, next) => {
     await focusFiles($, e.element)
+    await focusGit($, e.element)
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // Files draws its own window (pinned header and hint), so it takes the scroll.
-  on('ui.scroll', { requestId: 'jei' }, async ($, e, next) => ((await scrollFiles($, e.by)) ? {} : next(e))).catch(
+  // Files, Git and the diff draw their own window (pinned header and hint), so they take the scroll.
+  on('ui.scroll', { requestId: 'jei' }, async ($, e, next) =>
+    (await scrollFiles($, e.by)) || (await scrollGitList($, e.by)) || (await scrollDiff($, e.by)) ? {} : next(e),
+  ).catch(
     ($, e, next) => next(e),
   )
 }

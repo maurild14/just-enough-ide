@@ -34,6 +34,12 @@ export function lineWidths(node: Node): number[] {
   if (node.type === 'Markdown') return [0]
   if (node.type === 'Image') return [Number(props.columns ?? 0)]
   if (node.type === 'Input') return [0]
+  // A Select shows its label and the current option; sized here for its widest option plus a marker.
+  if (node.type === 'Select') {
+    const opts = (props.options as { value: string; label?: string }[] | undefined) ?? []
+    const label = typeof props.label === 'string' ? cellWidth(props.label) + 1 : 0
+    return [label + Math.max(0, ...opts.map((o) => cellWidth(o.label ?? o.value))) + 2]
+  }
   if (node.type === 'Box') {
     if (props.flexDirection === 'row') {
       const gap = Number(props.gap ?? 0)

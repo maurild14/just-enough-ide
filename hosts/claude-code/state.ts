@@ -5,7 +5,8 @@ import { initialPane, type PaneState } from '../../core/pane.ts'
 import type { ActivityKind } from '../../core/activity/classify.ts'
 import type { GitSnapshot } from '../../core/git/service.ts'
 import type { StatusEntry } from '../../core/git/status.ts'
-import type { JeiActivity, JeiGit, JeiPane, JeiPreview, JeiTab, JeiTree, JeiView } from '../../types/index.d.ts'
+import type { CommitMode } from '../../core/git/commands.ts'
+import type { JeiActivity, JeiCommitMode, JeiGit, JeiGitUi, JeiPane, JeiPreview, JeiTab, JeiTree, JeiView } from '../../types/index.d.ts'
 
 /** The pane's id: `$.ui.open({ id })` and the `requestId` its `ui.render` reads. */
 export const PANE_ID = 'jei'
@@ -26,6 +27,14 @@ export const tree = atom({ plugin: 'jei', key: 'tree' } as const, {
 } satisfies JeiTree)
 export const preview = atom({ plugin: 'jei', key: 'preview' } as const, { rel: '', source: false, top: 0 } satisfies JeiPreview)
 export const tick = atom({ plugin: 'jei', key: 'tick' } as const, 0)
+export const gitUi = atom({ plugin: 'jei', key: 'gitUi' } as const, {
+  message: '',
+  mode: 'commit',
+  ask: null,
+  busy: null,
+  collapsed: [],
+  diffTop: 0,
+} satisfies JeiGitUi)
 
 type StateHost = Pick<EngineInterface, 'state'>
 
@@ -71,6 +80,12 @@ export function updatePreview($: StateHost, fn: (p: JeiPreview) => JeiPreview): 
 export function readTick($: StateHost): Promise<number> {
   return read($, tick)
 }
+export function readGitUi($: StateHost): Promise<JeiGitUi> {
+  return read($, gitUi)
+}
+export function updateGitUi($: StateHost, fn: (g: JeiGitUi) => JeiGitUi): Promise<JeiGitUi> {
+  return update($, gitUi, fn)
+}
 export function bumpTick($: StateHost): Promise<number> {
   return update($, tick, (n) => (n + 1) % 1_000_000)
 }
@@ -107,5 +122,6 @@ const drift: [
   Same<JeiView, View>,
   Same<Extract<JeiGit, { root: string }>['status']['entries'][number], StatusEntry>,
   Same<JeiActivity[string]['kind'], ActivityKind>,
-] = [true, true, true, true, true]
+  Same<JeiCommitMode, CommitMode>,
+] = [true, true, true, true, true, true]
 void drift

@@ -53,9 +53,9 @@ const ENTRY_LIMIT = 500
 const FILTER_MAX = 200
 const MB = 1024 * 1024
 
-const reason = (err: unknown) => (err instanceof Error ? err.message : String(err))
+export const reason = (err: unknown) => (err instanceof Error ? err.message : String(err))
 // A refusal from beneath reads `<plugin>: $.<noun>.<event>: <why>`: keep the why.
-const firstLine = (err: unknown) =>
+export const firstLine = (err: unknown) =>
   reason(err)
     .replace(/^[\w-]+: \$\.[\w.]+: /, '')
     .split(/\r?\n/)[0]!
@@ -179,7 +179,7 @@ let focused: string | undefined
 const lastTop = new Map<string, number>()
 
 /** First row in view so the selected one shows, with a row of context once the body has 5 rows. */
-function windowTop(mode: string, ids: readonly string[], selected: string | undefined, rows: number): number {
+export function windowTop(mode: string, ids: readonly string[], selected: string | undefined, rows: number): number {
   const room = Math.max(1, rows)
   const ctx = room >= 5 ? 1 : 0
   let top = lastTop.get(mode) ?? 0
@@ -238,7 +238,8 @@ async function mention($: EngineInterface, rel: string | undefined): Promise<voi
   if (!r.isFilled) $.ui.toast("The prompt can't take a mention right now.")
 }
 
-async function open($: EngineInterface, options: Options, root: string, rel: string | undefined): Promise<void> {
+/** Opens a file in the editor (`editorCommand` or the OS opener); a failure toasts. */
+export async function openRel($: EngineInterface, options: Options, root: string, rel: string | undefined): Promise<void> {
   if (rel === undefined) {
     $.ui.toast('Select a file or folder first.')
     return
@@ -320,7 +321,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     )
     const actions: FilesAction[] = [
       { key: 'a', run: act($, () => mention($, rel)) },
-      { key: 'o', run: act($, () => open($, options, root, rel)) },
+      { key: 'o', run: act($, () => openRel($, options, root, rel)) },
       { key: 'm', run: act($, () => updatePreview($, (p) => ({ ...p, source: !p.source }))) },
     ]
     const rows = Math.max(1, frame.bodyRows)
@@ -413,7 +414,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   const header = tree.filtering ? filterHeader : line(rootName)
   const actions: FilesAction[] = [
     { key: 'a', run: act($, () => mention($, selected)) },
-    { key: 'o', run: act($, () => open($, options, root, selected)) },
+    { key: 'o', run: act($, () => openRel($, options, root, selected)) },
     { key: 'f', run: act($, () => updateTree($, (t) => (t.filtering ? { ...t, filtering: false, filter: '' } : { ...t, filtering: true }))) },
     { key: 'h', run: act($, () => updateTree($, (t) => ({ ...t, showHidden: !t.showHidden }))) },
   ]

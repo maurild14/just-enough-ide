@@ -129,11 +129,16 @@ async function configValue(host: Host, root: string, key: string): Promise<strin
   }
 }
 
+/**
+ * Pull and push per the repository row. `run` runs the steps (default: directly); Claude Code passes one that
+ * routes hook-firing steps through the agent's shell. A `GitError` from it is classified like a direct failure.
+ */
 export async function sync(
   host: Host,
   root: string,
   branch: BranchInfo,
   choice?: 'merge' | 'rebase',
+  run: (steps: string[][]) => Promise<void> = (steps) => runSteps(host, root, steps),
 ): Promise<{ ok: true } | { ok: false; divergence: true } | { ok: false; error: string }> {
   let steps: string[][]
   if (choice !== undefined) {
@@ -147,7 +152,7 @@ export async function sync(
     if (steps.length === 0) return { ok: false, error: 'Detached HEAD: check out a branch to sync.' }
   }
   try {
-    await runSteps(host, root, steps)
+    await run(steps)
     return { ok: true }
   } catch (err) {
     if (!(err instanceof GitError)) throw err

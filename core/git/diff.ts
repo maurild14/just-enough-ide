@@ -213,3 +213,67 @@ export function toUnifiedText(file: DiffFile): string {
   }
   return out.join('\n') + '\n'
 }
+
+/** One drawn row of a diff: a hunk header or one of its lines, with the line numbers it starts from. */
+type DiffRow = { hunk: number; header: string; line?: DiffLine; oldAt: number; newAt: number }
+
+function rowsOf(file: DiffFile): DiffRow[] {
+  const rows: DiffRow[] = []
+  file.hunks.forEach((h, hunk) => {
+    const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(h.header)
+    let oldAt = m ? Number(m[1]) : 0
+    let newAt = m ? Number(m[2]) : 0
+    rows.push({ hunk, header: h.header, oldAt, newAt })
+    for (const line of h.lines) {
+      rows.push({ hunk, header: h.header, line, oldAt, newAt })
+      if (line.kind === 'ctx' || line.kind === 'del') oldAt++
+      if (line.kind === 'ctx' || line.kind === 'add') newAt++
+    }
+  })
+  return rows
+}
+
+/**
+ * `rows` rows of a file's hunks from row `top` (hunk headers count as rows), as unified hunks a
+ * diff renderer parses: every hunk in the window gets a header with counts for the lines kept, and
+ * a window that starts mid-hunk opens with a header of its own (it takes one of the rows).
+ * `hunkStarts` are the header rows of the whole file; `total` its row count.
+ */
+export function diffWindow(file: DiffFile, top: number, rows: number): { text: string; total: number; hunkStarts: number[] } {
+  const all = rowsOf(file)
+  const hunkStarts = all.flatMap((r, i) => (r.line === undefined ? [i] : []))
+  if (all.length === 0) return { text: '', total: 0, hunkStarts }
+  const from = Math.max(0, Math.min(Math.floor(top), all.length - 1))
+  const room = Math.max(1, Math.floor(rows))
+  const opensMidHunk = all[from]!.line !== undefined
+  const kept = all.slice(from, from + room - (opensMidHunk ? 1 : 0))
+  const out: string[] = []
+  let i = 0
+  while (i < kept.length) {
+    const first = kept[i]!
+    let j = i + (first.line === undefined ? 1 : 0)
+    const lines: DiffLine[] = []
+    while (j < kept.length && kept[j]!.line !== undefined && kept[j]!.hunk === first.hunk) lines.push(kept[j++]!.line!)
+    const oldCount = lines.filter((l) => l.kind === 'ctx' || l.kind === 'del').length
+    const newCount = lines.filter((l) => l.kind === 'ctx' || l.kind === 'add').length
+    const at = first.line === undefined ? first : kept[i]!
+    const rest = first.line === undefined ? (/^@@ [^@]* @@(.*)$/.exec(first.header)?.[1] ?? '') : ''
+    out.push(`@@ -${at.oldAt},${oldCount} +${at.newAt},${newCount} @@${rest}`)
+    for (const l of lines) out.push(PREFIX[l.kind] + l.text)
+    i = j
+  }
+  return { text: out.join('\n') + '\n', total: all.length, hunkStarts }
+}
+
+/** The request `a` hands to the prompt: a fenced diff of `path`, the whole text at most `max` characters. */
+export function reviewText(path: string, unified: string, max: number): string {
+  const head = `Review this diff of ${path}:\n\n\`\`\`diff\n`
+  const tail = '```\n'
+  const body = unified.endsWith('\n') ? unified : `${unified}\n`
+  if (head.length + body.length + tail.length <= max) return head + body + tail
+  const note = '[diff truncated]\n'
+  let cut = Math.max(0, max - head.length - tail.length - note.length - 1)
+  const last = body.charCodeAt(cut - 1)
+  if (last >= 0xd800 && last <= 0xdbff) cut -= 1 // never split a surrogate pair
+  return `${head}${body.slice(0, cut)}\n${note}${tail}`
+}
