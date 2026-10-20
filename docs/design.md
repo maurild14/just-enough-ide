@@ -2,14 +2,14 @@
 
 > Purpose: how every JEI view looks and behaves at any pane size · Status: current · Last reviewed: 2026-10-20
 
-Status: Files and working Git views are built on both hosts. Graph and Branches are built on both hosts in milestone 0.2. Search is draft for 0.3; Symbols is draft for 0.4. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
+Status: Files and working Git views are built on both hosts. Graph and Branches are built on both hosts in milestone 0.2. Search, Quick Open and Symbols are draft for 0.3. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
 
 JEI is drawn in character cells. There are no pixels and no fonts to pick, and the colors come from the host. This guide covers how every view looks and how it behaves at any pane size. If a view breaks one of these rules, treat it as a bug.
 
 ## 1. Principles
 
 1. **Text first.** Show names, letters and numbers. Glyphs add meaning only where text would cost more columns.
-2. **Quiet by default.** Use one accent color. Everything that isn't selected, changed or active is plain or muted. Draw no boxes.
+2. **Quiet by default.** Use one accent color outside the Git graph. History lanes and reference kinds use a small semantic host palette to make topology readable (ADR 0017). Everything else that isn't selected, changed or active is plain or muted. Draw no boxes.
 3. **Never break.** At any width or height, every line fits, nothing wraps and the selected row stays visible.
 4. **Color is never the only signal.** Every colored state also has a letter, glyph or word, so `NO_COLOR` still works.
 5. **Motion only means "the agent just did this".** The activity shimmer is the only animation.
@@ -34,6 +34,8 @@ Views use semantic tokens only. No view contains a literal RGB, hex or ANSI colo
 | `activity.read` | Shimmer for reads (purple) | magenta |
 | `activity.write` | Shimmer for writes (orange) | yellow |
 | `activity.git` | Shimmer for git actions (green) | green |
+
+Graph lane indices cycle through existing host accents, preserving the original lane column through connector fitting. HEAD/agent, local, remote and tag spans map to distinct semantic host roles in `theme.ts` / `colors.ts`. Badges explicitly say `[HEAD]`, `[local name]`, `[remote name]` and `[tag name]`, so theme colors and `NO_COLOR` never carry their meaning alone. Selected graph rows use the host selection foreground instead of colored spans. The short hash is muted and ends at the final content column.
 
 Bold is allowed only for the active tab and conflicts. Never use italic, blink or underline for meaning, because many terminals drop them.
 
@@ -79,7 +81,7 @@ Middle lane vacancies remain blank until reused so live continuations do not shi
 - **Gutters:** column 0 is the gutter. It shows the touched marker `•` in the activity color, otherwise a space. Keep 1 empty column on the right. Content never touches the right edge.
 - **Indent:** 2 cells per tree level (1 cell below 32 columns). Indent stops growing at `floor(width / 4)`, so deeper levels share that indent.
 - **Right-hand columns:** status letters, counts, +/−, line numbers and times are right-aligned. Each column's width is the widest value among the visible rows, so numbers line up. Columns have 1 space between them below 60 columns and 2 spaces from 60 up. The left text truncates first, and right-hand columns are never cut mid-value.
-- **Groups (Git: Staged, Changes, Graph; Search: files):** a header row with a chevron, the name in sentence case and a right-aligned count, all `muted` apart from the chevron. There are no blank lines inside lists, and one blank line between Git sections only at heights of 24 or more.
+- **Groups (Git: Graph, Staged, Changes; Search: files):** a header row with a chevron, the name in sentence case and a right-aligned count, all `muted` apart from the chevron. Graph remains collapsible so even a full page leaves working changes reachable. There are no blank lines inside lists, and one blank line between Git sections only at heights of 24 or more.
 - **Selection:** the `selection` pair fills the row from gutter to gutter. Only one row is selected per view.
 
 ## 5. Responsive rules (width)
@@ -92,7 +94,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 | Nerd icons | yes | yes | no | no |
 | Files row | name, roll-up count, status | name, status | name, status | name, status; indent 1 |
 | Git change row | `M` name, folder, `+12 −3` | `M` name, folder, `+12 −3` | `M` name, `+12 −3` | `M` name |
-| Graph row | lanes, ✦, hash, refs, subject, author/time | lanes, ✦, hash, refs, subject, author/time | lanes, ✦, hash, subject | lanes, ✦, hash, subject; below 24 hash/subject only |
+| Graph row | lanes, ✦, refs, subject, author/time, final hash | lanes, ✦, fitting refs, subject, author/time, final hash | lanes, ✦, fitting refs, subject, final hash | lanes, ✦, subject, final hash; below 24 subject/hash only |
 | Repository row | repo, branch, ↑↓, `Sync` | branch, ↑↓, `Sync` | branch, ↑↓ | branch (↑↓ when it fits) |
 | Search file row | path, count, timing in header | path, count | path, count | basename, count |
 | Search match row | line no, match text | line no, match text | line no, match text | match text |
@@ -100,11 +102,11 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 | Commit field placeholder | `Message (enter to commit on "main")` | same | `Message` | `Message` |
 | Diff gutter | old and new line numbers | new line number | none | none |
 
-**Drop order.** Graph drops ref badges first, then author/time, then truncates its subject while retaining its seven-character hash. Other rows drop author, hash, optional refs, folder, time, +/−, roll-up counts and the touched marker. Status letters, selection and names remain. ADR 0014 supersedes the earlier graph anatomy.
+**Drop order.** Graph badges reserve up to 12 subject cells and omit badges that cannot fit; author/time appears only when the complete subject fits beside them. The remaining subject truncates while the seven-character hash stays aligned at the end. Other rows drop author, hash, optional refs, folder, time, +/−, roll-up counts and the touched marker. Status letters, selection and names remain. ADR 0017 supersedes the earlier graph anatomy.
 
 Graph uses `fitGraph` with a cell budget of `min(max(cellWidth(glyph), cellWidth(connector)), max(3, floor(inner/4)))`, treating an absent connector as empty. Include connector width because a fork can be wider than its commit row; connector rows contain only the glyph. Both hosts use plain Unicode graph cells with every current icon setting; ASCII remains the shared core fallback, not a new option. The Graph header is `▾ Graph` / `▸ Graph`, adding `(filtered)` for an active filter. Load more is an explicit selectable final row. Expanded files show status, fitted path and +/−, followed by selectable Checkout, Revert and a supported web link. Branches shows locals then a Remote header, current `*`, fitted name, aligned ahead/behind counts and `gone`. Comparison files appear under `Compared with <base>`.
 
-Claude Code keeps the six working action hints on working rows and substitutes the six graph commit hints `y/a/b/f/t/n` on a selected commit. Non-commit Graph contexts (header, Load more, expanded files and action rows) supply `b/f/t/e`, retaining Sync on clean narrow panes; expanded action rows are reached with the shared arrows/Enter. This keeps every applicable shortcut Button visible at 24 columns. Branches keeps `n/c/f`. Active history filters and the new-branch editor remain above the list viewport; confirmations replace editors until answered, preserving both answer Buttons at five rows. Historical diff headers identify the commit or comparison, and a path row sits immediately above the hunks. No browser animation or CSS applies to these character-cell views.
+Claude Code keeps the six working action hints on working rows and substitutes the six graph commit hints `y/a/b/f/t/n` on a selected commit. Non-commit Graph contexts (header, Load more, expanded files and action rows) supply `b/f/t/e`, retaining Sync on clean narrow panes; expanded action rows are reached with the shared arrows/Enter. This keeps every applicable shortcut Button visible at 24 columns. Branches keeps `n/c/f`; comparison files have their own view and selection. The shell Back Button uses `q` on a separate row, outside the hint budget. Active history filters and the new-branch editor remain above the list viewport; confirmations replace editors until answered, preserving both answer Buttons at five rows. Historical diff headers identify the commit or comparison, and a path row sits immediately above the hunks. No browser animation or CSS applies to these character-cell views.
 
 **Truncation.**
 - Paths use a middle ellipsis that keeps the whole basename: `src/…/user.ts`. If the basename alone does not fit, it gets an end ellipsis that keeps the extension where possible: `very-long-na….ts`.
@@ -127,6 +129,7 @@ OpenCode's commit input edits only the first line of a generated message; a reta
 
 - The tab bar and header row stay pinned, the hint line stays pinned at the bottom, and only the body scrolls. An active OpenCode Files filter and the Git commit message keep one editable input row even when the normal header is hidden, including heights 2 and 5; the result viewport keeps at least one row. Git's other controls participate in the selection-anchored scroll window and remain reachable by arrows/Enter.
 - When rows run short, OpenCode Git-family views (working Git, Graph, Branches and diff) keep a fitted hint at five rows and above, reserving that row before computing the body viewport. Other OpenCode tabs hide hints below 10 rows; the keys still work. On Claude Code the letter keys live on the hint line's Buttons, so a view with letter actions keeps the hint, bare (keycaps, no labels), and drops it only below 3 rows (`docs/decisions/0009-esc-is-host-reserved-on-claude-code.md`). Below 8, hide the rule. Below 6, hide the header row; its key facts move into the tab bar's right side if they fit. Below 3, render only the body.
+- A nested view keeps a visible Back row, including at five rows, while retaining tab and hint controls. Both hosts use shared `q`; OpenCode also accepts Esc and Claude Code reserves it for the prompt. Editable fields keep a typed `q`. Back returns diff → comparison → Branches → Git one level at a time; Files preview returns to its retained filter/list. At five rows the preview/diff still keeps one content row. An active Claude Files filter pins its input when the normal header is hidden. Inline name editors and questions keep their existing Cancel controls instead of another Back row.
 - The body always keeps at least 1 row. Scrolling keeps 1 row of context above and below the selection when the body has 5 or more rows.
 - Expanded inline items (a commit's files, call hierarchy) never push the selected row out of view.
 

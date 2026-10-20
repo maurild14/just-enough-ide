@@ -205,7 +205,7 @@ Each feature lists behavior, keys and how it is built. Keys in `code` are the sa
 - **File operations:** new file, new folder, rename, move, delete. Delete always confirms; nothing is ever deleted without a visible confirmation.
 - Follows `cd`: when the session's directory changes, the tree re-roots.
 
-**Keys:** `↑/↓` move · `enter` expand/collapse or preview · `f` filter · `a` mention · `o` open · `n` new · `r` rename · `m` move · `d` delete · `h` toggle hidden · `esc` back / to prompt.
+**Keys:** `↑/↓` move · `enter` expand/collapse or preview · `f` filter · `a` mention · `o` open · `n` new · `r` rename · `m` move · `d` delete · `h` toggle hidden · `q` back. OpenCode also accepts Esc; Claude Code reserves it for the prompt. A visible Back control returns a preview to its retained list/filter; backing out of the filter closes it.
 
 **Build:** list lazily (load a folder on expand, cap 2,000 entries per folder with a "show more" row). Git status from `git status --porcelain=v2 -z` (single call, parsed once in `core/`). Refresh on the host's file-changed events, after write tools and after shell commands (debounced ~300 ms).
 
@@ -244,7 +244,7 @@ File ops live in `core/fsops.ts` as argv builders plus root checks; the host exe
 **Build — two levels, decided:**
 1. **Exact (LSP)** where the host exposes it:
    - **Claude Code:** `$.tool.call({ tool: 'LSP', operation, filePath, line, character, query? })` with `documentSymbol`, `workspaceSymbol` (still needs `filePath`/`line`/`character`, plus `query`), `goToDefinition`, `findReferences`, and `prepareCallHierarchy` → `incomingCalls` / `outgoingCalls`. The result is formatted text: `core/` parses it with a tolerant parser and keeps a fixture-based test suite per operation so a format change fails CI rather than users. Permission: before the first call JEI asks `$.tool.check({ tool: 'LSP', … })`, which returns the verdict without a dialog. If it is `ask`, the tab shows one row ("Exact symbols need permission to use the LSP tool") with a button that makes the first call on purpose; until then it uses the approximate level. Never a surprise dialog.
-   - **OpenCode:** the 2.x client has no LSP or symbol call, so the Symbols tab uses the approximate level and says so. Re-checked at the 0.4 milestone; if OpenCode adds one, JEI uses it.
+   - **OpenCode:** the 2.x client has no LSP or symbol call, so the Symbols tab uses the approximate level and says so. Re-checked at the 0.3 milestone (none in 2.0.32); if OpenCode adds one, JEI uses it.
 2. **Approximate** everywhere else: per-language regex outlines for the common languages (TypeScript/JavaScript, Python, Go, Rust, Java, C#, Markdown headings), and references as a word-boundary `rg` search for the name, labeled *approximate*. All of it lives in `core/`.
 
 tree-sitter is out for v1 (no WebAssembly in Claude Code mods; a native sidecar binary would add a download per platform). Revisit if the regex outlines prove too weak.
@@ -261,7 +261,7 @@ Mirrors VS Code's Source Control panel, top to bottom.
 **Graph**
 - Commit history with branch lanes (forks and merges drawn with box characters), each commit's subject, author and relative time; ref badges for local branches, `origin/*`, tags and HEAD.
 - **✦ marks commits created during an agent tool window in this session**: newly reachable hashes must have new commit-producing HEAD reflog evidence and a recent committer time. Checkout/reset movement alone never marks a commit. Overlapping tools, JEI mutations or unavailable evidence suppress marking; an unrelated external commit during a tool remains indistinguishable. See `docs/decisions/0012-git-history-evidence-and-state.md`.
-- Graph is collapsible below Staged and Changes and shares their selection/scroll. Rows show lanes, an optional ✦, seven-character hash, accent ref labels, subject and author/relative time from 60 columns when they fit; ref labels drop first. Below 24 columns only hash and subject remain.
+- Graph is collapsible above Staged and Changes and shares their selection/scroll. Rows show stable theme-colored lanes, an optional ✦, distinct HEAD/local/remote/tag badges when space permits, subject, optional author/relative time and a seven-character hash aligned at the end. Badges reserve subject space; metadata appears only when the complete subject fits. Narrow rows retain lanes, subject and final hash. Selection uses a readable foreground, and explicit badge words and glyphs keep meaning without color. See ADR 0017.
 - Contextual fetch (`fetch --prune`) and filter actions; pull/push use Sync and Commit & Push. See `docs/decisions/0014-native-history-views-and-attribution.md`.
 - **Filter** by message text, author, file path or branch (or all branches).
 - Loads `graphLimit` commits (200 by default); an explicit Load more row loads the next page.
@@ -271,7 +271,7 @@ Mirrors VS Code's Source Control panel, top to bottom.
 **Diff view (replaces the pane content)**
 - Unified, one column, wrapped to the pane width, with hunk headers and line numbers. Claude Code draws it with `Code format="diff"`; OpenCode draws `core`'s parsed hunks with theme colors.
 - Working header: file, source and +/−. Historical header: `<short> <subject>` or `<base>...<head>`, with the file path above the diff body.
-- `n`/`p` next/previous hunk · `j`/`k` next/previous file of the same commit or change set · `a` Ask to review this diff · `o` open the file · `esc` back to where you came from.
+- `n`/`p` next/previous hunk · `j`/`k` next/previous file of the same commit or change set · `a` Ask to review this diff · `o` open the file · `q` or Back returns one level (Esc also works on OpenCode).
 
 **Changes**
 - Message field ("Message (enter to commit on "main")") with **✦ Generate**: builds a Conventional Commits message from the staged diff (or the full diff when nothing is staged) with a small model (Claude Code: `$.model.complete`, default Haiku; OpenCode: `client.generate.text`, the model the user picks in `commitModel` or OpenCode's default; both configurable). The user can always edit it before committing.
@@ -284,7 +284,7 @@ Mirrors VS Code's Source Control panel, top to bottom.
 - **Switch** to a branch; **create** a branch (from HEAD or from a selected commit) and switch to it; **compare with main** (lists the files the branch changes vs. its merge base and opens their diffs).
 - Switching or creating with uncommitted changes or from detached HEAD: JEI stops and asks (carry changes over if git allows / cancel). It never stashes or forces a switch. Core services enforce fresh target/status validation and confirmation; see ADR 0013.
 
-**Keys (Git tab):** `enter` expand/open · `s` stage · `u` unstage · `d` discard · `c` commit · `y` copy hash · `a` Ask · `b` branches · `f` filter · `t` fetch · `n` new branch from the selected graph commit · `g` generate message · `e` sync. **Branches:** `enter` switch · `n` new from HEAD · `c` compare · `f` filter · `esc` back.
+**Keys (Git tab):** `enter` expand/open · `s` stage · `u` unstage · `d` discard · `c` commit · `y` copy hash · `a` Ask · `b` branches · `f` filter · `t` fetch · `n` new branch from the selected graph commit · `g` generate message · `e` sync. **Branches:** `enter` switch · `n` new from HEAD · `c` compare · `f` filter · `q` back. Both hosts show Back in nested views. Comparison files form a separate level: diff → comparison → Branches → Git, preserving each selection. Editable fields keep `q` as text; inline editors and questions expose Cancel. OpenCode retains Esc as a Back alias.
 
 **Build:** every command goes through one runner, `git --no-optional-locks -C <root> …` with `GIT_OPTIONAL_LOCKS=0` (Claude Code: `$.process.run`; OpenCode: `node:child_process` in the server entry). Read with porcelain/plumbing formats only (`status --porcelain=v2 -z`, `log --format=%H%x00%P%x00…`, `diff --numstat -z`, `for-each-ref --format`), parsed in `core/`. The graph layout (assigning lanes from parent hashes) is a pure function in `core/` with its own unit tests. Refresh on `.git/HEAD`, `.git/index` and ref changes and after git actions. Network operations (fetch, pull, push) show progress in the repository row and report failures as a toast with git's first error line.
 
@@ -421,9 +421,8 @@ Every milestone ships on **both hosts**.
 | --- | --- |
 | **0.1** | `core/` + `Host` interface · pane shell + tabs + hint line · Files (tree, git status, shimmer, follow, preview, mention, open) · Git: repository row, Changes (stage/unstage/discard, commit, ✦), diff view |
 | **0.2** | Git: Graph (lanes, expand commit, commit actions, agent ✦ markers, filter) · Branches (switch, create, compare with main) |
-| **0.3** | Search (rg streaming, send to the agent, replace with preview) · Quick Open |
-| **0.4** | Symbols: regex outlines + approximate references → Claude Code LSP integration (re-check OpenCode for an LSP API) |
-| **0.5** | File operations in Files · polish, docs, GIFs, first public announcement |
+| **0.3** | Search (rg streaming, send to the agent, replace with preview) · Quick Open · Symbols (regex outlines + approximate references and call hierarchy; Claude Code LSP when allowed; OpenCode approximate) |
+| **0.4** | File operations in Files · polish, docs, GIFs, first public release and announcement |
 
 Later candidates (not committed): Problems panel (tsc/eslint per file), Test Explorer, npm scripts & ports, TODO list of what the agent left, review queue ("unreviewed" files), blame-by-prompt.
 
@@ -466,7 +465,7 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - The repo root is both the Claude Code plugin and the OpenCode npm package.
 - On OpenCode, git, rg and file work run in the server entry; the TUI only draws (works with remote servers).
 - Same single-letter/digit keys on both hosts, even though OpenCode allows more.
-- On Claude Code, Esc stays the host's (back to the prompt); nested views go back with their header Button or the tab digit (ADR 0009).
+- On Claude Code, Esc stays the host's (back to the prompt); nested views use the shared `q` Back control, preserving one-level context (ADRs 0009 and 0017).
 - Agent-facing labels use the host's name ("Ask Claude" / "Ask OpenCode").
 - OpenCode 2.x only; the 1.x line has no side-panel slot.
 - On OpenCode, mention/send opens an editable prefilled dialog and sends the message, since 2.x cannot insert into the prompt (§5.3).
@@ -474,7 +473,8 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - On OpenCode, Symbols is approximate only until OpenCode exposes an LSP API.
 - `commitModel` empty by default = the host's small model.
 - Quick Open lives inside the Search tab rather than as a fifth tab.
-- File operations (new, rename, move, delete with confirmation) are included, in 0.5.
+- File operations (new, rename, move, delete with confirmation) are included, in 0.4.
+- Symbols moved into 0.3 next to Search and Quick Open; the first public release moved from 0.5 to 0.4.
 - Symbols use LSP when available and regex outlines otherwise; no tree-sitter in v1.
 - Switching branches with uncommitted changes asks; JEI never stashes on its own.
 - ✦ Generate uses Conventional Commits format.

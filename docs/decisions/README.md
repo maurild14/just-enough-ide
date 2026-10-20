@@ -31,3 +31,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0014 | `0014-native-history-views-and-attribution.md` | Native history paging, contextual action visibility, full-interval attribution guards and host API limits |
 | 0015 | `0015-opencode-history-rpc-and-native-dialogs.md` | OpenCode session-aware RPC, pinned comparisons, native dialogs and installed schema/clipboard limits |
 | 0016 | `0016-history-cell-budgets-and-action-reachability.md` | Actual graph cell budgets, reachable Sync and established URL-opener semantics |
+| 0017 | `0017-colored-history-and-shared-back-navigation.md` | Semantic history colors, final aligned hashes, Graph-first order and shared Back navigation |

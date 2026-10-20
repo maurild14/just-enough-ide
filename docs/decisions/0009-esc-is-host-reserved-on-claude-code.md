@@ -4,6 +4,8 @@
 
 Status: accepted
 
+Navigation amendment: ADR `0017-colored-history-and-shared-back-navigation.md` supersedes the header-or-tab-only return below with a visible shared `q` Back control. Esc remains host-reserved.
+
 ## Context
 
 `core/keys.ts` gives every view an `esc` (back) key, and the rule is that keys are identical on both hosts. A Claude Code pane gets keys only through its `Button`s' hotkeys (one letter or digit), and Esc never reaches a pane: the host uses it to hand the keyboard back to the prompt. A letter key also works only while the Button carrying it is drawn.

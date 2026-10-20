@@ -77,3 +77,9 @@ Server specs use real Git for full-hash/ref/extra-field rejection, fresh dirty c
 Default-base regressions preserve full refs through core, the real server RPC and both native hosts, including custom `origin/HEAD` pointing to `refs/remotes/main` beside local main. A null origin HEAD selects the local fallback even when the remote short name collides. Claude's terminal/desktop comparisons assert the exact remote hash pair sent to Git.
 
 The real OpenCode 2.0.32 private-session smoke paints Graph and opens Branches using the checkout and disposable acme-app without any model request. It proves live loading/RPC/paint only at the fixed PTY size; other real-host behavior remains release QA.
+
+## History UI follow-up verification
+
+Pure graph regressions assert semantic spans, stable lane indices through clipped connectors, final aligned hashes at 24/40/80/120 pane widths, Unicode/ASCII glyphs and sanitized tabs/control characters/CJK without mutating action data. Pane/key specs add `q` and a distinct comparison stack level. Both native suites assert Graph-before-working-groups order, reference colors, readable selected content and one-level diff → comparison → Branches → Git return at five rows. OpenTUI additionally collapses a 200-commit Graph page and performs a working unstage operation.
+
+Files tests exercise preview return to its retained filter, a typed `q` that does not navigate, and visible mouse Back at all four widths and five rows. Claude kit tests inspect the shared Back hotkey and retain the active filter input when the normal header is hidden. The six-commit/two-merge real Windows OpenCode smoke verified colored VT output, rightmost hashes, Graph-first order, `b`/`q`, terminal mouse Back and Files preview return at 80 × 24. It does not replace the broader live theme/resize/clipboard/real-agent/cross-platform checklist.

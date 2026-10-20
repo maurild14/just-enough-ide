@@ -4,6 +4,8 @@
 
 Status: accepted
 
+Presentation amendment: ADR `0017-colored-history-and-shared-back-navigation.md` supersedes the graph anatomy/order and header-only Back clauses below. Attribution and action contracts remain accepted.
+
 ## Context
 
 The approved v0.2 task defines a more specific row anatomy and explicit paging than the original PRD/design drafts. Claude Code letter keys work only while their Buttons are drawn. Its tool wrapper also sees shell calls issued by JEI's own hook-aware Git runner, so invalidating a tracker once before a mutation cannot exclude a new window opened inside that mutation.

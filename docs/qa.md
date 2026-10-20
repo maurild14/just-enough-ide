@@ -13,8 +13,8 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] `/jei` toggles the pane; `/jei files`, `/jei search`, `/jei symbols`, `/jei git` open on that tab; `/jei <path>` opens Files revealing the path.
 - [ ] Keys `1` to `4` switch tabs while the pane is focused; clicking a tab works where the host has a mouse.
 - [ ] Search and Symbols show "Coming in a later version."
-- [ ] OpenCode: `Esc` goes back from a nested view; host `Ctrl-N` / `Ctrl-P` still work; clicking the panel focuses it.
-- [ ] Claude Code: `Esc` stays the host's (back to the prompt); nested views go back with the header button or the tab digit (ADR 0009).
+- [ ] OpenCode: `q`, visible Back and `Esc` go back one level from a nested view; host `Ctrl-N` / `Ctrl-P` still work; clicking the panel focuses it.
+- [ ] Claude Code: `Esc` stays the host's (back to the prompt); nested views use `q` or visible Back without losing tab access at five rows (ADRs 0009 and 0017).
 - [ ] Claude Code: arrow keys either scroll the pane or walk the focus ring when the tree fits; both paths move the selection sensibly.
 - [ ] Claude Code desktop app: the pane draws, buttons have sensible chrome and every action works by click.
 
@@ -43,7 +43,7 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 
 ## 4. Diff view
 
-- [ ] `enter` on a change opens its diff replacing the pane; `n` / `p` next and previous hunk, `j` / `k` next and previous file, `a` ask, `o` open in editor, `esc` (or the header button on Claude Code) goes back.
+- [ ] `enter` on a change opens its diff replacing the pane; `n` / `p` next and previous hunk, `j` / `k` next and previous file, `a` ask, `o` open in editor, `q` or Back goes back (OpenCode also accepts Esc).
 - [ ] Long lines wrap or truncate without pushing the hint line off the pane.
 
 ## 5. Sizes and themes
@@ -70,7 +70,7 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] Filter message, quoted author, path, a branch and branch:*; cancel retains the old filter. Load more adds graphLimit commits; t fetch reports failures.
 - [ ] b opens Branches; locals/remotes, current marker, gone and ahead/behind counts are readable. Dirty/detached switch: cancel retains state, confirm carries changes only if Git allows.
 - [ ] n creates from HEAD in Branches and the selected commit in Graph. Invalid names fail without lost work.
-- [ ] c compares with the default main branch; open a file diff and use j/k/back. Move the branch and verify the comparison stays pinned. Check missing-base and empty notices.
+- [ ] c compares with the default main branch; open a file diff and use j/k/back. Return through diff → comparison → Branches → Git with `q` and mouse Back, preserving each selection. Type `q` into filter/name/message editors and confirm it stays text. Move the branch and verify the comparison stays pinned. Check missing-base and empty notices.
 - [ ] A real agent commit gains a session-local marker; a JEI commit (including hook-aware Claude execution) never does. Another session/repository must not inherit it. Ambiguous overlap or unavailable evidence may omit markers.
 - [ ] Repeat clipboard/focus/native dialogs in light/dark themes, real terminal resize and another OS.
 

@@ -29,7 +29,7 @@ Retained v0.1 working-diff state is normalized by shared core `normalizePane` at
 | Commit message model | `$.model.complete({ model, prompt })` on the session's own client; no API key |
 | State | `$.state` (session, drives redraws) declared in `types/index.d.ts`; `$.store` across sessions |
 | Slash command | `$.command.register` and `command.run` |
-| LSP (milestone 0.4) | `$.tool.call({ tool: 'LSP', ... })`; the result is formatted text, may need a permission; check first with `$.tool.check` |
+| LSP (milestone 0.3) | `$.tool.call({ tool: 'LSP', ... })`; the result is formatted text, may need a permission; check first with `$.tool.check` |
 
 **Keys.** A pane receives keys only through its `Button`s: a `hotkey` is one digit or one lowercase letter. Tab and arrows walk the focus ring; Esc returns to the prompt. There is no raw key event, so the single-key rule in `core/keys.ts` follows from this.
 
@@ -106,7 +106,7 @@ The installed OpenTUI 0.5.17 input strips CR/LF and defaults to 1,000 characters
 
 **Known gaps.**
 - No API to insert text into the user's prompt. Mention and send open an editable `ui.dialog.prompt` prefilled with the text, then send it with `client.session.prompt({ sessionID, text })`. Esc cancels.
-- No LSP or symbol call in the 2.x client, so Symbols is approximate only there (milestone 0.4; re-check then).
+- No LSP or symbol call in the 2.x client, so Symbols is approximate only there (milestone 0.3; re-check then).
 - No diff element: JEI renders `core`'s parsed hunks line by line with theme colors.
 
 **Keys.** `keymap` allows chords, but JEI uses the same single-letter and digit keys as Claude Code. Never bind `ctrl+n` or `ctrl+p` (reserved by OpenCode's dialogs). On narrow terminals OpenCode shows panels full screen.
@@ -128,3 +128,11 @@ Verified in installed `@opencode/plugin` 2.0.32: `dist/promise/tool.d.ts` declar
 Graph/Branches use shared lists/keys, native filter/name/confirmation dialogs, and working/commit/pinned-compare diff sources. Every history object schema is closed. Real OpenCode 2.0.32 rejects JSON Schema patterns under its default compiler, so portable hashes use length constraints and handlers enforce the exact lowercase 40-hex contract. All method schemas have an installed-compiler regression. Actions carry confirmed and return ActionResult; compare starts from existing full branch refs and returns files plus the exact pinned hash source. See ADR 0015.
 
 Real Windows CLI smoke loaded the checkout with isolated XDG directories, disposable acme-app and a session created through the installed session.create operation without a prompt. Graph painted a real commit and b opened Branches. The CLI and private standalone server were closed. The PTY stayed at 80 columns; renderer assertions do not replace live terminal resize, theme/focus, real-agent tool or clipboard QA.
+
+## History UI follow-up
+
+Both hosts render shared `graphLine` spans with sanitized display fields, semantic lane/reference colors and hashes aligned at the end. Claude `theme.ts` maps the existing `Color` tokens; installed declarations confirm `ButtonProps.hotkey` accepts one lowercase letter/digit and `Text` supports selection inversion. OpenCode `colors.ts` reuses the verified primary/info/success/warning text paths; `KeymapCommand.enabled` suspends `q` during input editing, while Esc retains native cancellation semantics. Selected graph text uses the normal selection foreground. Neither host injects raw ANSI sequences or RGB values in views.
+
+Pane shells own the visible Back action; Claude's shared `navigation.ts` resolves editor/question/filter cancellation before the pane stack. OpenCode delegates both mouse Back and keyboard Back to the active view. `git.compare` preserves separate branch/comparison selections through diff returns. Short panes retain tab and hint keys, and Claude Files pins a filter input when the normal header is hidden. Inline editors and confirms keep their Cancel control. See ADR 0017.
+
+A Windows OpenCode 2.0.32 smoke at 80 × 24 with six commits and two merges verified colored lanes/refs, all six hashes at the same final column, Graph before Changes, `b`/`q`, a real terminal mouse click on Back and Files preview/`q`. It made no model request and used isolated runtime directories. Other themes, live resize, clipboard acceptance, real-agent attribution and another OS remain release QA.
