@@ -2,6 +2,49 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, ROOT, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
 
+for (const action of ['stage', 'unstage', 'discard'] as const) test(`working selection and painted actions survive ${action} with history`, async ($, on) => {
+  const r = await historyWorld($, on)
+  const record = (status: string, path: string) => `1 ${status} N... 100644 100644 100644 ${A} ${A} ${path}`
+  for (const surface of ['terminal', 'desktop'] as const) {
+    r.records = [record(action === 'unstage' ? 'M.' : '.M', 'src/user.ts'), record('.M', 'src/other.ts')]
+    r.beforeRun = async argv => {
+      if (argv.includes('add')) r.records = [record('M.', 'src/user.ts'), record('.M', 'src/other.ts')]
+      if (argv.includes('restore')) r.records = [record('.M', 'src/other.ts'), ...(argv.includes('--staged') ? [record('.M', 'src/user.ts')] : [])]
+    }
+    const ui = await historyPane($, 24, 5, surface)
+    await select($, ui, `${action === 'unstage' ? 'staged' : 'change'}-src/user.ts`)
+    await ui.press({ key: `key-${action === 'stage' ? 's' : action === 'unstage' ? 'u' : 'd'}` })
+    if (action === 'discard') await ui.press({ key: 'confirm-discard' })
+    expect(await ui.find({ key: 'key-s' })).toBeDefined()
+    expect(await ui.find({ key: 'key-u' })).toBeDefined()
+    expect(await ui.find({ key: 'key-c' })).toBeDefined()
+    const expected = action === 'stage' ? 'staged-src/user.ts' : 'change-src/other.ts'
+    const row = await ui.find({ key: expected })
+    expect(row).toBeDefined()
+    expect((await ui.findAll({ type: 'Text' })).some(node => node.props.inverse === true && node.text.includes(action === 'stage' ? 'user.ts' : 'other.ts'))).toBe(true)
+    expect(r.runs.some(argv => argv.includes(action === 'stage' ? 'add' : 'restore') && argv.includes('src/user.ts'))).toBe(true)
+    await ui.unmount()
+  }
+})
+
+for (const surface of ['terminal', 'desktop'] as const) test(`nested panes fit three, four and five rows on ${surface}`, async ($, on) => {
+  await historyWorld($, on)
+  for (const width of [24, 40, 80, 120]) {
+    const ui = await historyPane($, width, 5, surface)
+    await select($, ui, `graph-${A}`); await ui.press({ key: 'key-b' })
+    for (const rows of [3, 4, 5]) {
+      await ui.redraw(props(width, rows))
+      const widths = lineWidths(await ui.drawn() as Node)
+      expect(widths.length).toBeLessThanOrEqual(rows)
+      for (const drawn of widths) expect(drawn).toBeLessThanOrEqual(width)
+      for (const tab of [1, 2, 3, 4]) expect(await ui.find({ key: `tab-${tab}` })).toBeDefined()
+      expect(await ui.find({ key: 'key-n' })).toBeDefined()
+      if (rows >= 4) expect((await ui.find({ key: 'back' }))?.props.hotkey).toBe('q')
+    }
+    await ui.press({ key: 'back' }); await ui.unmount()
+  }
+})
+
 test('Graph precedes Changes with semantic lanes, distinct refs and right-aligned final hashes', async ($, on) => {
   const r = await historyWorld($, on, { dirty: true }); r.topology = true
   for (const surface of ['terminal', 'desktop'] as const) {

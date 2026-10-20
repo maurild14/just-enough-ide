@@ -840,8 +840,10 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     ...(groups.staged.length > 0 ? [`${GROUP_PREFIX}staged`, ...(ui.collapsed.includes('staged') ? [] : groups.staged.map((r) => r.id))] : []),
     ...(groups.changes.length > 0 ? [`${GROUP_PREFIX}changes`, ...(ui.collapsed.includes('changes') ? [] : groups.changes.map((r) => r.id))] : []),
   ]
-  const wanted = pane.selected.git
+  const saved = pane.selected.git
   const firstFile = selectable.find(id => !id.startsWith(GROUP_PREFIX))
+  const stale = saved && /^(staged-|change-|group-(staged|changes)$)/.test(saved) && !selectable.includes(saved)
+  const wanted = stale ? firstFile ?? selectable[0] : saved
   const graphView = await renderGraph($, e, frame, options, g, wanted, firstFile)
   selectable.unshift(...graphView.items.filter((i) => i.isRow).map((i) => i.id))
   const selected = wanted !== undefined && selectable.includes(wanted) ? wanted : graphView.defaultSelection

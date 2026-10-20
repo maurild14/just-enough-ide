@@ -102,7 +102,13 @@ export function Git(props: {
     if (!groups().staged.length && !groups().changes.length) all.push({ id: 'clean' })
     return all
   })
-  createEffect(() => { if (!isDiff() && !isBranches() && history.settled() && !items().some((r) => r.id === selected()) && !(selected()?.startsWith('graph-') && !history.ready()) && !(selected()?.startsWith('commit-file-') && history.pending())) props.dispatch({ type: 'select', view: 'git', id: history.ready()?.commits.length ? 'group-graph' : items().find(row => row.group)?.id ?? 'clean' }) })
+  createEffect(() => {
+    const id = selected()
+    if (isDiff() || isBranches() || !history.settled() || items().some(row => row.id === id) || id?.startsWith('graph-') && !history.ready() || id?.startsWith('commit-file-') && history.pending()) return
+    const graph = history.ready()?.commits.length ? 'group-graph' : undefined
+    const working = items().find(row => row.group)?.id ?? graph ?? 'clean'
+    props.dispatch({ type: 'select', view: 'git', id: graph && (!id || /^(graph-|commit-file-|checkout-|revert-|web-)/.test(id)) ? graph : working })
+  })
   const room = () => Math.max(1, props.height - (props.header ? 1 : 0) - 1)
   let listTop = 0
   const window = createMemo(() => {

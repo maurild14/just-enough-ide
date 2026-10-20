@@ -2,6 +2,21 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { lineWidths, type Node } from './measure.ts'
 
+test('comparison validates a retained file selection against the new files', async ($, on) => {
+  const r = await historyWorld($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    r.comparedFiles = null
+    const ui = await historyPane($, 40, 10, surface)
+    await select($, ui, `graph-${A}`); await ui.press({ key: 'key-b' })
+    await select($, ui, 'branch-refs/heads/feature'); await ui.press({ key: 'key-c' })
+    await select($, ui, 'compare-file-src/other.ts')
+    r.comparedFiles = ['src/replacement.ts']
+    await ui.redraw()
+    expect((await ui.findAll({ type: 'Text' })).some(node => node.props.inverse === true && node.text.includes('replacement.ts'))).toBe(true)
+    await ui.press({ key: 'back' }); await ui.press({ key: 'back' }); await ui.unmount()
+  }
+})
+
 test('Branches names use semantic current, local and remote colors on both surfaces', async ($, on) => {
   await historyWorld($, on)
   for (const surface of ['terminal', 'desktop'] as const) {

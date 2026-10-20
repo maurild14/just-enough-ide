@@ -8,11 +8,11 @@ export const activityColor = (ctx: Plugin.Context, kind: keyof typeof ACTIVITY_C
 
 export function graphColor(ctx: Plugin.Context, span: GraphSpan) {
   const theme = ctx.theme.text
-  const lanes = [theme.action.primary.base, theme.feedback.success.base, theme.feedback.warning.base, theme.feedback.info.base]
+  const lanes = [theme.feedback.info.base, theme.feedback.success.base, theme.feedback.warning.base]
   if (span.role === 'lane') return lanes[(span.lane ?? 0) % lanes.length]
-  if (span.role === 'head' || span.role === 'agent') return theme.action.primary.base
+  if (span.role === 'head' || span.role === 'agent') return theme.feedback.info.base
   if (span.role === 'local') return theme.feedback.success.base
-  if (span.role === 'remote') return theme.feedback.info.base
-  if (span.role === 'tag') return theme.feedback.warning.base
+  if (span.role === 'remote') return theme.feedback.warning.base
+  if (span.role === 'tag') return theme.action.primary.base
   return span.role === 'muted' ? theme.muted : theme.base
 }

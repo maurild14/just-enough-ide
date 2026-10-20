@@ -531,6 +531,33 @@ test('the Files and preview hints keep every key within 24, 40, 80 and 120 colum
   }
 })
 
+test('Files filtering fits three, four and five rows and retains editable cancellation', async ($, on) => {
+  await world($, on)
+  for (const surface of SURFACES) for (const width of WIDTHS) {
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
+    await ui.press({ key: 'key-f' })
+    for (const rows of [3, 4, 5]) {
+      await ui.redraw(paneProps(width, rows))
+      await ui.input({ key: 'filter', text: 'user', kind: 'change' })
+      const widths = lineWidths(await ui.drawn() as Node)
+      expect(widths.length).toBeLessThanOrEqual(rows)
+      for (const drawn of widths) expect(drawn).toBeLessThanOrEqual(width)
+      expect((await ui.find({ key: 'filter' }))?.props.value).toBe('user')
+      expect(await ui.find({ key: 'key-f' })).toBeDefined()
+      for (const tab of [1, 2, 3, 4]) expect(await ui.find({ key: `tab-${tab}` })).toBeDefined()
+      if (rows >= 4) {
+        expect((await ui.find({ key: 'back' }))?.props.hotkey).toBeUndefined()
+        await ui.press({ key: 'back' })
+      } else await ui.press({ key: 'key-f' })
+      expect(await ui.find({ key: 'filter' })).toBeUndefined()
+      await ui.press({ key: 'key-f' })
+      await ui.input({ key: 'filter', text: 'user', kind: 'change' })
+      if (rows === 5) expect(await ui.find({ key: 'row-src/api/user.ts' })).toBeDefined()
+    }
+    await ui.press({ key: 'back' }); await ui.unmount()
+  }
+})
+
 test('on mobile, which draws no Input, the filter shows as text', async ($, on) => {
   await world($, on)
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'mobile', component: 'Pane', props: paneProps(40), requestId: 'jei' })

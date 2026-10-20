@@ -15,7 +15,7 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
   const r = { root: ROOT, head: A, dirty: false, hooks: false, merge: false, topology: false, empty: false, upstream: '', ahead: 0, behind: 0, fetchError: '', copy: true, logError: false, branchesError: false, openerCode: 0, openerError: false,
     runs: [] as string[][], copies: [] as string[], fills: [] as string[], toasts: [] as string[], tools: [] as string[],
     reflog: [] as string[], shell: async (_command: string) => {}, session: 'history-session', base: true, originHead: '', remoteRef: 'origin/main', remoteHash: A, evidenceError: false, clock,
-    histories: {} as Record<string, Record<string, { agents: string[] }>>, beforeRun: async (_argv: string[]) => {}, time: 2_000_000_000, ...initial }
+    histories: {} as Record<string, Record<string, { agents: string[] }>>, records: null as string[] | null, comparedFiles: null as string[] | null, beforeRun: async (_argv: string[]) => {}, time: 2_000_000_000, ...initial }
   const out = (stdout = '', exitCode = 0, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
   const log = (hash: string) => {
     const parents = r.topology ? (hash === A ? `${B} ${C}` : hash === D ? '' : D) : hash === A ? (r.merge ? `${B} ${C}` : B) : ''
@@ -37,7 +37,7 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
     if (a.some(v => v.startsWith('https://'))) return r.openerError ? { deny: 'Opener unavailable.' } : out('', r.openerCode)
     if (a.includes('--show-toplevel')) return out(r.root + '\n')
     if (a.includes('--absolute-git-dir')) return out(r.root + '/.git\n')
-    if (a.includes('status')) return out(`# branch.oid ${r.head}\0# branch.head main\0${r.upstream ? `# branch.upstream ${r.upstream}\0# branch.ab +${r.ahead} -${r.behind}\0` : ''}${r.dirty ? `1 .M N... 100644 100644 100644 ${A} ${A} src/user.ts\0` : ''}`)
+    if (a.includes('status')) return out(`# branch.oid ${r.head}\0# branch.head main\0${r.upstream ? `# branch.upstream ${r.upstream}\0# branch.ab +${r.ahead} -${r.behind}\0` : ''}${r.records ? r.records.map(record => record + '\0').join('') : r.dirty ? `1 .M N... 100644 100644 100644 ${A} ${A} src/user.ts\0` : ''}`)
     if (a.includes('config')) return a.includes('core.hooksPath') && r.hooks ? out('.githooks\n') : out('', 1)
     if (a.includes('--git-path')) return out('.git/hooks\n')
     if (a.includes('reflog')) return r.evidenceError ? out('', 1, 'unavailable evidence') : out(r.reflog.join(''))
@@ -56,8 +56,8 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
     }
     if (a.includes('rev-list')) return out(a.some((v) => v.includes('%ct')) ? `${r.head} 2000000000\n` : `${r.head} ${B}\n`)
     if (a.includes('diff-tree') || (a.includes('diff') && a.some((v) => v.includes('...')))) {
-      if (a.includes('--name-status')) return out('M\0src/user.ts\0A\0src/other.ts\0')
-      if (a.includes('--numstat')) return out('1\t1\tsrc/user.ts\0' + '1\t0\tsrc/other.ts\0')
+      if (a.includes('--name-status')) return out(r.comparedFiles ? r.comparedFiles.map(path => `M\0${path}\0`).join('') : 'M\0src/user.ts\0A\0src/other.ts\0')
+      if (a.includes('--numstat')) return out(r.comparedFiles ? r.comparedFiles.map(path => `1\t1\t${path}\0`).join('') : '1\t1\tsrc/user.ts\0' + '1\t0\tsrc/other.ts\0')
     }
     if (a.includes('--numstat')) return out('')
     if (a.includes('diff') || a.includes('show')) {

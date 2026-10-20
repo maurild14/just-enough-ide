@@ -88,7 +88,7 @@ export function Branches(props: HistoryProps & { state: PaneState; height: numbe
   props.bind(action => { void run(action) })
   onCleanup(() => { stopped = true; props.bind(() => {}) })
   return <box flexGrow={1} minHeight={1} flexDirection="column" overflow="hidden">
-    <Show when={props.header}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted} onMouseDown={() => props.dispatch({ type: 'back' })}>{' ' + fitEnd('Branches', props.width - 2)}</text></Show>
+    <Show when={props.header}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted} onMouseDown={() => props.dispatch({ type: 'back' })}>{' ' + fitEnd(comparing() ? 'Comparison' : 'Branches', props.width - 2)}</text></Show>
     <For each={visible()}>{row => <box height={1} flexShrink={0} backgroundColor={selected() === row.id ? props.ctx.theme.background?.action.primary.base : undefined}>
       <Graph row={row} ctx={props.ctx} width={props.width} selected={selected() === row.id} activate={() => { if (row.activate) { props.dispatch({ type: 'select', view: view(), id: row.id }); void row.activate() } }} />
     </box>}</For>

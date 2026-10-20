@@ -126,7 +126,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const showRule = rows >= 8
   const showHeader = rows >= 6
   const showBar = rows >= 3
-  const showBack = back.active && !back.inline && rows >= 3
+  const showBack = back.active && !back.inline && rows >= 4
 
   const pinned = (showBar ? 1 : 0) + (showRule ? 1 : 0) + (showHeader ? 1 : 0) + (showHint ? 1 : 0) + (showBack ? 1 : 0)
   const frame = { columns, inner, bodyRows: Math.max(1, rows - pinned), isFocused: e.props.isFocused }

@@ -51,7 +51,7 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
   const visible = rows.branches.filter((b) => b.name.toLowerCase().includes(historyUi.branchFilter.toLowerCase()))
   const ids = comparing ? [] : visible.map((b) => `branch-${refOf(b)}`)
   const wanted = pane.selected[view]
-  let selected = wanted && (ids.includes(wanted) || (comparing && historyUi.compared && wanted.startsWith('compare-file-'))) ? wanted : ids[0]
+  let selected = wanted && ids.includes(wanted) ? wanted : ids[0]
   const add = (id: string, text: string | GraphSpan[], fn?: () => Promise<unknown>, look?: 'error' | 'muted') => items.push({ id, isRow: !!fn, el: fn
     ? <Box key={`line-${id}`} flexDirection="row"><Text> </Text><Button key={id} plain onPress={historyAct($, fn)}>{typeof text === 'string'
       ? <Text inverse={id === selected}>{fitEnd(text, frame.inner)}</Text>
@@ -70,10 +70,10 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
     add('compare-heading', `Compared with ${historyUi.compared.label}`)
     try {
       const files = await compare(hostFor($, root), root, historyUi.compared.base, historyUi.compared.head)
+      selected = files.some(file => `compare-file-${file.path}` === wanted) ? wanted : files[0] ? `compare-file-${files[0].path}` : undefined
       if (!files.length) add('compare-empty', 'No changes.', undefined, 'muted')
       for (const file of files) {
         const id = `compare-file-${file.path}`
-        selected ??= id
         const counts = file.added !== null && file.removed !== null ? ` +${file.added} −${file.removed}` : ''
         add(id, `${file.status} ${fitPath(file.path, Math.max(0, frame.inner - 2 - cellWidth(counts)))}${counts}`,
           () => openHistoryDiff($, file.path, { kind: 'compare', base: historyUi.compared!.base, head: historyUi.compared!.head }, 'git.compare', id))

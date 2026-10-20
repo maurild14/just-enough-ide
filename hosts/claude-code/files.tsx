@@ -533,7 +533,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   const ids = items.map((i) => i.id)
   lastIds = items.filter((i) => i.isRow).map((i) => i.id)
   const filterPinned = tree.filtering && e.props.scroll.bodyRows < 6 ? [filterHeader] : []
-  const rows = Math.max(1, frame.bodyRows - filterPinned.length)
+  const rows = Math.max(0, frame.bodyRows - filterPinned.length)
   const top = windowTop(mode, ids, selected, rows)
   return { header, body: [...filterPinned, ...items.slice(top, top + rows).map((i) => i.el)], actions }
 }

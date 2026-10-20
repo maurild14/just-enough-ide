@@ -1,9 +1,48 @@
 import { expect, test } from 'bun:test'
 import { RGBA } from '@opentui/core'
-import { historyFixture, hash, commit } from '../../test/opencode-history.tsx'
+import { historyFixture, hash, commit, repo } from '../../test/opencode-history.tsx'
 import { paneMemory } from './pane.tsx'
 import { cellWidth } from '../../core/shared/fit.ts'
 import { hintLine, KEYS } from '../../core/keys.ts'
+
+for (const action of ['stage', 'unstage', 'discard'] as const) test(`working selection remains reachable after ${action} with history`, async () => {
+  const f = historyFixture(); const [, update] = paneMemory(f.ctx)
+  const entry = (path: string, staged = false) => ({ path, index: staged ? 'modified' : null, worktree: staged ? null : 'modified' })
+  f.setGit(repo([entry('src/app.ts', action === 'unstage'), entry('other.ts')]))
+  f.handlers[action] = async () => { f.setGit(repo(action === 'discard' ? [entry('other.ts')] : [entry('src/app.ts', action === 'stage'), entry('other.ts')])); return {} }
+  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], selected: { git: `${action === 'unstage' ? 'staged' : 'changes'}-src/app.ts` } } })
+  const r = await f.mount(24, 5)
+  f.confirm(true); f.key(action === 'stage' ? 's' : action === 'unstage' ? 'u' : 'd'); await r.flush()
+  expect(f.calls.some(call => call.method === action)).toBe(true)
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected.git).toBe(`group-${action === 'stage' ? 'staged' : 'changes'}`)
+  expect(r.captureCharFrame()).toContain(action === 'stage' ? 'Staged' : 'Changes')
+  f.key('s'); await r.flush()
+  expect(f.calls.filter(call => call.method === 'stage').length).toBeGreaterThan(0)
+})
+
+test('history colors stay chromatic when primary equals base, with readable selected rows', async () => {
+  const f = historyFixture(); const [, update] = paneMemory(f.ctx)
+  f.ctx.theme.text.action.primary.base = f.ctx.theme.text.base
+  f.handlers.graph = async () => ({ commits: [{ ...commit, refs: [{ kind: 'head', name: 'HEAD' }] }], more: false })
+  const r = await f.mount(120, 12)
+  let spans = r.captureSpans().lines.flatMap(line => line.spans)
+  for (const text of ['●', '[HEAD]']) expect(spans.find(span => span.text.includes(text))?.fg).toEqual(RGBA.fromHex('#ff00ff'))
+  update(d => { d.panes['session-a']!.selected.git = `graph-${hash}` }); await r.flush()
+  spans = r.captureSpans().lines.flatMap(line => line.spans)
+  expect(spans.find(span => span.text.includes('[HEAD]'))?.fg).toEqual(RGBA.fromHex('#ffffff'))
+})
+
+test('selection falls back to working groups without history and to Graph after the final change disappears', async () => {
+  const f = historyFixture()
+  f.handlers.graph = async () => ({ commits: [], more: false })
+  const r = await f.mount(24, 5)
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected.git).toBe('group-staged')
+  const [, update] = paneMemory(f.ctx)
+  update(d => { d.panes['session-a']!.selected.git = 'changes-src/app.ts' })
+  f.handlers.graph = async () => ({ commits: [commit], more: false })
+  f.setGit(repo([])); f.changed(); await r.flush()
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected.git).toBe('group-graph')
+})
 
 test('colored history rows end with hashes and precede working groups', async () => {
   const f = historyFixture()
@@ -17,7 +56,7 @@ test('colored history rows end with hashes and precede working groups', async ()
   const line = r.captureSpans().lines.find(line => line.spans.some(span => span.text.includes('1111111')))!
   expect(line.spans.map(span => span.text).join('').trimEnd()).toEndWith('1111111')
   expect(line.spans.find(span => span.text.includes('[local main]'))?.fg).toEqual(RGBA.fromHex('#008000'))
-  expect(line.spans.find(span => span.text.includes('[remote origin/main]'))?.fg).toEqual(RGBA.fromHex('#ff00ff'))
+  expect(line.spans.find(span => span.text.includes('[remote origin/main]'))?.fg).toEqual(RGBA.fromHex('#ffff00'))
 })
 
 test('visible Back and q return through diff, comparison, branches and Graph one level at a time', async () => {

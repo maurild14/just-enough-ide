@@ -7,16 +7,27 @@ import { RGBA } from '@opentui/core'
 
 test('Branches names distinguish current, local and remote with host theme colors', async () => {
   const f = historyFixture(); const r = await f.mount(80, 12)
+  f.ctx.theme.text.action.primary.base = f.ctx.theme.text.base
   f.key('b'); await r.flush()
   const [, update] = paneMemory(f.ctx)
   update(d => { d.panes['session-a']!.selected['git.branches'] = 'branch-refs/heads/feature' }); await r.flush()
   const spans = r.captureSpans().lines.flatMap(line => line.spans)
-  expect(spans.find(span => span.text.includes('* main'))?.fg).toEqual(RGBA.fromHex('#0000ff'))
-  expect(spans.find(span => span.text.includes('origin/feature'))?.fg).toEqual(RGBA.fromHex('#ff00ff'))
+  expect(spans.find(span => span.text.includes('* main'))?.fg).toEqual(RGBA.fromHex('#ff00ff'))
+  expect(spans.find(span => span.text.includes('origin/feature'))?.fg).toEqual(RGBA.fromHex('#ffff00'))
   update(d => { d.panes['session-a']!.selected['git.branches'] = 'branch-refs/heads/main' }); await r.flush()
   expect(r.captureSpans().lines.flatMap(line => line.spans).find(span => span.text.includes('  feature'))?.fg).toEqual(RGBA.fromHex('#008000'))
   f.setWidth(24); r.resize(24, 5); await r.flush()
   expect(r.captureSpans().lines.flatMap(line => line.spans).find(span => span.text.includes('* main'))?.fg).toEqual(RGBA.fromHex('#ffffff'))
+})
+
+test('comparison header names the active comparison view', async () => {
+  const f = historyFixture(); const r = await f.mount(80, 12)
+  f.key('b'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Branches')
+  f.key('c'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Comparison')
+  f.key('q'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Branches')
 })
 
 for (const width of [24, 40, 80, 120]) test(`Branches switches, creates, compares and preserves selection at ${width} columns and five rows`, async () => {
