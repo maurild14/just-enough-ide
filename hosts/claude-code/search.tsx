@@ -239,7 +239,7 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
     if (s.skipped.length) items.push({ id: 'skipped', passive: true, el: text('Not replaced') })
     for (const skip of s.skipped) items.push({ id: `skip-${skip.rel}`, el: row(`skip-${skip.rel}`, `${skip.rel}: ${skip.reason}`, async () => {}) })
     const file = s.plan.find(f => f.rel === selected) ?? s.plan[0]
-    items.push({ id: 'apply', el: <Box flexDirection="row"><Text> </Text><Button key="replace-apply" plain label="Apply file" onPress={act($, () => requestApply($, file ? [file.rel] : []))} /></Box> })
+    items.push({ id: 'apply', el: row('apply', 'Apply file', () => requestApply($, file ? [file.rel] : [])) })
   } else if (quick) {
     const touched = await readActivity($)
     ranked.forEach((rel, i) => items.push({ id: `file-${i}`, el: row(`file-${i}`, `${touched[rel] ? '•' : ' '} ${rel.slice(rel.lastIndexOf('/') + 1)}  ${fitPath(rel.slice(0, rel.lastIndexOf('/')), Math.floor(inner / 2))}`, () => activate(`file-${i}`)) }))

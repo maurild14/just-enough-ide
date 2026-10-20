@@ -6,6 +6,8 @@ Source: `PRD.md` §9. To report a vulnerability, follow `SECURITY.md`.
 
 New Claude Search/Symbols operations reject unresolved double-slash project roots before source, process or LSP access. Canonical filesystem metadata must prove rooted Windows drive/native UNC or single-leading-slash POSIX grammar; a backslash in a POSIX component is insufficient. Each concrete LSP request receives a fresh permission check, and identifier columns come from a bounded confined UTF-8 read. See ADR 0021.
 
+Shared Files previews validate both the lexical relative path and the target/root realpaths with `nativeRel(..., host.platform)` before reading. POSIX literal-backslash targets and case-distinct double-slash siblings cannot alias an in-root slash/UNC path. This applies to Quick Open previews as well as ordinary Files and cross-tab line targets; legacy path-helper defaults remain unchanged.
+
 ## Privacy model
 
 - JEI is local. It sends nothing over the network itself.
