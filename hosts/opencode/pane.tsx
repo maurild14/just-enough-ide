@@ -160,7 +160,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     <Show when={height() >= 8}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{'─'.repeat(width())}</text></Show>
     <Show when={showBack()}><text height={1} flexShrink={0} fg={props.ctx.theme.text.action.primary.base} onMouseDown={back}>{editing() ? ' Back' : ` ${KEYS[currentView(state())].find(key => key.action === 'back')!.key} Back`}</text></Show>
     <Show when={snapshot() && !error()} fallback={<box flexGrow={1} minHeight={0}><text height={1} fg={error() ? props.ctx.theme.text.feedback.error.base : props.ctx.theme.text.base}>{fitEnd(body(), width())}</text></box>}>
-    <Show when={`${props.input.sessionID}\0${snapshot()!.cwd}`} keyed>{() => <Show when={!isFiles()} fallback={
+    <Show when={`${props.input.sessionID}\0${snapshot()!.cwd}`} keyed>{(_scope: string) => <Show when={!isFiles()} fallback={
       <Files ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} options={snapshot()!.options} git={snapshot()!.git}
         state={state()} dispatch={dispatch} activity={activity()} now={now()} revision={revision()} width={width()}
         height={bodyHeight()} header={height() >= 6}

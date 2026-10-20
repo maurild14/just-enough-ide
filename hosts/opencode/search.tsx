@@ -1,6 +1,6 @@
 import type { RpcClient } from '@opencode/client'
 import type { Plugin } from '@opencode/plugin/tui'
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js'
 import type { ActivityLog } from '../../core/activity/log.ts'
 import { diffWindow, parseUnifiedDiff } from '../../core/git/diff.ts'
 import { KEYS } from '../../core/keys.ts'
@@ -14,7 +14,7 @@ import { nativeRel } from '../../core/shared/paths.ts'
 import { handToAgent } from './hand-off.ts'
 import type { JeiRpc } from './rpc.ts'
 
-type SearchState = { text: string; globs: string; replacement: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; matches: Match[]; summary: string; engine: string; planId: string; files: ReplaceFile[]; skipped: Skipped[]; busy: boolean; applying: boolean; serial: number; revision: number }
+type SearchState = { text: string; globs: string; replacement: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; matches: Match[]; summary: string; engine: string; planId: string; files: ReplaceFile[]; skipped: Skipped[]; busy: boolean; applying: boolean; serial: number; revision: number; quickFiles?: string[]; quickRevision?: number; subject?: { match?: Match; quick?: string; replacement?: string } }
 const initial = (): SearchState => ({ text: '', globs: '', replacement: '', caseSensitive: false, regex: false, wholeWord: false, matches: [], summary: '', engine: 'rg', planId: '', files: [], skipped: [], busy: false, applying: false, serial: 0, revision: -1 })
 const natural = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
 function record(v: unknown): Record<string, unknown> { if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Invalid Search reply.'); return v as Record<string, unknown> }
@@ -41,7 +41,6 @@ export function Search(props: {
 }) {
   const [s, update] = props.ctx.storage.memory<SearchState>(`jei.search.${props.sessionID}\0${props.cwd}`, { initial: initial() })
   const [editing, setEditing] = createSignal<'query' | 'globs' | 'replacement' | null>(s.text ? null : 'query')
-  const [files, setFiles] = createSignal<string[]>([])
   const [quickError, setQuickError] = createSignal('')
   const [quickLoading, setQuickLoading] = createSignal(false)
   const [expanded, setExpanded] = createSignal<string[]>(s.files.map(f => f.rel))
@@ -53,6 +52,16 @@ export function Search(props: {
   const compact = () => props.height <= 3
   const query = (): SearchQuery => ({ text: s.text, caseSensitive: s.caseSensitive, regex: s.regex, wholeWord: s.wholeWord, ...parseGlobs(s.globs) })
   const selected = () => props.state.selected[view()]
+  function select(id: string) {
+    const row = rows().find(row => row.id === id)
+    if (row && !row.passive && !id.startsWith('command:')) update(d => {
+      d.subject ??= {}
+      if (row.match) d.subject.match = row.match
+      else if (quick() && row.path) d.subject.quick = row.path
+      else if (replacing() && d.files.some(file => file.rel === id)) d.subject.replacement = id
+    })
+    props.dispatch({ type: 'select', view: view(), id })
+  }
   function stop() {
     epoch++; clearTimeout(timer); pending?.abort(); pending = undefined
     if (runId) { const id = runId; runId = ''; void props.api.searchCancel({ sessionID: props.sessionID, id }).catch(() => {}) }
@@ -62,7 +71,7 @@ export function Search(props: {
     stop()
     if (quick() || replacing()) return
     const generation = epoch
-    update(d => { d.matches = []; d.summary = '' })
+    update(d => { d.matches = []; d.summary = ''; if (d.subject) delete d.subject.match })
     if (!s.text && !s.regex) return
     timer = setTimeout(() => {
       if (stopped || generation !== epoch) return
@@ -74,9 +83,11 @@ export function Search(props: {
   const reason = (error: unknown) => error instanceof Error ? error.message.split(/\r?\n/)[0]! : 'Unable to complete Search.'
   function fail(error: unknown) { if (!stopped) props.ctx.ui.toast.show({ message: fitEnd(reason(error), Math.max(1, props.width)), variant: 'error' }) }
   const offMatches = props.api.events.on('searchMatches', event => {
-    try { const e = record(event.data); if (e.sessionID !== props.sessionID || e.id !== runId || !runId || stopped) return; const batch = matches(e.matches), first = s.matches.length === 0; update(d => { d.matches = [...d.matches, ...batch].slice(0, 2000) }); if (first && batch.length) props.dispatch({ type: 'select', view: 'search', id: 'match-0' }) } catch (error) { stop(); update(d => { d.summary = reason(error) }) }
+    if (event.location.directory !== props.cwd) return
+    try { const e = record(event.data); if (e.sessionID !== props.sessionID || e.id !== runId || !runId || stopped) return; const batch = matches(e.matches), first = s.matches.length === 0; update(d => { d.matches = [...d.matches, ...batch].slice(0, 2000) }); if (first && batch.length) select('match-0') } catch (error) { stop(); update(d => { d.summary = reason(error) }) }
   })
   const offDone = props.api.events.on('searchDone', event => {
+    if (event.location.directory !== props.cwd) return
     try {
       const e = record(event.data); if (e.sessionID !== props.sessionID || e.id !== runId || !runId || stopped) return
       if ((e.engine !== 'rg' && e.engine !== 'git grep') || !(e.error === null || typeof e.error === 'string') || typeof e.ms !== 'number' || !Number.isFinite(e.ms) || e.ms < 0 || typeof e.truncated !== 'boolean') throw new Error('Invalid Search reply.')
@@ -86,13 +97,14 @@ export function Search(props: {
   createEffect(() => {
     const revision = props.revision
     if (quick()) {
+      if (untrack(() => s.quickFiles !== undefined && s.quickRevision === revision)) return
       const controller = new AbortController(); setQuickError(''); setQuickLoading(true)
-      void props.api.quickOpenFiles({}, { signal: controller.signal }).then(raw => { if (!stopped && !controller.signal.aborted) setFiles(strings(record(raw).files).slice(0, 50_000).map(rel)) }).catch(error => { if (!stopped && !controller.signal.aborted) setQuickError(reason(error)) }).finally(() => { if (!stopped && !controller.signal.aborted) setQuickLoading(false) })
+      void props.api.quickOpenFiles({}, { signal: controller.signal }).then(raw => { if (!stopped && !controller.signal.aborted) { const files = strings(record(raw).files).slice(0, 50_000).map(rel); update(d => { d.quickFiles = files; d.quickRevision = revision }) } }).catch(error => { if (!stopped && !controller.signal.aborted) { setQuickError(reason(error)); props.ctx.ui.toast.show({ message: fitEnd(reason(error) + (s.quickFiles?.length ? ' Showing cached files.' : ''), Math.max(1, props.width)), variant: 'error' }) } }).finally(() => { if (!stopped && !controller.signal.aborted) setQuickLoading(false) })
       onCleanup(() => controller.abort())
     } else if (s.revision !== revision && !replacing()) { update(d => { d.revision = revision }); if (s.text || s.regex) restart() }
   })
-  const ranked = createMemo(() => rankFiles(parseQuery(s.text).name, files(), { touched: new Set(Object.keys(props.activity.toJSON())), recent: props.state.recent }, 200))
-  type Row = { id: string; label?: string; match?: Match; passive?: boolean; diff?: string }
+  const ranked = createMemo(() => rankFiles(parseQuery(s.text).name, s.quickFiles ?? [], { touched: new Set(Object.keys(props.activity.toJSON())), recent: props.state.recent }, 200))
+  type Row = { id: string; label?: string; match?: Match; path?: string; passive?: boolean; diff?: string }
   const rows = createMemo(() => {
     const all: Row[] = []
     if (replacing()) {
@@ -105,18 +117,18 @@ export function Search(props: {
       }
       if (s.skipped.length) all.push({ id: 'skipped', label: 'Not replaced', passive: true })
       for (const skip of s.skipped) all.push({ id: `skip:${skip.rel}`, label: `${skip.rel}: ${skip.reason}` })
-    } else if (quick()) for (const [i, path] of ranked().entries()) all.push({ id: `file-${i}`, label: `${props.activity.touched(path) ? '•' : ' '} ${path}` })
+    } else if (quick()) for (const [i, path] of ranked().entries()) all.push({ id: `file-${i}`, path, label: `${props.activity.touched(path) ? '•' : ' '} ${path}` })
     else {
       let previous = ''; const counts = new Map<string, number>(); for (const m of s.matches) counts.set(m.rel, (counts.get(m.rel) ?? 0) + 1)
       for (const [i, m] of s.matches.entries()) { if (!compact() && m.rel !== previous) all.push({ id: `group:${m.rel}`, label: `${m.rel} (${counts.get(m.rel)})`, passive: true }); previous = m.rel; all.push({ id: `match-${i}`, match: m }) }
     }
     if (!all.length) all.push({ id: 'notice', label: quick() ? quickError() || 'Type to find a file.' : s.summary || (replacing() ? 'No replacements.' : 'Type to search the project.'), passive: true })
     if (!replacing()) all.push({ id: 'command:edit', label: 'Edit query' })
-    for (const key of KEYS[view()]) if (/^[a-z]$/.test(key.key) && key.action !== 'back') all.push({ id: `command:${key.action}`, label: `${key.key} ${key.label}` })
+    for (const key of KEYS[view()]) if ((/^[a-z]$/.test(key.key) || key.action === 'apply-file') && key.action !== 'back') all.push({ id: `command:${key.action}`, label: `${key.key} ${key.label}` })
     return all
   })
   const selectable = () => rows().filter(r => !r.passive)
-  createEffect(() => { if (quick() && quickLoading()) return; if (!selectable().some(r => r.id === selected())) { const first = selectable()[0]; if (first) props.dispatch({ type: 'select', view: view(), id: first.id }) } })
+  createEffect(() => { if (quick() && quickLoading()) return; if (!selectable().some(r => r.id === selected())) { const first = selectable()[0]; if (first) select(first.id) } })
   const pinned = () => !replacing() ? 1 + (!compact() && !quick() ? 1 : 0) : props.header ? 1 : 0
   const room = () => Math.max(0, props.height - pinned() - (!compact() && !quick() && !replacing() && s.summary ? 1 : 0))
   const window = createMemo(() => { const all = rows(), at = all.findIndex(r => r.id === selected()); if (at >= 0) listTop = Math.min(Math.max(listTop, at - room() + 1), at); listTop = Math.max(0, Math.min(listTop, all.length - room())); return all.slice(listTop, listTop + room()) })
@@ -160,22 +172,23 @@ export function Search(props: {
       const diff = file ? parseUnifiedDiff(previewText(file))[0] : undefined
       if (diff && !compact()) { const next = top() + (action.endsWith('up') ? -1 : 1), total = diffWindow(diff, 0, 1).total; if (next >= 0 && next < total) { setTop(next); return } }
       const all = selectable(), at = all.findIndex(r => r.id === selected()), next = all[Math.max(0, Math.min(all.length - 1, at + (action.endsWith('up') ? -1 : 1)))]
-      if (next) { setTop(0); props.dispatch({ type: 'select', view: view(), id: next.id }) }; return
+      if (next) { setTop(0); select(next.id) }; return
     }
     if (s.applying || s.busy && replacing()) return
-    const id = selected() ?? ''
-    if ((action === 'activate' || action === 'apply-file') && id.startsWith('command:')) return run(id.slice(8))
+    const id = selected() ?? '', command = id.startsWith('command:')
+    if ((action === 'activate' || action === 'apply-file') && command) action = id.slice(8)
     if (action === 'edit') { setEditing('query'); return }
     if (action === 'include' || action === 'replace') { setEditing(action === 'include' ? 'globs' : 'replacement'); return }
     if (action.startsWith('toggle-')) { const field = action === 'toggle-case' ? 'caseSensitive' : action === 'toggle-regex' ? 'regex' : 'wholeWord'; update(d => { d[field] = !d[field] }); restart(); return }
     if (action === 'quickopen' || action === 'search') { stop(); update(d => { d.text = '' }); setEditing('query'); props.dispatch(action === 'quickopen' ? { type: 'quickopen' } : { type: 'back' }); return }
     if (action === 'apply-file') {
       if (id.startsWith('toggle:')) { const path = id.slice(7); setExpanded(old => old.includes(path) ? old.filter(p => p !== path) : [...old, path]); return }
-      return apply(s.files.some(f => f.rel === id) ? [id] : [])
+      const path = command ? s.subject?.replacement : id
+      return apply(path && s.files.some(f => f.rel === path) ? [path] : [])
     }
     if (action === 'apply-all') return apply(s.files.map(f => f.rel))
     if (action === 'activate') { if (quick()) { const path = ranked()[Number(id.slice(5))]; if (path) preview(path, parseQuery(s.text).line ?? undefined) } else { const m = s.matches[Number(id.slice(6))]; if (m) preview(m.rel, m.line) }; return }
-    if (action === 'mention') { if (quick()) { const path = ranked()[Number(id.slice(5))]; if (path) await handToAgent(props.ctx, props.sessionID, `@${path} `) } else { const m = s.matches[Number(id.slice(6))]; if (m) await handToAgent(props.ctx, props.sessionID, sendText(s.text, [m])) }; return }
+    if (action === 'mention') { if (quick()) { const path = command ? ranked().find(path => path === s.subject?.quick) : ranked()[Number(id.slice(5))]; if (path) await handToAgent(props.ctx, props.sessionID, `@${path} `) } else { const target = s.subject?.match, m = command ? s.matches.find(m => m.rel === target?.rel && m.line === target.line && m.text === target.text) : s.matches[Number(id.slice(6))]; if (m) await handToAgent(props.ctx, props.sessionID, sendText(s.text, [m])) }; return }
     if (action === 'send-all') return handToAgent(props.ctx, props.sessionID, sendText(s.text, s.matches))
     if (action === 'ask') {
       const text = `Replace ${JSON.stringify(s.text)} with ${JSON.stringify(s.replacement)} in: `
@@ -209,7 +222,7 @@ export function Search(props: {
       </box>
       <Show when={!compact() && !quick()}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(` ${s.caseSensitive ? '[Aa]' : 'Aa'} ${s.regex ? '[.*]' : '.*'} ${s.wholeWord ? '[\\b]' : '\\b'} ${s.globs}${s.engine === 'git grep' ? ' · git grep (first match per line)' : ''}`, props.width)}</text></Show>
     </Show>
-    <For each={window()}>{row => <text id={`search-row-${row.id}`} height={1} flexShrink={0} bg={row.id === selected() ? theme().background?.action.primary.base : undefined} onMouseDown={() => { if (!row.passive) { setEditing(null); props.dispatch({ type: 'select', view: view(), id: row.id }); invoke(replacing() ? 'apply-file' : 'activate') } }}>
+    <For each={window()}>{row => <text id={`search-row-${row.id}`} height={1} flexShrink={0} bg={row.id === selected() ? theme().background?.action.primary.base : undefined} onMouseDown={() => { if (!row.passive) { setEditing(null); select(row.id); invoke(replacing() ? 'apply-file' : 'activate') } }}>
       {' '}<Show when={row.match} fallback={<span style={{ fg: row.diff ? row.diff.startsWith('+') ? theme().diff?.text.added : row.diff.startsWith('-') ? theme().diff?.text.removed : theme().diff?.text.hunkHeader : row.passive ? theme().text.muted : theme().text.base }}>{row.diff ? fitEnd(row.diff, inner()) : row.label?.includes('/') ? fitPath(row.label, inner()) : fitEnd(row.label ?? '', inner())}</span>}>{(m: () => Match) => <For each={matchSpans(m())}>{p => <span style={{ fg: p.hit ? theme().text.action.primary.base : theme().text.base }}>{p.text}</span>}</For>}</Show>
     </text>}</For>
     <Show when={!compact() && !quick() && !replacing() && s.summary}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(s.summary + (s.engine === 'git grep' ? ' · git grep' : ''), props.width)}</text></Show>

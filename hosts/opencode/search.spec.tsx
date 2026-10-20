@@ -6,6 +6,64 @@ import { paneMemory } from './pane.tsx'
 const batch = (id: string, text = 'load') => ({ sessionID: 'session-a', id, matches: [{ rel: 'src/app.ts', line: 2, text: `ñ ${text} 界`, ranges: [[2, 2 + text.length]] }] })
 const done = (id: string, extra: object = {}) => ({ sessionID: 'session-a', id, engine: 'rg', error: null, ms: 4, truncated: false, ...extra })
 
+async function command(f: ReturnType<typeof searchFixture>, r: Awaited<ReturnType<typeof f.mount>>, view: 'search' | 'quickopen' | 'search.replace', id: string) {
+  for (let i = 0; i < 30 && paneMemory(f.ctx)[0].panes['session-a']!.selected[view] !== id; i++) { f.key('down'); await r.flush() }
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected[view]).toBe(id)
+  f.key('enter'); await r.flush()
+}
+
+test('compact Search mention command uses the last selected result', async () => {
+  const f = searchFixture(), r = await f.mount(24, 5); f.key('2'); await r.flush(); input(r).insertText('load'); await settle(r)
+  const id = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.emit('searchMatches', { ...batch(id), matches: [...batch(id).matches, { rel: 'src/save.ts', line: 7, text: 'load()', ranges: [[0, 4]] }] }); input(r).submit(); await r.flush()
+  f.key('down'); await r.flush(); await command(f, r, 'search', 'command:mention')
+  expect(f.prompts.at(-1)?.value).toBe('src/save.ts:7 (load())')
+})
+
+test('compact Quick Open mention command uses the last selected file', async () => {
+  const f = searchFixture(), r = await f.mount(24, 5); f.key('2'); await r.flush(); f.key('esc'); f.key('q'); await r.flush(); f.key('esc'); f.key('down'); await r.flush()
+  await command(f, r, 'quickopen', 'command:mention')
+  expect(f.prompts.at(-1)?.value).toBe('@src/save.ts ')
+})
+
+test('compact Apply file command confirms the last selected reviewed file once', async () => {
+  const f = searchFixture(), r = await f.mount(24, 5)
+  f.handlers.replacePlan = async () => ({ planId: 'compact', files: ['src/app.ts', 'src/save.ts'].map(rel => ({ rel, before: 'load', after: 'save', count: 1 })), skipped: [] })
+  f.key('2'); await r.flush(); f.key('esc'); f.key('p'); await r.flush(); input(r, 'search-replacement').insertText('save'); input(r, 'search-replacement').submit(); await r.flush()
+  f.key('down'); f.key('down'); await r.flush(); await command(f, r, 'search.replace', 'command:apply-file')
+  expect(f.confirms).toHaveLength(1); expect(f.confirms[0].message).toBe('Replace 1 matches in src/save.ts?')
+  expect(f.calls.some(c => c.method === 'replaceApply')).toBe(false)
+})
+
+test('colliding Search ids after a root transition ignore foreign matches and done before parsing', async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); input(r).insertText('load'); await settle(r)
+  const oldId = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.setCwd('/other-app'); f.changed(); await r.flush(); input(r).insertText('save'); await settle(r)
+  const id = f.calls.findLast(c => c.method === 'searchStart')!.input.id; expect(id).toBe(oldId)
+  f.emit('searchMatches', batch(id, 'WRONG_ROOT'), '/acme-app'); f.emit('searchDone', done(id, { error: 'WRONG_DONE' }), '/acme-app'); await r.flush()
+  expect(r.captureCharFrame()).not.toContain('WRONG_ROOT'); expect(r.captureCharFrame()).not.toContain('WRONG_DONE')
+  f.emit('searchMatches', null, '/acme-app'); f.emit('searchDone', null, '/acme-app')
+  f.emit('searchMatches', batch(id, 'RIGHT_ROOT')); f.emit('searchDone', done(id)); await r.flush()
+  expect(r.captureCharFrame()).toContain('RIGHT_ROOT'); expect(r.captureCharFrame()).toContain('1 results'); expect(r.captureCharFrame()).not.toContain('Invalid Search reply.')
+})
+
+test('Quick Open reuses its project cache through preview Back and relists only after invalidation', async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); f.key('esc'); f.key('q'); await r.flush()
+  expect(f.calls.filter(c => c.method === 'quickOpenFiles')).toHaveLength(1)
+  input(r).submit(); await r.flush(); f.key('q'); await r.flush()
+  expect(f.calls.filter(c => c.method === 'quickOpenFiles')).toHaveLength(1); expect(r.captureCharFrame()).toContain('src/app.ts')
+  f.handlers.quickOpenFiles = async () => ({ files: ['src/new.ts'] }); f.changed(); await r.flush()
+  expect(f.calls.filter(c => c.method === 'quickOpenFiles')).toHaveLength(2); expect(r.captureCharFrame()).toContain('src/new.ts'); expect(r.captureCharFrame()).not.toContain('src/app.ts')
+})
+
+test('Quick Open reports a failed refresh even while cached files remain visible', async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); f.key('esc'); f.key('q'); await r.flush()
+  expect(r.captureCharFrame()).toContain('src/app.ts')
+  f.handlers.quickOpenFiles = async () => { throw new Error('File listing failed.\nInternal details.') }; f.changed(); await r.flush()
+  expect(r.captureCharFrame()).toContain('src/app.ts')
+  expect(f.notices.at(-1)).toEqual({ message: 'File listing failed. Showing cached files.', variant: 'error' })
+})
+
 for (const width of [24, 40, 80, 120]) test(`Search streams, previews a marked line and retains Back at ${width}x5`, async () => {
   const f = searchFixture(); const r = await f.mount(width, 5); f.key('2'); await r.flush()
   expect(input(r)).toBeDefined()

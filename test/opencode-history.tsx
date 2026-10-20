@@ -29,18 +29,19 @@ const diff = (path = 'src/app.ts') => ({ file: { path, binary: false, added: 2, 
 
 export function historyFixture(options: Record<string, unknown> = {}) {
   const layers: (() => Layer)[] = []
-  const listeners = new Map<string, Set<(event: { data: unknown }) => void>>()
+  const listeners = new Map<string, Set<(event: { data: unknown; location: { directory: string } }) => void>>()
   const memory = new Map<string, unknown>()
   const [width, setWidth] = createSignal(80)
   const calls: { method: string; input: any }[] = []
   const confirms: any[] = []; const selects: any[] = []; const prompts: any[] = []; const sent: any[] = []; const notices: any[] = []
   let claim!: Claim
   let git: unknown = repo()
+  let cwd = '/acme-app'
   let confirmation: boolean | undefined = false
   let selection: unknown = undefined
   let edited: string | undefined = undefined
   const handlers: Record<string, (input: any) => Promise<unknown>> = {
-    state: async () => ({ cwd: '/acme-app', options: parseOptions({ ...options, defaultTab: 'git' }), git, activity: {} }),
+    state: async () => ({ cwd, options: parseOptions({ ...options, defaultTab: 'git' }), git, activity: {} }),
     generate: async () => ({ message: 'feat: update app' }), commitPlan: async () => ({ steps: [], sensitive: [], viaAgentShell: false }),
     diff: async (input) => diff(input.path), sync: async () => ({ ok: true }),
     graph: async () => ({ commits: [commit], more: false }), commitFiles: async () => ({ files: [{ path: 'a.ts', status: 'M', added: 2, removed: 1 }, { path: 'b.ts', status: 'A', added: 1, removed: 0 }] }), webUrl: async () => ({ url: 'https://github.com/acme/acme-app/commit/' + hash }),
@@ -49,7 +50,7 @@ export function historyFixture(options: Record<string, unknown> = {}) {
     switchBranch: async () => ({ ok: true }), createBranch: async () => ({ ok: true }), checkout: async (i) => i.confirmed ? { ok: true } : { ok: false, confirm: 'Check out 1111111 (detached HEAD)?' }, revert: async (i) => i.confirmed ? { ok: true } : { ok: false, confirm: 'Revert 1111111?' },
   }
   const api = Object.fromEntries(Object.keys(JeiRpc.methods).map((method) => [method, async (input: any) => { calls.push({ method, input }); return handlers[method]?.(input) ?? {} }]))
-  api.events = { on(name: string, fn: (event: { data: unknown }) => void) { const set = listeners.get(name) ?? new Set(); listeners.set(name, set); set.add(fn); return () => set.delete(fn) } } as any
+  api.events = { on(name: string, fn: (event: { data: unknown; location: { directory: string } }) => void) { const set = listeners.get(name) ?? new Set(); listeners.set(name, set); set.add(fn); return () => set.delete(fn) } } as any
   const copied: string[] = []; let copyResult = true
   const ctx = { renderer: { copyToClipboardOSC52(text: string) { copied.push(text); return copyResult } },
     options: { ...options, defaultTab: 'git' }, theme: { text: { base: 'white', muted: 'gray', action: { primary: { base: 'blue' } }, feedback: { error: { base: 'red' }, warning: { base: 'yellow' }, success: { base: 'green' }, info: { base: 'magenta' } } },
@@ -68,8 +69,8 @@ export function historyFixture(options: Record<string, unknown> = {}) {
   }
   function key(bind: string) { return layers.flatMap((l) => l().commands ?? []).findLast((c) => c.bind === bind && (typeof c.enabled === 'function' ? c.enabled() : c.enabled !== false))?.run() }
   return { ctx, mount, copied, copy(value: boolean) { copyResult = value }, key, calls, confirms, selects, prompts, sent, notices, handlers, setWidth, layers,
-    setGit(value: unknown) { git = value }, confirm(value: boolean | undefined) { confirmation = value }, choose(value: unknown) { selection = value }, edit(value: string | undefined) { edited = value },
-    emit(name: string, data: unknown) { for (const fn of listeners.get(name) ?? []) fn({ data }) },
-    changed() { for (const fn of listeners.get('changed') ?? []) fn({ data: {} }) },
+    setGit(value: unknown) { git = value }, setCwd(value: string) { cwd = value }, confirm(value: boolean | undefined) { confirmation = value }, choose(value: unknown) { selection = value }, edit(value: string | undefined) { edited = value },
+    emit(name: string, data: unknown, directory = cwd) { for (const fn of listeners.get(name) ?? []) fn({ data, location: { directory } }) },
+    changed() { for (const fn of listeners.get('changed') ?? []) fn({ data: {}, location: { directory: cwd } }) },
   }
 }

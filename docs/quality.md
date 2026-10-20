@@ -8,6 +8,8 @@ Update a row in the same commit that changes the area. `git log` is the history;
 
 OpenCode 0.3 native Search/Quick Open/Symbols and their server RPC are built. Stored reviewed replacement plans, partial-error envelopes and outline file metadata follow ADR 0022. Source targets retain native confinement and visible gutter marks; service/renderer regressions remain distinct from live-host QA. Existing approximate syntax, first-occurrence fallback, unsupported POSIX backslashes and final check/write race limits remain.
 
+Task 4 review corrections preserve the last selected data subject for compact mention/Apply file controls, resolve command activation once, and reject foreign native event locations before Search data parsing. A keyed Solid child with an argument now actually remounts session/root bodies. Quick Open retains candidates/revision in session/project memory through preview Back; invalidation refreshes them, and a failed refresh shows an error toast identifying retained cached files. Focused native regressions cover these lifecycle and action cases; the earlier 80 x 24 smoke remains evidence for its recorded source, not an additional live run of these corrections.
+
 | Area | Claude Code | OpenCode | Planned for | Notes |
 | --- | --- | --- | --- | --- |
 | Repo scaffolding, CI scripts | built | built | 0.1 (Tasks 1, 2) | Bootstrap done; CI workflow, Dependabot, issue forms and PR template added (Claude Code CI job non-blocking). |
