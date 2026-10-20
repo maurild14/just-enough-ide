@@ -6,7 +6,7 @@ test('flags secrets by basename', () => {
 })
 
 test('all listed patterns, case-insensitive, both separators', () => {
-  const hit = ['.env', 'a/B.PEM', 'c.key', 'id_ed25519.pub', 'x.p12', 'y.pfx', 'sub\\Credentials.json', '.npmrc', 'd/.netrc']
+  const hit = ['.env', 'a/B.PEM', 'c.key', 'id_ed25519.pub', 'x.p12', 'y.pfx', 'sub\\Credentials.json', '.npmrc', 'd/.netrc'] // gitleaks:allow (fictional fixture names)
   expect(sensitivePaths(hit)).toEqual(hit)
 })
 
