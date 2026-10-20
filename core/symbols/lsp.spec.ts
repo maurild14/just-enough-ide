@@ -19,6 +19,21 @@ test('location forms, whitespace, Windows paths and field order vary without los
   expect(parseLsp('goToDefinition', 'Definition:\n/a/acme-app/a:b.ts:4:1 - load', '/a/acme-app')?.refs?.[0]?.rel).toBe('a:b.ts')
 })
 
+test('ambiguous double-slash LSP roots fail closed without a native platform', () => {
+  expect(parseLsp('findReferences', 'References:\n//Acme-app/src/store.ts:1:1', '//acme-app')).toBeNull()
+  expect(parseLsp('findReferences', 'References:\nsrc/a\\b.ts:1:1', '//acme-app')).toBeNull()
+})
+
+test('explicit POSIX LSP roots preserve case and refuse literal backslash aliases', () => {
+  expect(parseLsp('findReferences', 'References:\n//Acme-app/src/store.ts:1:1', '//acme-app', 'linux')).toBeNull()
+  expect(parseLsp('findReferences', 'References:\nsrc/a\\b.ts:1:1', '//acme-app', 'linux')).toBeNull()
+  expect(parseLsp('findReferences', 'References:\n//acme-app/src/a:b.ts:1:1', '//acme-app', 'linux')?.refs?.[0]?.rel).toBe('src/a:b.ts')
+})
+
+test('explicit Windows UNC LSP roots retain Windows separators and case behavior', () => {
+  expect(parseLsp('findReferences', 'References:\n\\\\ACME-APP\\share\\src\\store.ts:1:1', '//acme-app/share', 'win32')?.refs?.[0]?.rel).toBe('src/store.ts')
+})
+
 test('unknown, empty, malformed and escaping output falls back rather than inventing success', () => {
   for (const text of ['garbled', '', 'References:\nnot a location', 'References:\n../secret.ts:1:1', 'References:\n/a/secret.ts:1:1', 'References:\nsrc/app.ts:0:1', 'References:\nsrc/a\\b.ts:1:1']) expect(parseLsp('findReferences', text, '/acme-app')).toBeNull()
   expect(parseLsp('findReferences', 'Definition:\nsrc/app.ts:1:1', '/acme-app')).toBeNull()

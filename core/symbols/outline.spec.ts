@@ -39,6 +39,15 @@ test('Rust impl blocks and traits own their methods', () => {
   ])
 })
 
+test('Rust impl waits for a delayed opening brace without making aliases capture later scopes', () => {
+  const rust = outline('store.rs', 'impl<T> Store<T>\n{\n fn get_user(&self) {\n  load()\n }\n}\nfn after() {}')!
+  expect(rust).toEqual([n('impl Store', 'type', 1, 6, [n('get_user', 'method', 3, 5)]), n('after', 'function', 7, 7)])
+  expect(enclosing(rust, 4)?.name).toBe('get_user')
+  expect(enclosing(rust, 7)?.name).toBe('after')
+  expect(outline('store.ts', 'export type UserID = string\nexport function later() {\n}')).toEqual([n('UserID', 'type', 1, 1), n('later', 'function', 2, 3)])
+  expect(outline('store.go', 'type UserID string\nfunc later() {\n}')).toEqual([n('UserID', 'type', 1, 1), n('later', 'function', 2, 3)])
+})
+
 test('Java and C# nest classes and detect generic-return methods and interface signatures', () => {
   for (const [rel, get, save, read] of [['java/Store.java', 'getUser', 'save', 'read'], ['cs/Store.cs', 'GetUser', 'Save', 'Read']]) {
     const offset = rel!.startsWith('cs/') ? 1 : 0

@@ -20,8 +20,8 @@ export function definitionArgs(name: string, lang: ReturnType<typeof languageFor
     cs: `${modifiers}((class|interface|enum|record|struct)[ \t]+|[A-Za-z_$][^ \t()=;{}]*[ \t]+)${word}${boundary}`,
     md: `#{1,6}[ \t]+${word}([ \t]+#*)?[ \t]*$`,
   }
-  // Bare method declarations need a body marker to distinguish them from calls.
-  const methods = `${modifiers}${word}[ \t]*(<[^>]*>)?[ \t]*\\([^)]*\\)[ \t]*(:[^={;]*)?\\{`
+  // Keep nested default calls and typed signatures; the service filters declaration-shaped candidates.
+  const methods = `${modifiers}${word}[ \t]*(<[^>]*>)?[ \t]*\\([^{}]*\\)[ \t]*((:[^={;]*)?\\{|:[^;{}]*;)`
   return { text: `^[ \t]*(${(lang ? [shapes[lang]] : languages.map((item) => shapes[item])).join('|')}${!lang || ['ts', 'java', 'cs'].includes(lang) ? `|${methods}` : ''})`, regex: true, caseSensitive: true, wholeWord: false, include: [], exclude: [] }
 }
 

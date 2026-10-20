@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { cleanup, FakeHost, makeRepo, makeTemp, writeFiles } from '../../test/fake-host.ts'
 import type { RunOptions, Stream } from '../host.ts'
 import { definitions, fileOutline, findSymbol, incoming, outgoing, references, symbolSendText } from './service.ts'
+import { isDefinitionLine } from './approx.ts'
 
 afterEach(cleanup)
 const files = {
@@ -52,6 +53,20 @@ test('real rg and Git grep definition queries cover the seven fixture languages 
     }
   }
 })
+
+for (const [engine, makeHost] of [['rg', () => new FakeHost()], ['Git grep', () => new NoRg()]] as const) {
+  for (const [name, line] of [['declared', 2], ['defaulted', 5]] as const) {
+    test(`${engine} finds the TS ${name} method and excludes ordinary calls`, async () => {
+      const source = 'export interface Store {\n declared(): string;\n}\nexport class Users {\n defaulted(id = next()) { return id }\n}\nfunction start() {\n declared();\n defaulted(next());\n}\n'
+      const repo = await makeRepo({ 'src/store.ts': source })
+      const host = makeHost()
+      expect(isDefinitionLine('ts', name, source.split('\n')[line - 1]!)).toBe(true)
+      expect((await fileOutline(host, repo.dir, 'src/store.ts'))?.some((node) => node.children.some((child) => child.name === name))).toBe(true)
+      expect((await findSymbol(host, repo.dir, name)).map((ref) => ref.line)).toEqual([line])
+      expect((await definitions(host, repo.dir, name, 'src/store.ts')).map((ref) => ref.line)).toEqual([line])
+    })
+  }
+}
 
 test('references read each source outline once per request', async () => {
   const root = makeTemp()

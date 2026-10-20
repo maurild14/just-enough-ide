@@ -1,3 +1,4 @@
+import type { Platform } from '../host.ts'
 import { nativeRel, platformOf } from '../shared/paths.ts'
 import type { SymbolRef } from './approx.ts'
 import { SYMBOL_CAP, type SymbolKind, type SymbolNode } from './outline.ts'
@@ -10,8 +11,9 @@ const headers: Record<LspOp, string[]> = {
 const kinds = new Set<SymbolKind>(['function', 'class', 'method', 'type', 'interface', 'enum', 'const', 'heading'])
 
 /** Synthetic fixture contract only; unknown real tool output must use the approximate fallback. */
-export function parseLsp(op: LspOp, text: string, root: string): { symbols?: SymbolNode[]; refs?: SymbolRef[] } | null {
-  if (text.length > 8 * 1024 * 1024) return null
+export function parseLsp(op: LspOp, text: string, root: string, platform?: Platform): { symbols?: SymbolNode[]; refs?: SymbolRef[] } | null {
+  if (text.length > 8 * 1024 * 1024 || !platform && root.startsWith('//')) return null
+  const nativePlatform = platform ?? platformOf(root)
   const lines = text.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith('Synthetic fixture:'))
   if (!headers[op].includes(lines.shift()?.trim().replace(/:$/, '').toLowerCase() ?? '')) return null
   if (lines.length === 1 && /^(no results|no symbols|no references|no calls)\.$/i.test(lines[0]!.trim())) return op === 'documentSymbol' ? { symbols: [] } : { refs: [] }
@@ -28,7 +30,7 @@ export function parseLsp(op: LspOp, text: string, root: string): { symbols?: Sym
     let path = location[1]!
     const symbol = /^(.+?)\s+\((\w+)\)\s+(?:-\s+)?(.+)$/.exec(path)
     if (symbol) path = symbol[3]!
-    const rel = path.includes('\0') ? null : nativeRel(root, path, platformOf(root))
+    const rel = path.includes('\0') ? null : nativeRel(root, path, nativePlatform)
     const line = Number(location[2] ?? location[4])
     const endLine = Number(location[3] ?? location[6] ?? line)
     if (!rel || !Number.isSafeInteger(line) || line < 1 || !Number.isSafeInteger(endLine) || endLine < line || location[5] !== undefined && Number(location[5]) < 1) return null

@@ -128,7 +128,7 @@ export function outline(rel: string, text: string): SymbolNode[] | null {
       count++
       if (lang === 'go' && found.kind === 'type') goTypes.set(found.name, node)
       if (found.receiver) receivers.push({ node, receiver: found.receiver })
-      const block = lang === 'md' || lang === 'py' || code.includes('{') || (!code.includes(';') && ['class', 'interface', 'function', 'method', 'enum'].includes(found.kind))
+      const block = lang === 'md' || lang === 'py' || code.includes('{') || (!code.includes(';') && (['class', 'interface', 'function', 'method', 'enum'].includes(found.kind) || lang === 'rs' && found.name.startsWith('impl ')))
       if (block) stack.push({ node, depth: lang === 'md' || lang === 'py' ? level : depth + 1, waiting: lang !== 'md' && lang !== 'py' && !code.includes('{') })
     }
     if (lang !== 'md' && lang !== 'py') {
