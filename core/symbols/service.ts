@@ -9,7 +9,7 @@ export type Source = 'lsp' | 'approximate'
 const TEXT_CAP = 4 * 1024 * 1024
 const languages = ['ts', 'py', 'go', 'rs', 'java', 'cs', 'md'] as const
 
-async function readSource(host: Host, root: string, rel: string): Promise<string | null> {
+export async function readSource(host: Host, root: string, rel: string): Promise<string | null> {
   const safe = rel.includes('\0') ? null : nativeRel(root, rel, host.platform)
   if (!safe) return null
   const path = joinPath(root, safe)

@@ -2,11 +2,10 @@ import type { EngineInterface, RenderElement } from 'claude-code'
 import { KEYS } from '../../core/keys.ts'
 import { latest } from '../../core/latest.ts'
 import { currentView, reducePane } from '../../core/pane.ts'
-import { decodeUtf8 } from '../../core/search/rg.ts'
-import { joinPath, nativeRel } from '../../core/shared/paths.ts'
+import { joinPath } from '../../core/shared/paths.ts'
 import { cellWidth, fitEnd, fitPath } from '../../core/shared/fit.ts'
 import { parseLsp, type LspOp } from '../../core/symbols/lsp.ts'
-import { fileOutline, definitions, findSymbol, references, incoming, outgoing, symbolSendText } from '../../core/symbols/service.ts'
+import { fileOutline, definitions, findSymbol, readSource, references, incoming, outgoing, symbolSendText } from '../../core/symbols/service.ts'
 import type { SymbolNode } from '../../core/symbols/outline.ts'
 import type { SymbolRef } from '../../core/symbols/approx.ts'
 import type { JeiSymbols } from '../../types/index.d.ts'
@@ -36,17 +35,8 @@ export async function stopSymbols($: EngineInterface): Promise<void> {
 const flatten = (nodes: readonly SymbolNode[], depth = 0): { node: SymbolNode; depth: number }[] => nodes.flatMap(node => [{ node, depth }, ...flatten(node.children, depth + 1)])
 function act($: EngineInterface, fn: () => Promise<unknown>): () => void { return () => { void fn().catch(err => $.ui.toast(firstLine(err))) } }
 
-/** Full bounded UTF-8 read and realpath check before deriving a tool's one-based source position. */
-async function source($: EngineInterface, root: string, rel: string): Promise<string | null> {
-  const host = (await projectHost($, root)), safe = nativeRel(root, rel, host.platform)
-  if (!safe) return null
-  const path = joinPath(root, safe), [info, rootInfo] = await Promise.all([host.stat(path), host.stat(root)])
-  if (!info || !rootInfo || info.kind !== 'file' || info.size > 4 * 1024 * 1024 || !Number.isSafeInteger(info.size) || info.size < 0 || nativeRel(rootInfo.realPath, info.realPath, host.platform) === null) return null
-  const bytes = await host.readHead(path, info.size + 1)
-  return bytes && bytes.length === info.size && !bytes.includes(0) ? decodeUtf8(bytes) : null
-}
 async function inputFor($: EngineInterface, root: string, operation: LspOp, rel: string, node?: SymbolNode, query?: string): Promise<Input | null> {
-  const text = await source($, root, rel)
+  const text = await readSource(await projectHost($, root), root, rel)
   if (text === null) return null
   let line = 1, character = 1
   if (node) {
@@ -64,8 +54,9 @@ async function exact($: EngineInterface, root: string, input: Input | null, deli
   if (!input) return null
   const r = await runtime($, root)
   const epoch = r.epoch
-  const current = async () => r.epoch === epoch && await readCwd($) === root && (await readPane($)).tab === 'symbols'
+  const current = async () => r.epoch === epoch && await readCwd($) === root && ['symbols', 'symbols.results'].includes(currentView(await readPane($)))
   try {
+    if (!await current()) return null
     const verdict = await $.tool.check({ tool: 'LSP', input })
     if (!await current()) return null
     if (verdict.decision === 'ask' && !deliberate) {
@@ -90,7 +81,7 @@ export async function enterSymbols($: EngineInterface): Promise<void> {
   const touched = Object.entries(activity).sort((a, b) => b[1].at - a[1].at).map(([rel]) => rel)
   let rel = ''
   for (const candidate of [pane.selected.files, ...touched]) {
-    if (candidate && await source($, root, candidate) !== null) { rel = candidate; break }
+    if (candidate && await readSource(await projectHost($, root), root, candidate) !== null) { rel = candidate; break }
   }
   if (r.fresh && old.rel === rel) return
   r.fresh = true
@@ -146,9 +137,10 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
   const outlineId = s.selection?.symbols ?? (pane.selected.symbols?.startsWith('node-') ? pane.selected.symbols : 'node-0')
   const selectedNode = nodes[Number(outlineId.slice(5))]?.node
   let requestEpoch = r.epoch
-  const current = async () => r.epoch === requestEpoch && await readCwd($) === root && (await readPane($)).tab === 'symbols'
+  const current = async () => r.epoch === requestEpoch && await readCwd($) === root && ['symbols', 'symbols.results'].includes(currentView(await readPane($)))
   const text = (value: string, key?: string) => <Box key={key}><Text dimColor wrap="truncate-end">{inner ? ` ${fitEnd(value, inner)}` : ''}</Text></Box>
   const row = (id: string, label: string, run: () => Promise<unknown>, key = `symbols-row-${id}`) => <Box flexDirection="row"><Text> </Text><Button key={key} plain onPress={act($, run)}><Text inverse={selected === id && !(frame.isFocused && r.focused === key)} wrap="truncate-end">{fitEnd(label, inner)}</Text></Button></Box>
+  const preview = async (rel: string, line: number) => { await stopSymbols($); await showPreview($, rel, line) }
   const showResults = async (title: string, refs: SymbolRef[], exact: boolean, subject?: { rel: string; node: SymbolNode }) => {
     if (!await current()) return
     await updateSymbols($, root, u => ({ ...u, result: { title, refs, source: exact ? 'lsp' : 'approximate', ...(subject ? { subject } : {}) }, calls: [], editing: false, selection: { ...u.selection, 'symbols.results': 'ref-0' } }))
@@ -219,12 +211,12 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
       if (!await current()) return
       const refs = parsed?.refs ?? await (op === 'goToDefinition' ? definitions((await projectHost($, root)), root, selectedNode.name, s.rel) : references((await projectHost($, root)), root, selectedNode.name))
       if (!await current()) return
-      if (op === 'goToDefinition' && refs.length === 1) { await showPreview($, refs[0]!.rel, refs[0]!.line); return }
+      if (op === 'goToDefinition' && refs.length === 1) { await preview(refs[0]!.rel, refs[0]!.line); return }
       await showResults(`${op === 'goToDefinition' ? 'Definitions' : 'References'}: ${selectedNode.name}`, refs, !!parsed?.refs, op === 'findReferences' ? { rel: s.rel, node: selectedNode } : undefined)
     })
   }
   if (view === 'symbols') {
-    for (const [i, { node, depth }] of nodes.entries()) rows.push({ id: `node-${i}`, el: row(`node-${i}`, `${' '.repeat(Math.min(depth * 2, Math.floor(inner / 3)))}${node.kind[0]} ${node.name}`, () => showPreview($, s.rel, node.line)) })
+    for (const [i, { node, depth }] of nodes.entries()) rows.push({ id: `node-${i}`, el: row(`node-${i}`, `${' '.repeat(Math.min(depth * 2, Math.floor(inner / 3)))}${node.kind[0]} ${node.name}`, () => preview(s.rel, node.line)) })
     if (!nodes.length) rows.push({ id: 'notice', el: text(s.notice || 'No symbols.') })
   } else if (s.calls.length) {
     const appendCall = (item: JeiSymbols['calls'][number]): void => {
@@ -238,7 +230,7 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
           if (fresh.calls.some(c => c.id === id)) return expand(id)
           const candidates = flatten(await fileOutline((await projectHost($, root)), root, ref.rel) ?? [])
           const node = candidates.find(c => c.node.line === ref.line)?.node
-          if (!node) { await showPreview($, ref.rel, ref.line); return }
+          if (!node) { await preview(ref.rel, ref.line); return }
           if (fresh.calls.length >= 2000) { $.ui.toast('Results truncated.'); return }
           await updateSymbols($, root, u => ({ ...u, calls: [...u.calls, { id, name: node.name, rel: ref.rel, node, direction: item.direction, depth: item.depth + 1, expanded: false, source: 'approximate', refs: [] }] }))
           await expand(id)
@@ -250,7 +242,7 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
     let last = ''
     for (const [i, ref] of (s.result?.refs ?? []).entries()) {
       if (last !== ref.rel && frame.bodyRows > 3) { rows.push({ id: `group-${ref.rel}`, el: text(ref.rel) }); last = ref.rel }
-      rows.push({ id: `ref-${i}`, el: row(`ref-${i}`, `${ref.line}: ${ref.container ? `${ref.container} · ` : ''}${ref.text.trim()}`, () => showPreview($, ref.rel, ref.line)) })
+      rows.push({ id: `ref-${i}`, el: row(`ref-${i}`, `${ref.line}: ${ref.container ? `${ref.container} · ` : ''}${ref.text.trim()}`, () => preview(ref.rel, ref.line)) })
     }
     if (!s.result?.refs.length) rows.push({ id: 'notice', el: text('No results.') })
   }

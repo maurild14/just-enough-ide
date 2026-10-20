@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup, FakeHost, makeRepo, makeTemp, writeFiles } from '../../test/fake-host.ts'
 import type { RunOptions, Stream } from '../host.ts'
-import { definitions, fileOutline, findSymbol, incoming, outgoing, references, symbolSendText } from './service.ts'
+import { definitions, fileOutline, findSymbol, incoming, outgoing, readSource, references, symbolSendText } from './service.ts'
 import { isDefinitionLine } from './approx.ts'
 
 afterEach(cleanup)
@@ -89,6 +89,13 @@ test('outline reads reject outside-root, nonfiles, whole-file binary/invalid UTF
   for (const rel of ['../secret.ts', 'missing.ts', 'binary.ts', 'invalid.ts', 'large.ts', '.']) expect(await fileOutline(host, root, rel)).toBeNull()
   class Escaped extends FakeHost { override async stat(path: string) { const info = await super.stat(path); return info && path.endsWith('ok.ts') ? { ...info, realPath: join(root, '..', 'outside.ts') } : info } }
   expect(await fileOutline(new Escaped(), root, 'ok.ts')).toBeNull()
+})
+
+test('the shared full-source reader rejects NUL paths before filesystem access', async () => {
+  class Unread extends FakeHost {
+    override async stat(): Promise<never> { throw new Error('Unexpected filesystem access.') }
+  }
+  expect(await readSource(new Unread(), '/work/acme-app', 'src/account\0.ts')).toBeNull()
 })
 
 test('native symbol paths keep POSIX colons and reject backslashes before any counterpart read', async () => {

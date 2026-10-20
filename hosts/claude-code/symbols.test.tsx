@@ -104,6 +104,23 @@ test('Cancel during a pending native workspace permission check cannot restore r
   await ui.unmount()
 })
 
+test('opening an outline preview cancels pending Find and Back returns to usable Symbols', async ($, on) => {
+  const seen = await world($, on)
+  await $.command.run(command(`${ROOT}/src/account.ts`)); await $.command.run(command('symbols'))
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  seen.permission('allow'); seen.settings.holdWorkspace = true
+  await ui.press({ key: 'key-f' }); await ui.input({ key: 'symbols-find', text: 'load', kind: 'submit' })
+  await ui.press({ key: 'symbols-row-node-0' })
+  expect(await ui.find({ key: 'preview-line-1' })).toBeDefined()
+  await seen.clock.advance(1200)
+  expect(await ui.find({ key: 'preview-line-1' })).toBeDefined()
+  expect(await ui.find({ key: 'symbols-row-ref-0' })).toBeUndefined()
+  expect(seen.calls).toHaveLength(0)
+  await ui.press({ key: 'back' }); await ui.press({ key: 'key-r' })
+  expect((await ui.find({ key: 'header' }))?.text).toContain('References')
+  await ui.unmount()
+})
+
 test('pending Find can leave and return to the cached outline without retaining busy or publishing an older request', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command(`${ROOT}/src/account.ts`)); await $.command.run(command('symbols'))
