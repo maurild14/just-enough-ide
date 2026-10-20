@@ -7,6 +7,7 @@ import { parseOptions } from '../../core/options.ts'
 import { ActivityLog } from '../../core/activity/log.ts'
 import { initialPane, reducePane } from '../../core/pane.ts'
 import { cellWidth } from '../../core/shared/fit.ts'
+import { hintLine } from '../../core/keys.ts'
 import plugin from '../../tui.ts'
 import { paneMemory } from './pane.tsx'
 
@@ -15,6 +16,19 @@ type Layer = ReturnType<Parameters<Context['keymap']['layer']>[0]>
 type Claim = Extract<Parameters<Context['ui']['slot']>[0], { append: 'session.panel' }>
 const renderers: Awaited<ReturnType<typeof testRender>>[] = []
 afterEach(() => { for (const r of renderers.splice(0)) r.renderer.destroy() })
+
+for (const width of [24, 40, 80, 120]) test(`non-Git tabs retain the ten-row hint threshold at ${width} columns`, async () => {
+  const f = fixture(); const r = await f.mount(width, 5)
+  for (const [key, view] of [['1', 'files'], ['2', 'search'], ['3', 'symbols']] as const) {
+    f.key(key); await r.flush()
+    const hint = hintLine(view, width)
+    expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).not.toBe(hint)
+    r.resize(width, 10); await r.flush()
+    expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).toBe(hint)
+    r.resize(width, 5); await r.flush()
+    expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).not.toBe(hint)
+  }
+})
 
 function fixture(options: Record<string, unknown> = {}) {
   let claim: Claim | undefined

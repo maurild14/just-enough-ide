@@ -1,19 +1,34 @@
 import { expect, test } from 'bun:test'
 import { historyFixture, hash, other } from '../../test/opencode-history.tsx'
 import { cellWidth } from '../../core/shared/fit.ts'
+import { hintLine } from '../../core/keys.ts'
 
 for (const width of [24, 40, 80, 120]) test(`Branches switches, creates, compares and preserves selection at ${width} columns and five rows`, async () => {
   const f = historyFixture(); const r = await f.mount(width, 5)
+  const checkFrame = (selected: string, diff = false) => {
+    const frame = r.captureCharFrame(); const hint = frame.trimEnd().split('\n').at(-1)!
+    expect(frame).toContain(selected)
+    expect(hint).toBe(hintLine(diff ? 'git.diff' : 'git.branches', width))
+    expect(r.captureSpans().rows).toBe(5)
+    for (const line of frame.split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
+  }
   f.key('b'); await r.flush(); expect(r.captureCharFrame()).toContain('main')
+  checkFrame('main')
   f.key('down'); await r.flush(); f.key('enter'); await r.flush()
   expect(f.calls.find(c => c.method === 'switchBranch')?.input).toEqual({ name: 'feature', remote: false, confirmed: false })
   f.key('c'); await r.flush(); f.key('down'); f.key('down'); await r.flush(); f.key('enter'); await r.flush()
   expect(f.calls.filter(c => c.method === 'diff').at(-1)?.input).toEqual({ path: 'a.ts', source: { kind: 'compare', base: hash, head: other } })
+  checkFrame('a.ts', true)
+  f.setWidth(120); r.resize(120, 5); await r.flush(); f.setWidth(width); r.resize(width, 5); await r.flush()
+  checkFrame('a.ts', true)
   f.key('j'); await r.flush(); expect(f.calls.filter(c => c.method === 'diff').at(-1)?.input.path).toBe('b.ts')
+  checkFrame('b.ts', true)
   f.key('esc'); await r.flush(); expect(r.captureCharFrame()).toContain('a.ts')
+  checkFrame('b.ts')
   f.edit('new-topic'); f.key('n'); await r.flush(); expect(f.calls.find(c => c.method === 'createBranch')?.input).toEqual({ name: 'new-topic', confirmed: false })
   f.setWidth(120); r.resize(120, 5); await r.flush(); f.setWidth(width); r.resize(width, 5); await r.flush()
   expect(r.captureCharFrame()).toContain('a.ts')
+  checkFrame('b.ts')
   for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
   f.key('esc'); await r.flush(); expect(f.calls.some(c => c.method === 'graph')).toBe(true)
 })

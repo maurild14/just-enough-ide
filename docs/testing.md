@@ -68,6 +68,8 @@ What the kits cannot see (real paint, real terminals, a real agent) is checked b
 
 Graph/Branches specs drive the public TUI, real OpenTUI frames, registered keys and native dialogs at 24/40/80/120 columns and five rows, then resize live. They cover shared selection, inline files, commit/compare diffs and file navigation/back, copy fallback, editable Ask, filters/cancel, paging/fetch, checkout/revert confirmation, merge refusal, web action, contextual creation, local/remote provenance, missing base and stale results. Existing Files/Git suites retain their behavior; working diff fixtures migrate to the new source object.
 
+Five-row Graph/Branches and historical diff frames explicitly assert selected content, the fitted last-row hint, exact frame height and width bounds before and after resize. Shell regressions keep the ten-row threshold on Files, Search and Symbols; Git alone reserves a hint from five rows.
+
 Server specs use real Git for full-hash/ref/extra-field rejection, fresh dirty confirmation, pinned comparisons, tool session/call attribution, direct JEI suppression, pending/overlapping windows and a window starting inside a held real JEI pre-commit hook. Missing reflog evidence is nonfatal. RPC specs compile all method schemas with the installed compiler defaults, catching unsupported patterns that direct fake-handler tests missed.
 
 Default-base regressions preserve full refs through core, the real server RPC and both native hosts, including custom `origin/HEAD` pointing to `refs/remotes/main` beside local main. A null origin HEAD selects the local fallback even when the remote short name collides. Claude's terminal/desktop comparisons assert the exact remote hash pair sent to Git.

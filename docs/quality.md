@@ -65,3 +65,5 @@ Add one row per item, newest first, and delete the row when it is fixed.
 Task 4 live smoke: OpenCode 2.0.32 loaded the checkout with isolated runtime directories in disposable `acme-app`; Graph painted a real commit and `b` opened Branches without a model prompt. The fixed 80-column PTY does not prove live resize, clipboard acceptance, real-agent attribution, themes or another OS. The installed RPC compiler rejects schema `pattern`; all schemas compile under its defaults and strict hash checks remain server-side (ADR 0015).
 
 Default comparison bases retain full refs through core, RPC and both hosts. A custom origin HEAD target colliding with local main is covered by pure/server/OpenTUI and Claude terminal/desktop regressions; missing origin HEAD still selects the local fallback (ADR 0015).
+
+OpenCode Git-family hints remain visible from five rows high, with one row reserved from the body viewport. Graph/Branches/commit and compare diffs retain focused content plus hints at 24/40/80/120 columns through resize. Other tabs keep the ten-row hint threshold. ADR 0015 records this short-pane correction.

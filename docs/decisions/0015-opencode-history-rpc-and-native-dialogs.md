@@ -22,3 +22,7 @@ OpenCode separates the TUI from the server. Its installed `RpcCallContext` expos
 ## Consequences
 
 Both hosts now implement the 0.2 milestone. Native dialogs avoid squeezing editors and answers into short OpenTUI panes. Unreleased RPC shapes change together with every caller/fixture. No new runtime dependency, version bump or publication occurs. Attribution stays conservative: missing reflog evidence or concurrent work can omit markers, and an unrelated external commit inside a valid tool interval is indistinguishable. Live agent commits, terminal clipboard acceptance, focus/themes, terminal resize and another OS remain release QA.
+
+## Addendum: five-row Git hints
+
+The explicit short-pane history acceptance case requires both the selected row and its hint. OpenCode Git-family views therefore retain the fitted hint from five rows high, subtracting its row from the body budget before laying out Graph, Branches or diffs. This supersedes the earlier hide-below-ten rule for Git only; other tabs retain that threshold. The cost is one fewer body row in short Git panes. Renderer regressions retain selection, hints and bounded frames at 24/40/80/120 columns and five rows through historical diff navigation and resize.

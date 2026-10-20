@@ -127,6 +127,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     ],
   }))
   const tabs = createMemo(() => tabBar(width(), width(), state().tab))
+  const showHints = () => height() >= (state().tab === 'git' ? 5 : 10)
   const hints = () => {
     const selected = state().selected.git ?? ''
     const history = /^(graph-|group-graph$|commit-file-|checkout-|revert-|web-)/.test(selected)
@@ -150,19 +151,19 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     <Show when={state().tab !== 'files' || !snapshot() || error()} fallback={
       <Files ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} options={snapshot()!.options} git={snapshot()!.git}
         state={state()} dispatch={dispatch} activity={activity()} now={now()} revision={revision()} width={width()}
-        height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (height() >= 10 ? 1 : 0)} header={height() >= 6}
+        height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0)} header={height() >= 6}
         focused={props.input.focused} bind={(run, isEditing) => { filesAction = run; editing = isEditing }} />
     }>
       <Show when={state().tab !== 'git' || !snapshot() || error()} fallback={
         <Git ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} git={snapshot()!.git}
           state={state()} dispatch={dispatch} revision={revision()} refresh={refreshAfterChange} smartCommit={snapshot()!.options.smartCommit} graphLimit={snapshot()!.options.graphLimit} width={width()}
-          height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (height() >= 10 ? 1 : 0)} header={height() >= 6}
+          height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0)} header={height() >= 6}
           focused={props.input.focused} bind={(run, isEditing) => { gitAction = run; editing = isEditing }} />
       }>
       <Show when={height() >= 6}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{fitEnd(snapshot()?.cwd ?? 'JEI', width())}</text></Show>
       <box flexGrow={1} minHeight={1}><text height={1} fg={error() ? props.ctx.theme.text.feedback.error.base : props.ctx.theme.text.base}>{fitEnd(body(), width())}</text></box>
       </Show>
     </Show>
-    <Show when={height() >= 10}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{hints()}</text></Show>
+    <Show when={showHints()}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{hints()}</text></Show>
   </box>
 }
