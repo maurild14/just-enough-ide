@@ -260,7 +260,7 @@ Mirrors VS Code's Source Control panel, top to bottom.
 
 **Graph**
 - Commit history with branch lanes (forks and merges drawn with box characters), each commit's subject, author and relative time; ref badges for local branches, `origin/*`, tags and HEAD.
-- **✦ marks commits created during an agent tool window in this session**: newly reachable hashes must have new commit-producing HEAD reflog evidence and a recent committer time. Checkout/reset movement alone never marks a commit. Overlapping tools, JEI mutations or unavailable evidence suppress marking; an unrelated external commit during a tool remains indistinguishable. See `docs/decisions/0011-git-history-core-contracts.md`.
+- **✦ marks commits created during an agent tool window in this session**: newly reachable hashes must have new commit-producing HEAD reflog evidence and a recent committer time. Checkout/reset movement alone never marks a commit. Overlapping tools, JEI mutations or unavailable evidence suppress marking; an unrelated external commit during a tool remains indistinguishable. See `docs/decisions/0012-git-history-evidence-and-state.md`.
 - Graph is collapsible below Staged and Changes and shares their selection/scroll. Rows show lanes, an optional ✦, seven-character hash, accent ref labels, subject and author/relative time from 60 columns when they fit; ref labels drop first. Below 24 columns only hash and subject remain.
 - Contextual fetch (`fetch --prune`) and filter actions; pull/push use Sync and Commit & Push. See `docs/decisions/0014-native-history-views-and-attribution.md`.
 - **Filter** by message text, author, file path or branch (or all branches).

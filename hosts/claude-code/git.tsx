@@ -908,7 +908,9 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     { key: 'g', run: act($, () => generate($, options)) },
     { key: 'e', run: act($, () => syncNow($)) },
   ]
-  const actions = graphView.pinned.length ? [] : graphView.contextual ? graphView.actions : workingActions
+  const actions = graphView.pinned.length ? [] : graphView.contextual
+    ? [...graphView.actions, ...(graphView.commitSelected ? [] : workingActions.filter(a => a.key === 'e'))]
+    : workingActions
 
   const bodyRows = Math.max(1, frame.bodyRows)
   // A short pane drops the question's rule first, then cuts its text; its Buttons always stay.

@@ -2,6 +2,22 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { lineWidths, type Node } from './measure.ts'
 
+test('branches errors and empty rows use semantic Text props and a single period', async ($, on) => {
+  const r = await historyWorld($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    r.branchesError = false
+    const ui = await historyPane($, 80, 30, surface)
+    await select($, ui, `graph-${A}`); await ui.press({ key: 'key-b' })
+    r.branchesError = true; await ui.redraw()
+    expect((await ui.findAll({ type: 'Text' })).find(n => n.text.trim() === "Can't list branches: Invalid branch.")?.props.color).toBe('error')
+    r.branchesError = false; await ui.redraw(); await ui.press({ key: 'key-f' })
+    await ui.input({ key: 'branch-filter', text: 'missing', kind: 'submit' })
+    expect((await ui.findAll({ type: 'Text' })).find(n => n.text.trim() === 'No branches match this filter.')?.props.dimColor).toBe(true)
+    await ui.press({ key: 'key-f' }); await ui.input({ key: 'branch-filter', text: '', kind: 'submit' })
+    await ui.press({ key: 'back' }); await ui.unmount()
+  }
+})
+
 for (const width of [24, 40, 80, 120]) test(`branches switch, create, compare and short resize at ${width}`, async ($, on) => {
   const r = await historyWorld($, on)
   const ui = await historyPane($, width)

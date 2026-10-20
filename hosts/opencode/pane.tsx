@@ -134,7 +134,9 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     const commit = /^graph-[0-9a-f]{40}$/.test(selected)
     return currentView(state()) === 'git' && history
       ? hintLine('git', width(), KEYS.git.filter(key => ['branches', 'filter', 'fetch', 'back', ...(commit ? ['copy-hash', 'ask', 'new-branch'] : [])].includes(key.action)))
-      : hintLine(currentView(state()), width())
+      : hintLine(currentView(state()), width(), currentView(state()) === 'git'
+        ? KEYS.git.filter(key => !['copy-hash', 'ask', 'new-branch'].includes(key.action))
+        : undefined)
   }
   const body = () => error() || (state().tab === 'search' || state().tab === 'symbols' ? 'Coming in a later version.' :
     !snapshot() ? 'Loading…' : state().tab === 'files' && state().selected.files ? fitPath(state().selected.files!, width()) : TAB_NAMES[state().tab])

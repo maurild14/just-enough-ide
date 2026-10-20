@@ -6,6 +6,7 @@ import { cellWidth, fitEnd, fitPath, padEnd } from '../../core/shared/fit.ts'
 import { branchInput, historyAct, historyAction, historyConfirmation, historyKey, newBranch, openHistoryDiff, type HistoryItem } from './graph.tsx'
 import { firstLine, hostFor, windowTop, type FilesAction, type FilesFrame, type FilesView, type PaneRender } from './files.tsx'
 import { readGit, readGitUi, readHistory, readPane, readTick, updateHistory, updatePane } from './state.ts'
+import { color } from './theme.ts'
 
 const refOf = (b: Branch) => `refs/${b.remote ? 'remotes' : 'heads'}/${b.name}`
 const lists = new Map<string, { ids: string[]; selected: string | undefined }>()
@@ -35,10 +36,10 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
   const pane = await readPane($)
   const ui = await readGitUi($)
   await readTick($)
-  const line = (id: string, text: string) => <Box key={id}><Text>{` ${fitEnd(text, frame.inner)}`}</Text></Box>
+  const line = (id: string, text: string, look?: 'error' | 'muted') => <Box key={id}><Text color={look === 'error' ? color('error') : undefined} dimColor={look === 'muted'}>{` ${fitEnd(text, frame.inner)}`}</Text></Box>
   const back = historyAct($, () => updatePane($, (s) => reducePane(s, { type: 'back' })))
   const header = <Box flexDirection="row"><Text> </Text><Button key="back" plain label={fitEnd('Branches', frame.inner)} onPress={back} /></Box>
-  if (!g?.root) return { header, body: [line('notice', 'Git is still loading.')], actions: [] }
+  if (!g?.root) return { header, body: [line('notice', 'Git is still loading.', 'muted')], actions: [] }
   const root = g.root
   const historyUi = await readHistory($, root)
   const items: HistoryItem[] = []
@@ -47,10 +48,10 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
   const ids = visible.map((b) => `branch-${refOf(b)}`)
   const wanted = pane.selected['git.branches']
   const selected = wanted && (ids.includes(wanted) || (historyUi.compared && wanted.startsWith('compare-file-'))) ? wanted : ids[0]
-  const add = (id: string, text: string, fn?: () => Promise<unknown>) => items.push({ id, isRow: !!fn, el: fn
+  const add = (id: string, text: string, fn?: () => Promise<unknown>, look?: 'error' | 'muted') => items.push({ id, isRow: !!fn, el: fn
     ? <Box key={`line-${id}`} flexDirection="row"><Text> </Text><Button key={id} plain onPress={historyAct($, fn)}><Text inverse={id === selected}>{fitEnd(text, frame.inner)}</Text></Button></Box>
-    : line(id, text) })
-  if ('error' in rows) add('branches-error', `Can't list branches: ${rows.error}.`)
+    : line(id, text, look) })
+  if ('error' in rows) add('branches-error', `Can't list branches: ${rows.error}.`, undefined, 'error')
   let remote = false
   for (const b of visible) {
     if (b.remote && !remote) { add('remote-heading', 'Remote'); remote = true }
@@ -60,12 +61,12 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
     add(`branch-${ref}`, `${b.current ? '*' : ' '} ${padEnd(fitPath(b.name, room), room)}${counts}`,
       () => historyAction($, { root, operation: 'switch', target: ref, start: null }))
   }
-  if (!visible.length && !('error' in rows)) add('branches-empty', 'No branches match this filter.')
+  if (!visible.length && !('error' in rows)) add('branches-empty', 'No branches match this filter.', undefined, 'muted')
   if (historyUi.compared) {
     add('compare-heading', `Compared with ${historyUi.compared.label}`)
     try {
       const files = await compare(hostFor($, root), root, historyUi.compared.base, historyUi.compared.head)
-      if (!files.length) add('compare-empty', 'No changes.')
+      if (!files.length) add('compare-empty', 'No changes.', undefined, 'muted')
       for (const file of files) {
         const id = `compare-file-${file.path}`
         const counts = file.added !== null && file.removed !== null ? ` +${file.added} −${file.removed}` : ''
@@ -73,7 +74,7 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
           () => openHistoryDiff($, file.path, { kind: 'compare', base: historyUi.compared!.base, head: historyUi.compared!.head }, 'git.branches', id))
         ids.push(id)
       }
-    } catch (error) { add('compare-error', `Can't compare branches: ${firstLine(error)}.`) }
+    } catch (error) { add('compare-error', `Can't compare branches: ${firstLine(error)}.`, undefined, 'error') }
   }
   lists.set(await $.session.id(), { ids, selected })
   const actions: FilesAction[] = [

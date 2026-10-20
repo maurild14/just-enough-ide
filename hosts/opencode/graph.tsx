@@ -108,7 +108,8 @@ export function createGraph(props: HistoryProps) {
     if (!loaded()) { rows.push({ id: 'graph-loading', text: 'Loading…', muted: true }); return rows }
     const commits = loaded()!.commits; const glyphs = layoutGraph(commits, 'unicode'); const inner = props.width - 2
     commits.forEach((c, index) => {
-      const g = fitGraph(glyphs[index]!, Math.min(glyphs[index]!.lanes, Math.max(3, Math.floor(inner / 4))), '…')
+      const cells = Math.max(cellWidth(glyphs[index]!.glyph), cellWidth(glyphs[index]!.connector ?? ''))
+      const g = fitGraph(glyphs[index]!, Math.min(cells, Math.max(3, Math.floor(inner / 4))), '…')
       const prefix = props.width < 24 ? '' : `${g.glyph} ${c.agent ? '✦ ' : ''}`
       const head = prefix + c.hash.slice(0, 7)
       let badges = c.refs.map(ref => ref.name).join(' ')
@@ -120,7 +121,8 @@ export function createGraph(props: HistoryProps) {
       rows.push({ id: `graph-${c.hash}`, text: `${head}${badges ? ' ' + badges : ''} ${fitEnd(c.subject, Math.max(0, inner - cellWidth(head + (badges ? ' ' + badges : '') + tail) - 1))}${tail}`, accent: badges,
         activate: () => update(d => { d.expanded = d.expanded === c.hash ? null : c.hash }) })
       if (ui().expanded === c.hash) {
-        if (filesError()) rows.push({ id: `files-error-${c.hash}`, text: filesError(), error: true })
+        if (pending()) rows.push({ id: `files-loading-${c.hash}`, text: 'Loading…', muted: true })
+        else if (filesError()) rows.push({ id: `files-error-${c.hash}`, text: filesError(), error: true })
         else for (const file of files()) {
           const path = insideRel(props.cwd, joinPath(props.root, file.path))
           if (!path) continue

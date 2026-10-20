@@ -1,8 +1,58 @@
 import { expect, test } from 'bun:test'
+import { RGBA } from '@opentui/core'
 import { historyFixture, hash, commit } from '../../test/opencode-history.tsx'
 import { paneMemory } from './pane.tsx'
 import { cellWidth } from '../../core/shared/fit.ts'
-import { hintLine } from '../../core/keys.ts'
+import { hintLine, KEYS } from '../../core/keys.ts'
+
+test('merge topology preserves fork connectors and side-lane positions through narrow resize', async () => {
+  const f = historyFixture(); const [, update] = paneMemory(f.ctx)
+  const left = '2'.repeat(40); const right = '3'.repeat(40); const parent = '4'.repeat(40)
+  f.handlers.graph = async () => ({ commits: [
+    { ...commit, parents: [left, right] },
+    { ...commit, hash: left, parents: [parent], agent: false },
+    { ...commit, hash: right, parents: [parent], agent: false },
+    { ...commit, hash: parent, parents: [], agent: false },
+  ], more: false })
+  const r = await f.mount(80, 24)
+  expect(r.captureCharFrame()).toContain('├─╮')
+  expect(r.captureCharFrame()).toContain('│ ● 3333333')
+  update(d => { d.panes['session-a']!.selected.git = `graph-${right}` })
+  f.setWidth(24); r.resize(24, 5); await r.flush()
+  expect(r.captureCharFrame()).toContain('│ ● 3333333')
+  expect(r.captureSpans().rows).toBe(5)
+  for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(24)
+})
+
+test('expanded commit files show a muted nonselectable loading row until the reply arrives', async () => {
+  const f = historyFixture(); const [, update] = paneMemory(f.ctx)
+  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], selected: { git: `graph-${hash}` } } })
+  let release!: (value: unknown) => void
+  const files = f.handlers.commitFiles!
+  f.handlers.commitFiles = () => new Promise(resolve => { release = resolve })
+  const r = await f.mount(40, 12)
+  f.key('enter'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Loading…')
+  const loading = r.captureSpans().lines.find(line => line.spans.some(span => span.text.includes('Loading…')))
+  expect(loading?.spans.find(span => span.text.includes('Loading…'))?.fg).toEqual(RGBA.fromHex('#808080'))
+  f.key('down'); await r.flush()
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected.git).toBe(`checkout-${hash}`)
+  release(await files({ hash })); await r.flush()
+  expect(r.captureCharFrame()).not.toContain('Loading…')
+  expect(r.captureCharFrame()).toContain('a.ts')
+})
+
+for (const width of [24, 40]) test(`working hints omit commit-only keys at ${width} columns`, async () => {
+  const f = historyFixture(); const [, update] = paneMemory(f.ctx)
+  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], selected: { git: 'changes-src/app.ts' } } })
+  const r = await f.mount(width, 5)
+  const hint = () => r.captureCharFrame().trimEnd().split('\n').at(-1)!
+  expect(hint()).toBe(hintLine('git', width, KEYS.git.filter(key => !['copy-hash', 'ask', 'new-branch'].includes(key.action))))
+  for (const key of ['y', 'a', 'n']) expect(hint().split(/\s+/)).not.toContain(key)
+  for (const key of ['g', 'e']) expect(hint().split(/\s+/)).toContain(key)
+  update(d => { d.panes['session-a']!.selected.git = `graph-${hash}` }); await r.flush()
+  for (const key of ['y', 'a', 'n']) expect(hint().split(/\s+/)).toContain(key)
+})
 
 for (const width of [24, 40, 80, 120]) test(`Graph shares selection, expands and navigates commit diffs at ${width} columns and five rows`, async () => {
   const f = historyFixture(); const [, update] = paneMemory(f.ctx)

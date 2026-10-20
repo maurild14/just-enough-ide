@@ -56,6 +56,7 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] Run `bun run test`, `bun run typecheck`, `bun run check:docs`, `bun run validate` and `bun run test:claude`.
 - [ ] `npm pack --dry-run` lists only `index.ts`, `tui.ts`, `rpc.ts`, `core/`, `hosts/opencode/` (no specs), `LICENSE`, `README.md`, `package.json`.
 - [ ] Run a secret scan over the full history (gitleaks).
+- [ ] When preparing the release PR, fold the temporary `Unreleased — 0.2` notes into the generated release notes and remove that temporary heading.
 - [ ] Take the README screenshots, one per host, from `acme-app`, with no personal paths or names in the title bar or prompt.
 
 ## 7. Graph and Branches (both hosts, 0.2)
@@ -64,6 +65,8 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] Open a commit diff; check subject/path, hunk keys, j/k navigation and return to the expanded row.
 - [ ] y copies the full hash (OpenCode unsupported/false OSC 52 opens Commit hash); a uses the expected commit text. Cancel Ask, then edit/confirm it.
 - [ ] Checkout/revert cancel without mutation, then confirm; merge revert reports the shared refusal. A real repository hook runs.
+- [ ] In a disposable repo, provoke a revert conflict: verify the error and Git REVERTING state remain, and Commit refuses unresolved files. JEI has no continue/abort action; inspect `git status`, then deliberately resolve and run `git revert --continue` or choose `git revert --abort` outside the pane.
+- [ ] On a clean ahead tree at 24/40 columns and five rows, reach Sync from the Graph header, Load more and expanded file/action rows; commit rows retain their six contextual keys.
 - [ ] Filter message, quoted author, path, a branch and branch:*; cancel retains the old filter. Load more adds graphLimit commits; t fetch reports failures.
 - [ ] b opens Branches; locals/remotes, current marker, gone and ahead/behind counts are readable. Dirty/detached switch: cancel retains state, confirm carries changes only if Git allows.
 - [ ] n creates from HEAD in Branches and the selected commit in Graph. Invalid names fail without lost work.

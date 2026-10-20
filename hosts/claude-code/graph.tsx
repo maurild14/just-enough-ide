@@ -12,7 +12,7 @@ import type { JeiAsk } from '../../types/index.d.ts'
 import { onRefresh } from './activity.ts'
 import { busy, runHookAware, type Repo } from './git.tsx'
 import { firstLine, hostFor, type FilesAction, type FilesFrame, type PaneRender } from './files.tsx'
-import { readGit, readGitUi, readHistory, readPane, updateGitUi, updateHistory, updatePane } from './state.ts'
+import { readGit, readGitUi, readHistory, updateGitUi, updateHistory, updatePane } from './state.ts'
 import { color } from './theme.ts'
 
 export type HistoryItem = { id: string; isRow: boolean; el: RenderElement }
@@ -101,11 +101,10 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
   const els = $.ui.resolve(e)
   const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : undefined
   const historyUi = await readHistory($, g.root)
-  const pane = await readPane($)
   const inner = frame.inner
   const items: HistoryItem[] = []
-  const row = (id: string, text: string, run?: () => void, accent = false) => {
-    const content = <Text inverse={id === selected} color={accent ? color('accent') : undefined}>{fitEnd(text, inner)}</Text>
+  const row = (id: string, text: string, run?: () => void, look?: 'error' | 'muted') => {
+    const content = <Text inverse={id === selected} color={look === 'error' ? color('error') : undefined} dimColor={look === 'muted'}>{fitEnd(text, inner)}</Text>
     items.push({ id, isRow: !!run, el: <Box key={`line-${id}`} flexDirection="row"><Text> </Text>{run ? <Button key={id} plain onPress={run}>{content}</Button> : <Box key={id}>{content}</Box>}</Box> })
   }
   const closed = (await readGitUi($)).collapsed.includes('graph')
@@ -126,7 +125,8 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
       for (let i = 0; i < commits.length; i++) {
         const c = commits[i]!
         const id = `graph-${c.hash}`
-        const glyph = fitGraph(glyphs[i]!, Math.min(glyphs[i]!.lanes, Math.max(3, Math.floor(inner / 4))), '…')
+        const cells = Math.max(cellWidth(glyphs[i]!.glyph), cellWidth(glyphs[i]!.connector ?? ''))
+        const glyph = fitGraph(glyphs[i]!, Math.min(cells, Math.max(3, Math.floor(inner / 4))), '…')
         const prefix = frame.columns < 24 ? '' : `${glyph.glyph} ${historyUi.agents.includes(c.hash) ? '✦ ' : ''}`
         const hash = c.hash.slice(0, 7)
         let badges = c.refs.map((r) => r.name).join(' ')
@@ -153,15 +153,15 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
             if (url) row(`web-${c.hash}`, `Open on ${url.startsWith('https://github.com/') ? 'GitHub' : 'GitLab'}`, historyAct($, async () => {
               const host = hostFor($, g.root)
               const argv = openUrlArgv(url, host.platform)
-              if (argv) { const r = await host.run(argv); if (r.exitCode) throw new Error(r.stderr.split(/\r?\n/)[0] || 'Could not open link.') }
+              if (argv) await host.run(argv)
             }))
-          } catch (error) { row(`files-error-${c.hash}`, `Can't list files: ${firstLine(error)}.`) }
+          } catch (error) { row(`files-error-${c.hash}`, `Can't list files: ${firstLine(error)}.`, undefined, 'error') }
         }
         if (glyph.connector && frame.columns >= 24) row(`connector-${c.hash}`, glyph.connector)
       }
       if (loaded.more) row('graph-more', 'Load more', historyAct($, () => updateHistory($, g.root, (historyUi) => ({ ...historyUi, pages: historyUi.pages + 1 }))))
-      if (!commits.length) row('graph-empty', historyUi.filter ? 'No commits match this filter.' : 'No commits yet.')
-    } catch (error) { row('graph-error', `Can't load history: ${firstLine(error)}.`) }
+      if (!commits.length) row('graph-empty', historyUi.filter ? 'No commits match this filter.' : 'No commits yet.', undefined, 'muted')
+    } catch (error) { row('graph-error', `Can't load history: ${firstLine(error)}.`, undefined, 'error') }
   }
   const selectedCommit = commits.find((c) => selected === `graph-${c.hash}`)
   const actions: FilesAction[] = []
@@ -178,5 +178,5 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
   if (historyUi.filtering && Input) pinned.push(<Box key="graph-filter-row" flexDirection="row"><Text> </Text><Input key="graph-filter" placeholder="Filter: text, author:, path:, branch:*" value={historyUi.draft}
     onInput={(draft: string) => historyAct($, () => updateHistory($, g.root, (historyUi) => ({ ...historyUi, draft })))()}
     onSubmit={(filter: string) => historyAct($, async () => { await updateHistory($, g.root, (historyUi) => ({ ...historyUi, filter, draft: filter, filtering: false, pages: 1 })); await updatePane($, (s) => ({ ...s, selected: { ...s.selected, git: 'group-graph' } })) })()} /></Box>)
-  return { items, actions, pinned, contextual: !!selectedCommit || !!selected?.startsWith('commit-file-') || selected === 'group-graph' || selected === 'graph-more' || !!pane.selected.git?.startsWith('graph-') }
+  return { items, actions, pinned, commitSelected: !!selectedCommit, contextual: /^(graph-|group-graph$|commit-file-|checkout-|revert-|web-)/.test(selected ?? '') }
 }

@@ -259,7 +259,7 @@ export default Plugin.define({
         const url = await webUrl(host, (await repoSnapshot()).root, hash(input))
         if (url) {
           const argv = openUrlArgv(url, host.platform)
-          if (argv) { const result = await host.run(argv); if (result.exitCode) throw new Error(result.stderr.split(/\r?\n/)[0] || 'Could not open link.') }
+          if (argv) await host.run(argv)
         }
         return {}
       },

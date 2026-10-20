@@ -80,7 +80,7 @@ test('retained v0.1 diff reopens, navigates files and returns with selection int
   f.setGit(repo([entry('a.ts'), entry('b.ts')]))
   const [, update] = paneMemory(f.ctx)
   update((draft) => { draft.panes['session-a'] = { tab: 'git', stack: ['git', 'git.diff'], selected: { git: 'changes-a.ts' },
-    diff: { path: 'a.ts', source: { kind: 'working', staged: false, untracked: false } } } as never })
+    diff: { path: 'a.ts', staged: false, untracked: false } } as never })
   const r = await f.mount()
   expect(r.captureCharFrame()).toContain('a.ts')
   expect(r.captureCharFrame()).toContain('after')

@@ -2,6 +2,81 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, ROOT, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
 
+test('merge topology preserves fork connectors and side-lane positions on both surfaces', async ($, on) => {
+  const r = await historyWorld($, on); r.topology = true
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await historyPane($, 80, 30, surface)
+    expect((await ui.find({ key: `connector-${A}` }))?.text).toBe('├─╮')
+    expect(drawnLine(findKey(await ui.drawn() as Node, `graph-${C}`)!)).toContain('│ ● ccccccc')
+    await select($, ui, `graph-${C}`); await ui.redraw(props(24, 5))
+    expect(await ui.find({ key: `graph-${C}` })).toBeDefined()
+    const widths = lineWidths(await ui.drawn() as Node)
+    expect(widths.length).toBeLessThanOrEqual(5)
+    for (const width of widths) expect(width).toBeLessThanOrEqual(24)
+    await ui.unmount()
+  }
+})
+
+test('clean ahead Graph contexts keep Sync reachable at 40 columns and 24 by five rows', { options: { graphLimit: '1' } }, async ($, on) => {
+  const r = await historyWorld($, on); r.upstream = 'origin/main'; r.ahead = 1
+  await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: ROOT }); await r.clock.settle()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await historyPane($, 40, 30, surface)
+    await select($, ui, 'group-graph')
+    expect(await ui.find({ key: 'key-e' })).toBeDefined()
+    const before = r.runs.filter(a => a.includes('push')).length
+    await ui.press({ key: 'key-e' })
+    expect(r.runs.filter(a => a.includes('push'))).toHaveLength(before + 1)
+    expect(r.runs.filter(a => a.includes('push')).at(-1)?.slice(4)).toEqual(['push'])
+    await ui.press({ key: `graph-${A}` })
+    for (const id of ['group-graph', 'graph-more', `commit-file-${A}-src/user.ts`, `checkout-${A}`, `revert-${A}`, `web-${A}`]) {
+      await select($, ui, id); await ui.redraw(props(24, 5))
+      expect(await ui.find({ key: 'key-e' })).toBeDefined()
+      for (const key of ['b', 'f', 't']) expect(await ui.find({ key: `key-${key}` })).toBeDefined()
+      const widths = lineWidths(await ui.drawn() as Node)
+      expect(widths.length).toBeLessThanOrEqual(5)
+      for (const width of widths) expect(width).toBeLessThanOrEqual(24)
+    }
+    const narrowBefore = r.runs.filter(a => a.includes('push')).length
+    await ui.press({ key: 'key-e' })
+    expect(r.runs.filter(a => a.includes('push'))).toHaveLength(narrowBefore + 1)
+    await select($, ui, `graph-${A}`)
+    expect(await ui.find({ key: 'key-e' })).toBeUndefined()
+    for (const key of ['y', 'a', 'b', 'f', 't', 'n']) expect(await ui.find({ key: `key-${key}` })).toBeDefined()
+    await ui.press({ key: `graph-${A}` }); await ui.unmount()
+  }
+})
+
+test('history errors and empty rows have semantic Text props and a single period', async ($, on) => {
+  const r = await historyWorld($, on); r.logError = true
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await historyPane($, 80, 30, surface)
+    expect((await ui.findAll({ type: 'Text' })).find(n => n.text === "Can't load history: Invalid branch.")?.props.color).toBe('error')
+    await ui.unmount()
+  }
+  r.logError = false; r.empty = true
+  await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: ROOT }); await r.clock.settle()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await historyPane($, 80, 30, surface)
+    expect((await ui.findAll({ type: 'Text' })).find(n => n.text === 'No commits yet.')?.props.dimColor).toBe(true)
+    await ui.unmount()
+  }
+})
+
+test('web opener ignores returned nonzero exits and surfaces spawn errors on both surfaces', async ($, on) => {
+  const r = await historyWorld($, on); r.openerCode = 1
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await historyPane($, 80, 30, surface)
+    await ui.press({ key: `graph-${A}` })
+    const before = r.toasts.length
+    await ui.press({ key: `web-${A}` }); expect(r.toasts).toHaveLength(before)
+    r.openerError = true
+    await ui.press({ key: `web-${A}` }); expect(r.toasts.at(-1)).toBe('Opener unavailable')
+    r.openerError = false
+    await ui.press({ key: `graph-${A}` }); await ui.unmount()
+  }
+})
+
 for (const width of [24, 40, 80, 120]) test(`graph actions, files, back and resize at ${width}`, { timeoutMs: 60000 }, async ($, on) => {
   const r = await historyWorld($, on)
   for (const surface of ['terminal', 'desktop'] as const) {

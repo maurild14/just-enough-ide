@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, jest, test } from 'bun:test'
+import { afterEach, beforeEach, expect, jest, spyOn, test } from 'bun:test'
 import type { Plugin, Rpc } from '@opencode/plugin'
 import type { ActivityLog } from '../../core/activity/log.ts'
 import type { Options } from '../../core/options.ts'
@@ -8,6 +8,7 @@ import { toPosix } from '../../core/shared/paths.ts'
 import { cleanup, makeRepo, makeTemp, writeFiles } from '../../test/fake-host.ts'
 import entry from '../../index.ts'
 import { JeiRpc, type WireGitSnapshot } from './rpc.ts'
+import * as hostModule from './host.ts'
 
 type Handlers = { [K in keyof typeof JeiRpc.methods]: (
   input: unknown, context: { signal: AbortSignal; error: Rpc.ErrorFactory<(typeof JeiRpc.methods)[K]> },
@@ -98,6 +99,30 @@ async function start(directory: string, options: Record<string, unknown> = {}) {
     get resources() { return { rpcDisposed, hookDisposed, aborted: eventSignal?.aborted, streamClosed } },
   }
 }
+
+test('web opener ignores returned nonzero exits and surfaces spawn errors without opening a browser', async () => {
+  const repo = await makeRepo({ 'a.txt': 'before\n' })
+  await repo.git('remote', 'add', 'origin', 'https://github.com/acme/acme-app.git')
+  const hash = await repo.git('rev-parse', 'HEAD')
+  const nodeHost = hostModule.nodeHost; const opened: string[][] = []; let fail = false
+  const mock = spyOn(hostModule, 'nodeHost').mockImplementation(generate => {
+    const host = nodeHost(generate)
+    return { ...host, async run(argv, options) {
+      if (argv[0] === 'git') return host.run(argv, options)
+      opened.push([...argv])
+      if (fail) throw new Error('Opener unavailable.')
+      return { exitCode: 1, stdout: '', stderr: '' }
+    } }
+  })
+  try {
+    const server = await start(repo.dir)
+    expect(await server.call('openWeb', { hash })).toEqual({})
+    expect(opened).toHaveLength(1)
+    expect(opened[0]!.at(-1)).toBe(`https://github.com/acme/acme-app/commit/${hash}`)
+    fail = true
+    await expect(server.call('openWeb', { hash })).rejects.toThrow('Opener unavailable.')
+  } finally { mock.mockRestore() }
+})
 
 test('the package entry registers the contract and stages a file visible in a fresh state', async () => {
   const repo = await makeRepo({ 'a.txt': 'before\n' })

@@ -24,6 +24,7 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/decisions/0013-safe-branch-and-commit-actions.md` | Fresh branch/action validation and confirmation, comparison counts and credential-free URLs/errors. |
 | `docs/decisions/0014-native-history-views-and-attribution.md` | Native history presentation, contextual actions, mutation attribution guards and verified host limits. |
 | `docs/decisions/0015-opencode-history-rpc-and-native-dialogs.md` | OpenCode session-aware history RPC, pinned comparisons, native dialogs and installed schema/clipboard limits. |
+| `docs/decisions/0016-history-cell-budgets-and-action-reachability.md` | Actual graph cell budgets, reachable Sync and established URL-opener semantics. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
 
 ## Keeping docs current
