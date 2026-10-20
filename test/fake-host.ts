@@ -1,10 +1,17 @@
 // Specs only. A Host over a real temp directory and real git. Never imported by non-spec code.
+import { setDefaultTimeout } from 'bun:test'
 import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { open, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { DirEntry, FileStat, Host, Platform, RunOptions, RunResult } from '../core/host.ts'
+
+// A real-git spec spawns 20 to 40 git processes. Under load (three OSes in CI, or both test suites at
+// once) that outlasts bun's 5 s default; a timed-out spec then keeps running after `cleanup` deleted its
+// repos and fails the next one with a `.git/FETCH_HEAD` or `git exited with 1` error. Every spec that
+// imports the fake host gets a budget that fits.
+setDefaultTimeout(60_000)
 
 // An empty global config keeps the developer's own git settings out of the specs
 // (the null device path is not accepted by git on Windows).
