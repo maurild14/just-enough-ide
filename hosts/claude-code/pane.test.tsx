@@ -22,7 +22,8 @@ function paneProps(bodyColumns: number, bodyRows = 24) {
   }
 }
 
-test('pane shell: tabs, headers, placeholders and hint on every surface', async ($) => {
+test('pane shell: tabs, headers, native tabs and hint on every surface', async ($, on) => {
+  on('session.id', () => ({ value: 'pane-test' }))
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     expect(await ui.find({ type: 'Text', text: /1 Files/ })).toBeDefined()
@@ -34,9 +35,9 @@ test('pane shell: tabs, headers, placeholders and hint on every surface', async 
     expect(cellWidth(hint!.text)).toBeLessThanOrEqual(80)
 
     await ui.press({ key: 'tab-2' })
-    expect(await ui.find({ type: 'Text', text: LATER })).toBeDefined()
+    expect(await ui.find({ key: 'search-query' })).toBeDefined()
     await ui.press({ key: 'tab-3' })
-    expect(await ui.find({ type: 'Text', text: LATER })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Select a file in Files/ })).toBeDefined()
 
     await ui.press({ key: 'tab-1' })
     expect(await ui.find({ type: 'Text', text: LATER })).toBeUndefined()
@@ -54,7 +55,8 @@ test('the current tab is the primary Button', async ($) => {
   }
 })
 
-test('no line is wider than the pane at 24, 40, 80 and 120 columns', async ($) => {
+test('no line is wider than the pane at 24, 40, 80 and 120 columns', async ($, on) => {
+  on('session.id', () => ({ value: 'pane-test' }))
   for (const surface of SURFACES) {
     for (const width of WIDTHS) {
       const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width), requestId: 'jei' })
@@ -89,14 +91,15 @@ test('tab labels shorten with the width', async ($) => {
   }
 })
 
-test('short panes drop the hint, then the rule, then the header', async ($) => {
+test('short panes retain native actions and drop the rule then header', async ($, on) => {
+  on('session.id', () => ({ value: 'pane-test' }))
   for (const surface of SURFACES) {
     const tall = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 10), requestId: 'jei' })
     expect(await tall.find({ key: 'hint' })).toBeDefined()
     await tall.press({ key: 'tab-2' }) // a view without letter actions (Search)
     await tall.unmount()
     const short = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 7), requestId: 'jei' })
-    expect(await short.find({ key: 'hint' })).toBeUndefined()
+    expect(await short.find({ key: 'hint' })).toBeDefined()
     expect(await short.find({ key: 'rule' })).toBeUndefined()
     expect(await short.find({ key: 'header' })).toBeDefined()
     await short.unmount()

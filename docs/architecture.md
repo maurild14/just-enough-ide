@@ -193,7 +193,7 @@ core/
   files/{tree.ts, preview.ts, csv.ts (parseDelimited, fitTable), open.ts, icons.ts, mention.ts, service.ts}
   search/{rg.ts, results.ts, replace.ts, quickopen.ts, service.ts}
   symbols/{outline.ts, approx.ts, lsp.ts, service.ts}
-hosts/claude-code/    host.ts, state.ts, theme.ts, pane.tsx, files.tsx, git.tsx, diff.tsx, activity.ts, *.test.tsx, measure.ts (test helper)
+hosts/claude-code/    host.ts, state.ts, theme.ts, pane.tsx, files.tsx, search.tsx, symbols.tsx, git.tsx, diff.tsx, activity.ts, *.test.tsx, measure.ts (test helper)
 hosts/opencode/       host.ts, rpc.ts, server.ts, tui.tsx, pane.tsx, files.tsx, colors.ts, hand-off.ts, git.tsx, diff.tsx, *.spec.ts(x)
 types/index.d.ts      Claude Code PluginState contract
 test/fake-host.ts     spec-only Host over a temp dir and real git
@@ -202,7 +202,7 @@ docs/                 this documentation; docs/plans/ holds implementation plans
 scripts/              dev scripts (check-docs.ts)
 ```
 
-Milestone 0.3 host Search/Symbols views and RPC remain pending. Milestone 0.4 adds `core/fsops.ts`. Status: draft — built in the milestone shown.
+Milestone 0.3 Claude Search/Symbols views are built; OpenCode views/RPC remain pending. Native session/root state preserves Search/Replace/Symbols across preview Back; runtime maps hold cancellable streams, clocks and read-through caches. New Claude path boundaries require canonical evidence for ambiguous double-slash roots (ADR 0021). Delimited previews retain raw text alongside table rows for exact source-line targets. Milestone 0.4 adds `core/fsops.ts`. Status: draft — built in the milestone shown.
 
 ## Packaging
 

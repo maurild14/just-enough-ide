@@ -10,8 +10,10 @@ import { scrollDiff } from '../hosts/claude-code/diff.tsx'
 import { focusFiles, scrollFiles } from '../hosts/claude-code/files.tsx'
 import { focusGit, scrollGitList } from '../hosts/claude-code/git.tsx'
 import { focusBranches, scrollBranches } from '../hosts/claude-code/branches.tsx'
+import { focusSearch, scrollSearch, stopSearch } from '../hosts/claude-code/search.tsx'
+import { enterSymbols, focusSymbols, scrollSymbols, stopSymbols } from '../hosts/claude-code/symbols.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
-import { initPane, PANE_ID, readCwd, resetGitUi, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
+import { initPane, PANE_ID, readCwd, readPane, resetGitUi, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
 
 const TITLE = 'JEI'
 
@@ -41,6 +43,7 @@ export const register: Register = (on, raw) => {
     await setCwd($, e.cwd)
     autoOpenArmed = (await initPane($, options.defaultTab)) && options.startOpen
     await resetGitUi($)
+    if ((await readPane($)).tab === 'symbols') await enterSymbols($)
     void refreshGit($).catch(() => undefined)
     return next(e)
   })
@@ -75,17 +78,22 @@ export const register: Register = (on, raw) => {
       if (rel === null) return { text: 'That path is outside the project.' }
     }
     const tab = arg.tab ?? 'files'
+    await stopSearch($)
+    await stopSymbols($)
     await updatePane($, (s) => reducePane(s, { type: 'tab', tab }))
     if (rel) {
       const id = rel
       await updateTree($, (t) => ({ ...t, expanded: [...reveal(new Set(t.expanded), id)] }))
       await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id }))
     }
+    if (tab === 'symbols') await enterSymbols($)
     return { text: (await openPane($)) ?? `JEI opened on ${TAB_NAMES[tab]}.` }
   })
 
   // Observes only: a failure must never hold up the cd, so the catch passes it on.
   on('classic.CwdChanged', async ($, e, next) => {
+    await stopSearch($)
+    await stopSymbols($)
     await setCwd($, e.new_cwd)
     void refreshGit($).catch(() => undefined) // never holds up the cd
     return next(e)
@@ -102,13 +110,17 @@ export const register: Register = (on, raw) => {
     await focusFiles($, e.element)
     await focusGit($, e.element)
     await focusBranches($, e.element)
+    await focusSearch($, e.element)
+    await focusSymbols($, e.element)
     return next(e)
   }).catch(($, e, next) => next(e))
 
   // Files, Git and the diff draw their own window (pinned header and hint), so they take the scroll.
   on('ui.scroll', { requestId: 'jei' }, async ($, e, next) =>
-    (await scrollFiles($, e.by)) || (await scrollGitList($, e.by)) || (await scrollBranches($, e.by)) || (await scrollDiff($, e.by)) ? {} : next(e),
+    (await scrollFiles($, e.by)) || (await scrollGitList($, e.by)) || (await scrollBranches($, e.by)) || (await scrollDiff($, e.by)) || (await scrollSearch($, e.by)) || (await scrollSymbols($, e.by)) ? {} : next(e),
   ).catch(
     ($, e, next) => next(e),
   )
+  on('ui.close', async ($, e, next) => { if (e.id === 'jei') { await stopSearch($); await stopSymbols($) }; return next(e) })
+  on('session.end', async ($, e, next) => { await stopSearch($); await stopSymbols($); return next(e) })
 }

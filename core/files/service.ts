@@ -57,7 +57,7 @@ export async function loadPreview(
   const kind = previewKind(name, info.size, head)
   if (kind === 'binary') return { kind }
   const text = new TextDecoder().decode(head)
-  if (kind === 'csv' || kind === 'tsv') return { kind, rows: parseDelimited(text, kind === 'csv' ? ',' : '\t', PREVIEW_ROWS) }
+  if (kind === 'csv' || kind === 'tsv') return { kind, text, rows: parseDelimited(text, kind === 'csv' ? ',' : '\t', PREVIEW_ROWS) }
   const language = languageOf(name)
   return language === undefined ? { kind, text } : { kind, text, language }
 }

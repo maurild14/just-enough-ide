@@ -11,13 +11,13 @@ import { renderGit } from './git.tsx'
 import { renderBranches } from './branches.tsx'
 import { readCwd, readPane, updatePane } from './state.ts'
 import { backContext, goBack } from './navigation.ts'
+import { renderSearch, stopSearch } from './search.tsx'
+import { enterSymbols, renderSymbols, stopSymbols } from './symbols.tsx'
 
 export type PaneRender = RenderInput<'Pane'>
 
 /** Cells a terminal Button draws around its label: `[ ` and ` ]`. */
 const BUTTON_CHROME = 4
-
-export const LATER = 'Coming in a later version.'
 
 function rootName(dir: string): string {
   const parts = toPosix(dir).replace(/\/+$/, '').split('/')
@@ -29,12 +29,6 @@ function headerOf(view: View, root: string): string {
   if (view === 'files' || view === 'files.preview') return rootName(root)
   if (view === 'git' || view === 'git.diff' || view === 'git.branches' || view === 'git.compare') return TAB_NAMES.git
   return view === 'quickopen' || view.startsWith('search') ? TAB_NAMES.search : TAB_NAMES.symbols
-}
-
-/** Body rows for a view. Files and Git are filled by their own tabs. */
-function bodyOf(view: View): string[] {
-  if (view === 'search' || view === 'symbols') return [LATER]
-  return []
 }
 
 const SEP = ' · '
@@ -121,15 +115,16 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const isGit = state.tab === 'git'
   // Letter keys live on the hint's Buttons, so a view with letter actions keeps
   // its hint (bare below 10 rows) down to 3 rows (docs/design.md section 6).
-  const showHint = isFiles || isGit ? rows >= 3 : rows >= 10
+  const showHint = rows >= 3
   const bareHint = rows < 10
   const showRule = rows >= 8
   const showHeader = rows >= 6
   const showBar = rows >= 3
-  const showBack = back.active && !back.inline && rows >= 4
+  const compactEditor = view === 'search' || view === 'quickopen' || view === 'symbols' || view === 'symbols.results'
+  const showBack = back.active && !back.inline && rows >= 4 && !(compactEditor && rows <= 5 && back.editing)
 
   const pinned = (showBar ? 1 : 0) + (showRule ? 1 : 0) + (showHeader ? 1 : 0) + (showHint ? 1 : 0) + (showBack ? 1 : 0)
-  const frame = { columns, inner, bodyRows: Math.max(1, rows - pinned), isFocused: e.props.isFocused }
+  const frame = { columns, inner, bodyRows: Math.max(0, rows - pinned), isFocused: e.props.isFocused }
   // Tabs that draw their own header, body and letter actions.
   const content = isFiles
     ? await renderFiles($, e, frame, options)
@@ -137,7 +132,9 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
       ? await renderGit($, e, frame, options)
       : view === 'git.diff'
         ? await renderDiff($, e, frame, options)
-        : view === 'git.branches' || view === 'git.compare' ? await renderBranches($, e, frame) : null
+        : view === 'git.branches' || view === 'git.compare' ? await renderBranches($, e, frame)
+          : view === 'search' || view === 'quickopen' || view === 'search.replace' ? await renderSearch($, e, frame)
+            : view === 'symbols' || view === 'symbols.results' ? await renderSymbols($, e, frame) : null
 
   const hintRow = (): RenderElement => {
     if (content === null) {
@@ -166,7 +163,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   }
 
   const select = (tab: Tab) => () => {
-    void updatePane($, (s) => reducePane(s, { type: 'tab', tab })).catch((err: unknown) => {
+    void (async () => { await stopSearch($); await stopSymbols($); await updatePane($, (s) => reducePane(s, { type: 'tab', tab })); if (tab === 'symbols') await enterSymbols($) })().catch((err: unknown) => {
       $.ui.log(`jei: tab switch failed: ${err instanceof Error ? err.message : String(err)}`)
     })
   }
@@ -179,7 +176,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
           {bar.labels.map((l) => (
             <Button
               key={`tab-${l.digit}`}
-              hotkey={l.digit}
+              hotkey={back.editing && compactEditor ? undefined : l.digit}
               variant={l.tab === state.tab ? 'primary' : 'secondary'}
               onPress={select(l.tab)}
             >
@@ -198,17 +195,11 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
       {showHeader && (
         <Box key="header">{content ? content.header : <Text wrap="truncate-end">{row(headerOf(view, root))}</Text>}</Box>
       )}
-      {showBack && <Box key="back-row" flexDirection="row"><Text> </Text><Button key="back" plain hotkey={back.editing ? undefined : KEYS[view].find(key => key.action === 'back')!.key} label="Back" onPress={() => { void goBack($).catch(err => $.ui.log(`jei: back failed: ${String(err)}`)) }} /></Box>}
+      {showBack && <Box key="back-row" flexDirection="row"><Text> </Text><Button key="back" plain hotkey={back.editing ? undefined : KEYS[view].find(key => key.action === 'back' && /^[a-z0-9]$/.test(key.key))?.key} label="Back" onPress={() => { void goBack($).catch(err => $.ui.log(`jei: back failed: ${String(err)}`)) }} /></Box>}
       <Box flexDirection="column" flexGrow={1}>
         {content
           ? content.body
-          : bodyOf(view).map((text, i) => (
-              <Box key={`body-${i}`}>
-                <Text dimColor wrap="truncate-end">
-                  {row(text)}
-                </Text>
-              </Box>
-            ))}
+          : []}
       </Box>
       {showHint && <Box key="hint">{hintRow()}</Box>}
     </Box>

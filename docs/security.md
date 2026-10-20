@@ -4,6 +4,8 @@
 
 Source: `PRD.md` §9. To report a vulnerability, follow `SECURITY.md`.
 
+New Claude Search/Symbols operations reject unresolved double-slash project roots before source, process or LSP access. Canonical filesystem metadata must prove rooted Windows drive/native UNC or single-leading-slash POSIX grammar; a backslash in a POSIX component is insufficient. Each concrete LSP request receives a fresh permission check, and identifier columns come from a bounded confined UTF-8 read. See ADR 0021.
+
 ## Privacy model
 
 - JEI is local. It sends nothing over the network itself.

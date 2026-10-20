@@ -2,7 +2,7 @@
 
 > Purpose: how every JEI view looks and behaves at any pane size · Status: current · Last reviewed: 2026-10-20
 
-Status: Files and working Git views are built on both hosts. Graph and Branches are built on both hosts in milestone 0.2. Search, Quick Open and Symbols are draft for 0.3. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
+Status: Files and Git views are built on both hosts. Claude Code Search, Quick Open and Symbols are built for 0.3; OpenCode integration remains draft. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
 
 JEI is drawn in character cells. There are no pixels and no fonts to pick, and the colors come from the host. This guide covers how every view looks and how it behaves at any pane size. If a view breaks one of these rules, treat it as a bug.
 
@@ -133,7 +133,13 @@ OpenCode's commit input edits only the first line of a generated message; a reta
 - When rows run short, OpenCode Git-family views (working Git, Graph, Branches and diff) keep a fitted hint at five rows and above, reserving that row before computing the body viewport. Other OpenCode tabs hide hints below 10 rows; the keys still work. On Claude Code the letter keys live on the hint line's Buttons, so a view with letter actions keeps the hint, bare (keycaps, no labels), and drops it only below 3 rows (`docs/decisions/0009-esc-is-host-reserved-on-claude-code.md`). Below 8, hide the rule. Below 6, hide the header row; its key facts move into the tab bar's right side if they fit. Below 3, render only the body.
 - A nested view keeps a visible Back row, including at five rows, while retaining tab and hint controls. Claude suppresses the separate Back row below four total rows to keep the body, tabs and hint within the available height. Both hosts use shared `q` when the Back control is drawn; OpenCode also accepts Esc and Claude Code reserves it for the prompt. Editable fields keep a typed `q`. Back returns diff → comparison → Branches → Git one level at a time; Files preview returns to its retained filter/list. At five rows the preview/diff still keeps one content row. An active Claude Files filter pins its input when the normal header is hidden; at three/four rows the input may consume the entire body and results return on growth. Its `f` hint Button still closes the filter, and mouse Back is available from four rows. Inline name editors and questions keep their existing Cancel controls instead of another Back row.
 
-Search/Quick Open reserve `q` for their mode toggle (ADR 0019); previews, Replace and Symbols/results retain Back. A preview returns to its originating tab/subview and carries the requested line. The Search foundation is built; native Search/Symbols views remain draft. Fallback headers/copy must identify Git grep's first-occurrence-per-line limit, and a true search truncation flag shows `Results truncated.`. The fallback's bounded buffer can truncate before 2,000 results.
+Search/Quick Open reserve `q` for their mode toggle (ADR 0019); previews, Replace and Symbols/results retain Back. A preview returns to its originating tab/subview and carries the requested line. Claude Code uses a bounded source window with a visible target gutter, including Markdown/CSV/TSV line targets. Fallback summaries identify `git grep`; it returns only the first occurrence per line. A true truncation flag shows `Results truncated.`. The fallback's bounded buffer can truncate before 2,000 results.
+
+Claude Search pins `Search` / `Go to file` in the body, followed by `Aa .* \\b`, optional include/exclude text, file groups, accent match spans and the summary. Active toggles have brackets as well as the accent color. `Include/exclude: src/** !**/*.test.ts` and `Replace with` are secondary editors; Submit returns focus to the list or opens replacement review. Replacement file headers apply only after confirmation; their chevrons collapse bounded native diff windows. `Not replaced` lists actual reasons, and partial writes report their successful count before refresh.
+
+Claude Symbols shows `Outline: <rel> · LSP` or `· approximate`, indented kind letters, `Find symbol`, grouped references and lazy Callers/Calls trees. Each expanded section names its actual source. Unknown languages show `No outline for this file type.`; no selection shows `Select a file in Files.`. Source labels remain present in compact panes. Approximate data stays visible while `Exact symbols need permission to use the LSP tool.` offers deliberate `Use LSP`.
+
+At five rows, Claude Search/Symbols keep tabs, the active editor, selected row and hint. Compact editors expose Cancel and omit the separate Back row. At 24 columns, actions omitted from fitted hints remain in the scrollable list; their letter shortcut exists only while its native Button is drawn. Input focus suspends letter/digit shortcuts, and Submit restores list actions. Mobile shows an explicit input-unavailable fallback. ADR 0021 records these native limits.
 - The body always keeps at least 1 row. Scrolling keeps 1 row of context above and below the selection when the body has 5 or more rows.
 - Expanded inline items (a commit's files, call hierarchy) never push the selected row out of view.
 
@@ -159,11 +165,11 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 | Files | Empty file | `This file is empty.` |
 | Files | Image the surface cannot draw | `No image preview here. Press o to open it.` |
 | Search | Idle | `Type to search the project.` |
-| Search | No results | `No results for "getUser".` |
-| Search | Capped | `Showing the first 2,000 matches.` (`warning`) |
-| Search | No ripgrep | `ripgrep not found. Using git grep.` / `Install ripgrep to search.` |
-| Symbols | Nothing selected | `Select a file to see its outline.` |
-| Symbols | None found | `No symbols in user.ts.` |
+| Search | No results | `No results.` |
+| Search | Capped | `Results truncated.` |
+| Search | No ripgrep | `ripgrep (rg) is not installed. Install it to search:` with the installation URL; fallback summaries add `· git grep` |
+| Symbols | Nothing selected | `Select a file in Files.` |
+| Symbols | None found | `No symbols.` / `No outline for this file type.` |
 | Symbols | LSP permission | `Exact symbols need permission to use the LSP tool.` |
 | Git | Not a repo | `This folder is not a git repository.` with an `Initialize repository` action |
 | Git | Clean | `No changes.` |

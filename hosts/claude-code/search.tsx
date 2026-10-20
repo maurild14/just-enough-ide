@@ -1,0 +1,281 @@
+import type { EngineInterface, RenderElement, Timer } from 'claude-code'
+import { KEYS } from '../../core/keys.ts'
+import { latest } from '../../core/latest.ts'
+import { currentView, reducePane } from '../../core/pane.ts'
+import { parseGlobs, type Match, type SearchQuery } from '../../core/search/rg.ts'
+import { sendText } from '../../core/search/results.ts'
+import { parseQuery, rankFiles } from '../../core/search/quickopen.ts'
+import { previewText } from '../../core/search/replace.ts'
+import { applyReplace, buildReplacePlan, quickOpenFiles, search } from '../../core/search/service.ts'
+import { diffWindow, parseUnifiedDiff } from '../../core/git/diff.ts'
+import { fitEnd, fitPath, printable } from '../../core/shared/fit.ts'
+import type { JeiSearch } from '../../types/index.d.ts'
+import { mutationGuard, onRefresh, refreshAfterChange } from './activity.ts'
+import { firstLine, projectHost, showPreview, windowTop, type FilesAction, type FilesFrame, type FilesView, type PaneRender } from './files.tsx'
+import { readActivity, readCwd, readPane, readSearch, readTick, updatePane, updateSearch } from './state.ts'
+import { color } from './theme.ts'
+
+type SearchDone = Awaited<ReturnType<typeof search>['done']>
+type Run = { epoch: number; timer?: Timer; paint?: Timer; stream?: ReturnType<typeof search>; ids: string[]; focused?: string; files?: Promise<string[]>; diffTotal?: number; diffRows?: number; done: ReturnType<typeof latest<[Promise<SearchDone>], SearchDone>> }
+const runs = new Map<string, Run>()
+const queryOf = (s: JeiSearch): SearchQuery => ({ text: s.text, caseSensitive: s.caseSensitive, regex: s.regex, wholeWord: s.wholeWord, ...parseGlobs(s.globs) })
+async function runtime($: EngineInterface, root: string): Promise<Run> {
+  const key = `${await $.session.id()}\0${root}`
+  let r = runs.get(key)
+  if (!r) { r = { epoch: 0, ids: [], done: latest(async (p: Promise<Awaited<ReturnType<typeof search>['done']>>) => p) }; runs.set(key, r) }
+  return r
+}
+onRefresh(() => { for (const r of runs.values()) r.files = undefined })
+function stop(r: Run): void { r.epoch++; r.timer?.cancel(); r.paint?.cancel(); r.stream?.cancel(); r.timer = r.paint = undefined; r.stream = undefined }
+export async function stopSearch($: EngineInterface): Promise<void> {
+  if (!runs.size) return
+  const root = await readCwd($), r = await runtime($, root)
+  stop(r)
+  await updateSearch($, root, s => s.busy ? { ...s, busy: false, summary: s.summary === 'Searching…' ? 'Search canceled.' : s.summary } : s)
+}
+
+/** Only event handlers schedule work: drawing reads retained results without starting a process. */
+export async function restartSearch($: EngineInterface, immediate = false): Promise<void> {
+  const root = await readCwd($), r = await runtime($, root)
+  stop(r)
+  const epoch = r.epoch
+  const alive = async () => r.epoch === epoch && await readCwd($) === root
+  const start = async () => {
+    if (!await alive()) return
+    const s = await readSearch($, root)
+    if (!s.text && !s.regex) { await updateSearch($, root, u => ({ ...u, matches: [], summary: '', busy: false })); return }
+    const matches: Match[] = []
+    if (!await alive()) return
+    await updateSearch($, root, u => r.epoch === epoch ? { ...u, matches: [], summary: 'Searching…', busy: true } : u)
+    const paint = async () => { r.paint = undefined; if (await alive()) await updateSearch($, root, u => ({ ...u, matches: [...matches] })) }
+    const host = await projectHost($, root)
+    if (!await alive()) return
+    const stream = search(host, root, queryOf(s), match => {
+      if (r.epoch !== epoch) return
+      matches.push(match)
+      if (!r.paint) r.paint = $.clock.after(100, () => { void paint().catch(err => $.ui.log(`jei: ${firstLine(err)}`)) })
+    })
+    r.stream = stream
+    const result = await r.done(stream.done)
+    if (result.stale || !await alive()) return
+    r.paint?.cancel(); r.paint = undefined; r.stream = undefined
+    const value = result.value, files = new Set(matches.map(m => m.rel)).size
+    await updateSearch($, root, u => ({ ...u, matches: [...matches], engine: value.engine, busy: false,
+      summary: value.error || (value.truncated ? 'Results truncated.' : !matches.length ? 'No results.' : `${matches.length} results in ${files} files · ${value.ms} ms`) }))
+  }
+  if (immediate) await start()
+  else r.timer = $.clock.after(150, () => { r.timer = undefined; void start().catch(async err => { if (await alive()) await updateSearch($, root, u => ({ ...u, busy: false, summary: firstLine(err) })) }) })
+}
+
+export async function searchEditing($: EngineInterface): Promise<boolean> {
+  const view = currentView(await readPane($))
+  return ['search', 'quickopen', 'search.replace'].includes(view) && (await readSearch($, await readCwd($))).editing !== null
+}
+export async function leaveSearchEditor($: EngineInterface): Promise<boolean> {
+  const root = await readCwd($), s = await readSearch($, root)
+  if (!s.editing && !s.confirm) return false
+  await updateSearch($, root, u => ({ ...u, editing: null, confirm: null }))
+  return true
+}
+export async function focusSearch($: EngineInterface, key: string | undefined): Promise<void> {
+  const pane = await readPane($), view = currentView(pane)
+  if (!['search', 'quickopen', 'search.replace'].includes(view)) return
+  const root = await readCwd($), r = await runtime($, root)
+  r.focused = key
+  if (key?.startsWith('search-row-')) {
+    await updateSearch($, root, s => ({ ...s, editing: null }))
+    await updatePane($, s => reducePane(s, { type: 'select', view, id: key.slice(11) }))
+  } else if (key === 'search-query' || key === 'search-globs' || key === 'search-replacement') {
+    const editing = key === 'search-query' ? 'query' : key === 'search-globs' ? 'globs' : 'replacement'
+    if ((await readSearch($, root)).editing !== editing) await updateSearch($, root, s => ({ ...s, editing }))
+  }
+}
+export async function scrollSearch($: EngineInterface, by: number): Promise<boolean> {
+  const pane = await readPane($), view = currentView(pane)
+  if (!['search', 'quickopen', 'search.replace'].includes(view)) return false
+  const root = await readCwd($), r = await runtime($, root), s = await readSearch($, root)
+  if (s.editing) return false
+  if (view === 'search.replace' && s.expanded.includes(pane.selected[view] ?? s.plan[0]?.rel ?? '')) {
+    const top = Math.max(0, Math.min(Math.max(0, (r.diffTotal ?? 0) - (r.diffRows ?? 1)), s.top + by))
+    if (top !== s.top) { await updateSearch($, root, u => ({ ...u, top })); return true }
+  }
+  const from = r.ids.indexOf(pane.selected[view] ?? ''), id = r.ids[Math.max(0, Math.min(r.ids.length - 1, from < 0 ? 0 : from + by))]
+  if (!id) return true
+  await updatePane($, p => reducePane(p, { type: 'select', view, id }))
+  await $.ui.focus({ requestId: 'jei', key: `search-row-${id}` }).catch(() => {})
+  return true
+}
+async function fill($: EngineInterface, text: string): Promise<void> { if (!(await $.prompt.fill({ text, mode: 'insert' })).isFilled) $.ui.toast("The prompt can't take this text right now.") }
+function act($: EngineInterface, fn: () => Promise<unknown>): () => void { return () => { void fn().catch(err => $.ui.toast(firstLine(err))) } }
+
+async function requestApply($: EngineInterface, rels: string[]): Promise<void> {
+  const root = await readCwd($), s = await readSearch($, root)
+  if (!s.busy && rels.length) await updateSearch($, root, u => ({ ...u, confirm: rels }))
+}
+async function confirmApply($: EngineInterface): Promise<void> {
+  const root = await readCwd($), s = await readSearch($, root)
+  if (s.busy || !s.confirm) return
+  const files = s.plan.filter(file => s.confirm!.includes(file.rel))
+  if (files.length !== s.confirm.length) return
+  await updateSearch($, root, u => ({ ...u, busy: true, confirm: null }))
+  const release = await mutationGuard($, root), written: string[] = [], skipped = [...s.skipped]
+  let failure = ''
+  try {
+    for (const file of files) {
+      if (await readCwd($) !== root) throw new Error('The project changed. Remaining files were not replaced.')
+      const result = await applyReplace((await projectHost($, root)), root, [file])
+      written.push(...result.written); skipped.push(...result.skipped)
+    }
+  } catch (err) { failure = firstLine(err) }
+  finally {
+    release()
+    await updateSearch($, root, u => ({ ...u, busy: false, skipped, plan: u.plan.filter(file => !written.includes(file.rel) && !skipped.some(skip => skip.rel === file.rel)), summary: failure }))
+    const count = files.filter(f => written.includes(f.rel)).reduce((n, f) => n + f.count, 0)
+    $.ui.toast(`Replaced ${count} matches in ${written.length} files.${failure ? ` ${failure}` : ''}`)
+    if (await readCwd($) === root) {
+      if (written.length) await refreshAfterChange($, written)
+      await restartSearch($, true)
+    }
+  }
+}
+
+export async function renderSearch($: EngineInterface, e: PaneRender, frame: FilesFrame): Promise<FilesView> {
+  const els = $.ui.resolve(e), { Box, Text, Button, Code } = els
+  const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : undefined
+  const root = await readCwd($), pane = await readPane($), view = currentView(pane), s = await readSearch($, root), r = await runtime($, root)
+  await readTick($)
+  const inner = frame.inner, compact = frame.bodyRows <= 3, quick = view === 'quickopen', replacing = view === 'search.replace'
+  const text = (value: string, key?: string) => <Box key={key}><Text dimColor wrap="truncate-end">{inner ? ` ${fitEnd(value, inner)}` : ''}</Text></Box>
+  const edit = async (editing: JeiSearch['editing']) => { await updateSearch($, root, u => ({ ...u, editing })); await $.ui.focus({ requestId: 'jei', key: editing === 'query' ? 'search-query' : `search-${editing}` }).catch(() => {}) }
+  let quickError = ''
+  const files = quick ? await (r.files ??= quickOpenFiles((await projectHost($, root)), root)).catch(err => { quickError = firstLine(err); return [] }) : []
+  const ranked = quick ? rankFiles(parseQuery(s.text).name, files, { touched: new Set(Object.keys(await readActivity($))), recent: pane.recent }, 200) : []
+  const activate = async (id: string) => {
+    if (id.startsWith('command-')) { await command(id.slice(8)); return }
+    if (quick) { const rel = ranked[Number(id.slice(5))]; if (rel) { await stopSearch($); await showPreview($, rel, parseQuery(s.text).line ?? undefined) }; return }
+    const match = s.matches[Number(id.slice(6))]
+    if (match) { await stopSearch($); await showPreview($, match.rel, match.line) }
+  }
+  const command = async (action: string) => {
+    if (s.busy && replacing) return
+    if (action === 'edit') return edit('query')
+    if (action === 'quickopen' || action === 'search') {
+      await stopSearch($)
+      await updateSearch($, root, u => ({ ...u, editing: 'query', text: '' }))
+      await updatePane($, p => reducePane(p, action === 'quickopen' ? { type: 'quickopen' } : { type: 'back' }))
+      return
+    }
+    if (action === 'include') return edit('globs')
+    if (action === 'replace') return edit('replacement')
+    if (action.startsWith('toggle-')) {
+      const key = action === 'toggle-case' ? 'caseSensitive' : action === 'toggle-regex' ? 'regex' : 'wholeWord'
+      await updateSearch($, root, u => ({ ...u, [key]: !u[key] })); await restartSearch($); return
+    }
+    if (action === 'send-all') return fill($, sendText(s.text, s.matches))
+    if (action === 'mention') {
+      if (quick) { const rel = ranked[Number((pane.selected[view] ?? 'file-0').slice(5))]; if (rel) await fill($, `@${rel} `); return }
+      const match = s.matches[Number((pane.selected[view] ?? 'match-0').slice(6))]
+      if (match) await fill($, sendText(s.text, [match]))
+    }
+    if (action === 'apply-all') return requestApply($, s.plan.map(f => f.rel))
+    if (action === 'ask') {
+      const head = `Replace ${JSON.stringify(s.text)} with ${JSON.stringify(s.replacement)} in: `, parts: string[] = []
+      let length = head.length
+      for (const match of s.matches) {
+        const location = `${match.rel}:${match.line}`, suffix = `, …and ${s.matches.length - parts.length - 1} more.`
+        if (length + location.length + (parts.length ? 2 : 0) + suffix.length > 12_000) break
+        parts.push(location); length += location.length + (parts.length > 1 ? 2 : 0)
+      }
+      const left = s.matches.length - parts.length, suffix = left ? `${parts.length ? ', ' : ''}…and ${left} more.` : ''
+      return fill($, head.slice(0, Math.max(0, 12_000 - parts.join(', ').length - suffix.length)) + parts.join(', ') + suffix)
+    }
+  }
+  const input = (kind: 'query' | 'globs' | 'replacement'): RenderElement => {
+    const value = kind === 'query' ? s.text : s[kind], placeholder = kind === 'query' ? quick ? 'Go to file' : 'Search' : kind === 'globs' ? 'Include/exclude: src/** !**/*.test.ts' : 'Replace with'
+    const change = async (value: string) => { await updateSearch($, root, u => ({ ...u, [kind === 'query' ? 'text' : kind]: value, editing: kind })); if (kind !== 'replacement' && !quick) await restartSearch($) }
+    const submit = async (value: string) => {
+      await change(value); await updateSearch($, root, u => ({ ...u, editing: null }))
+      if (kind === 'replacement') {
+        if (s.busy) return
+        stop(r)
+        const epoch = r.epoch
+        await updateSearch($, root, u => ({ ...u, busy: true }))
+        try {
+          const plan = await buildReplacePlan((await projectHost($, root)), root, queryOf(await readSearch($, root)), value)
+          if (r.epoch !== epoch || await readCwd($) !== root || (await readPane($)).tab !== 'search') return
+          await updateSearch($, root, u => ({ ...u, plan: plan.files, skipped: plan.skipped, expanded: plan.files.map(f => f.rel), top: 0, confirm: null }))
+          await updatePane($, p => reducePane(p, { type: 'replace' }))
+        } finally { if (r.epoch === epoch) await updateSearch($, root, u => ({ ...u, busy: false })) }
+        return
+      }
+      if (quick && ranked[0]) { await showPreview($, ranked[0], parseQuery(value).line ?? undefined); return }
+      await $.ui.focus({ requestId: 'jei', key: `search-row-${quick ? 'file-0' : 'match-0'}` }).catch(() => {})
+    }
+    const cancel = s.editing ? <Button key="search-cancel" plain label="Cancel" onPress={act($, async () => { await leaveSearchEditor($); await $.ui.focus({ requestId: 'jei', key: 'search-row-match-0' }).catch(() => {}) })} /> : null
+    const markers = !quick && kind === 'query' && inner < 38 ? [s.caseSensitive ? 'Aa' : '', s.regex ? '.*' : '', s.wholeWord ? '\\b' : '', s.engine === 'git grep' ? 'git grep' : ''].filter(Boolean).join(' ') : undefined
+    return Input ? <Box flexDirection="row"><Text> </Text><Input key={`search-${kind}`} label={markers || undefined} placeholder={placeholder} value={value} autoFocus={s.editing === kind ? true : undefined} onInput={value => act($, () => change(value))()} onSubmit={value => act($, () => submit(value))()} />{cancel}</Box>
+      : <Box flexDirection="row"><Text>{fitEnd(`${placeholder}: ${value} (input unavailable)`, Math.max(0, inner - (s.editing ? 6 : 0)))}</Text>{cancel}</Box>
+  }
+  const actions = s.editing || s.confirm ? [] : KEYS[view].flatMap(k => /^[a-z0-9]$/.test(k.key) && k.action !== 'back' ? [{ key: k.key, run: act($, () => command(k.action)) }] : [])
+  const items: { id: string; el: RenderElement; height?: number; passive?: boolean }[] = []
+  const selected = pane.selected[view] ?? (replacing ? s.plan[0]?.rel : quick ? 'file-0' : 'match-0')
+  const row = (id: string, label: string, run: () => Promise<unknown>) => <Box key={`search-wrap-${id}`} flexDirection="row"><Text> </Text><Button key={`search-row-${id}`} plain onPress={act($, run)}><Text inverse={selected === id && !(frame.isFocused && r.focused === `search-row-${id}`)} wrap="truncate-end">{fitEnd(label, inner)}</Text></Button></Box>
+  if (replacing) {
+    if (s.confirm) {
+      const files = s.plan.filter(f => s.confirm!.includes(f.rel)), count = files.reduce((n, f) => n + f.count, 0)
+      return { header: text('Replace preview'), body: [text(`Replace ${count} matches in ${files.length === 1 ? files[0]!.rel : `${files.length} files`}?`, 'replace-question'), <Box flexDirection="row"><Text> </Text><Button key="replace-confirm" label="Replace" onPress={act($, () => confirmApply($))} /><Button key="replace-cancel" label="Cancel" onPress={act($, () => updateSearch($, root, u => ({ ...u, confirm: null })))} /></Box>].slice(0, frame.bodyRows), actions: [] }
+    }
+    for (const f of s.plan) {
+      items.push({ id: f.rel, el: <Box flexDirection="row"><Text> </Text><Button key={`replace-toggle-${f.rel}`} plain label={s.expanded.includes(f.rel) ? '▾' : '▸'} onPress={act($, () => updateSearch($, root, u => ({ ...u, expanded: u.expanded.includes(f.rel) ? u.expanded.filter(rel => rel !== f.rel) : [...u.expanded, f.rel] })))} /><Text> </Text><Button key={`search-row-${f.rel}`} plain onPress={act($, () => requestApply($, [f.rel]))}><Text inverse={selected === f.rel}>{fitEnd(`${f.rel} (${f.count})`, Math.max(0, inner - 2))}</Text></Button></Box> })
+      if (s.expanded.includes(f.rel) && f.rel === selected && !compact) {
+        const diff = parseUnifiedDiff(previewText(f))[0]
+        if (diff) {
+          const height = Math.max(1, Math.min(6, frame.bodyRows - 1)), window = diffWindow(diff, s.top, height)
+          r.diffTotal = window.total; r.diffRows = height
+          items.push({ id: `${f.rel}:diff`, height, passive: true, el: <Box height={height} overflow="hidden"><Code source={window.text.replace(/\n$/, '')} format="diff" wrap="truncate-end" /></Box> })
+        }
+      }
+    }
+    if (s.skipped.length) items.push({ id: 'skipped', passive: true, el: text('Not replaced') })
+    for (const skip of s.skipped) items.push({ id: `skip-${skip.rel}`, el: row(`skip-${skip.rel}`, `${skip.rel}: ${skip.reason}`, async () => {}) })
+    const file = s.plan.find(f => f.rel === selected) ?? s.plan[0]
+    items.push({ id: 'apply', el: <Box flexDirection="row"><Text> </Text><Button key="replace-apply" plain label="Apply file" onPress={act($, () => requestApply($, file ? [file.rel] : []))} /></Box> })
+  } else if (quick) {
+    const touched = await readActivity($)
+    ranked.forEach((rel, i) => items.push({ id: `file-${i}`, el: row(`file-${i}`, `${touched[rel] ? '•' : ' '} ${rel.slice(rel.lastIndexOf('/') + 1)}  ${fitPath(rel.slice(0, rel.lastIndexOf('/')), Math.floor(inner / 2))}`, () => activate(`file-${i}`)) }))
+  } else {
+    if (!s.matches.length) items.push({ id: 'notice', passive: true, el: text(s.summary || 'Type to search the project.', 'search-notice') })
+    let last = ''
+    s.matches.forEach((m, i) => {
+      if (last !== m.rel && !compact) { items.push({ id: `group-${m.rel}`, passive: true, el: text(`${m.rel} (${s.matches.filter(item => item.rel === m.rel).length})`) }); last = m.rel }
+      const prefix = `  ${m.line}: `, room = Math.max(0, inner - prefix.length)
+      const first = m.ranges[0]?.[0] ?? 0
+      let from = Math.max(0, first - Math.floor(room / 3))
+      if (from > 0 && /[\uDC00-\uDFFF]/.test(m.text[from]!)) from--
+      const clipped = fitEnd(m.text.slice(from), Math.max(0, room - (from ? 1 : 0)))
+      const visible = clipped.endsWith('…') && clipped !== printable(m.text.slice(from)) ? clipped.slice(0, -1) : clipped
+      const spans: RenderElement[] = [<Text>{from ? '…' : ''}</Text>]; let at = 0
+      for (const [start, end] of m.ranges) {
+        const a = Math.max(0, start - from), b = Math.min(visible.length, end - from)
+        if (a > visible.length) break
+        spans.push(<Text>{visible.slice(at, a)}</Text>, <Text color={color('accent')}>{visible.slice(a, b)}</Text>); at = Math.max(at, b)
+      }
+      spans.push(<Text>{visible.slice(at)}{visible !== clipped ? '…' : ''}</Text>)
+      items.push({ id: `match-${i}`, el: <Box flexDirection="row"><Text> </Text><Button key={`search-row-match-${i}`} plain onPress={act($, () => activate(`match-${i}`))}><Text inverse={selected === `match-${i}` && !(frame.isFocused && r.focused === `search-row-match-${i}`)}>{prefix}{spans}</Text></Button></Box> })
+    })
+  }
+  // Every command also lives in the list: compact hint Buttons cannot bind all ten letters at 24 cells.
+  if (!replacing) items.push({ id: 'command-edit', el: row('command-edit', 'Edit query', () => edit('query')) })
+  for (const k of KEYS[view]) if (/^[a-z0-9]$/.test(k.key) && k.action !== 'back') items.push({ id: `command-${k.action}`, el: row(`command-${k.action}`, `${k.key} ${k.label}`, () => command(k.action)) })
+  r.ids = items.filter(item => !item.passive).map(item => item.id)
+  const pinned: RenderElement[] = []
+  if (!replacing) pinned.push(input(s.editing ?? 'query'))
+  if (!replacing && !quick && !compact && inner >= 38) pinned.push(<Box flexDirection="row"><Text> </Text>{[[s.caseSensitive, 'Aa'], [s.regex, '.*'], [s.wholeWord, '\\b']].map(([active, label]) => <Text color={active ? color('accent') : undefined}>{active ? `[${label}]` : label}{' '}</Text>)}<Text dimColor>{fitEnd(s.globs, Math.max(0, inner - 15))}</Text></Box>)
+  const room = Math.max(0, frame.bodyRows - pinned.length - (!compact && !replacing ? 1 : 0))
+  const ids = items.map(item => item.id), top = windowTop(`${root}:${view}`, ids, selected, room)
+  const body = [...pinned]
+  let left = room
+  for (const item of items.slice(top)) { const height = item.height ?? 1; if (height > left) break; body.push(item.el); left -= height; if (!left) break }
+  if (!compact && !replacing) body.push(text((quick ? quickError || `${ranked.length} files` : s.summary) + (!quick && s.engine === 'git grep' ? ' · git grep' : ''), 'search-summary'))
+  return { header: text(replacing ? 'Replace preview' : quick ? 'Quick Open' : 'Search'), body: body.slice(0, frame.bodyRows), actions: actions as FilesAction[] }
+}

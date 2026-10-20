@@ -68,6 +68,15 @@ export function hostFor($: EngineInterface, root: string): Host {
   return claudeHost($, platformOf(root))
 }
 
+/** A double slash alone cannot distinguish POSIX from UNC; only canonical native metadata can. */
+export async function projectHost($: EngineInterface, root: string): Promise<Host> {
+  if (!root.startsWith('//')) return hostFor($, root)
+  const real = (await $.fs.stat(root, { resolve: true })).realPath
+  if (real && (/^[a-z]:[\\/]/i.test(real) || real.startsWith('\\\\'))) return claudeHost($, 'win32')
+  if (real?.startsWith('/') && !real.startsWith('//')) return claudeHost($, 'linux')
+  throw new Error('Cannot determine the project path platform.')
+}
+
 // ---------------------------------------------------------------------------
 // Read-through caches. Listings, the project file list and previews are not
 // session state: they are re-read from disk when missing, and dropped by file
@@ -252,10 +261,11 @@ export async function openRel($: EngineInterface, options: Options, root: string
   }
 }
 
-async function showPreview($: EngineInterface, rel: string): Promise<void> {
+export async function showPreview($: EngineInterface, rel: string, line?: number): Promise<void> {
+  await projectHost($, await readCwd($))
   current = null
-  await updatePreview($, () => ({ rel, source: false, top: 0 }))
-  await updatePane($, (s) => reducePane(s, { type: 'preview', rel }))
+  await updatePreview($, () => ({ rel, source: line !== undefined, top: Math.max(0, (line ?? 1) - 1), ...(line === undefined ? {} : { line }) }))
+  await updatePane($, (s) => reducePane(s, { type: 'preview', rel, line }))
 }
 
 // ---------------------------------------------------------------------------
@@ -308,9 +318,11 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   const host = hostFor($, root)
 
   if (view === 'files.preview') {
-    const state = await readPreview($)
-    const rel = state.rel
-    const pv = await previewOf(host, root, rel)
+    const held = await readPreview($)
+    const target = pane.preview
+    const state = target && (target.rel !== held.rel || target.line !== held.line) ? { rel: target.rel, line: target.line, source: target.line !== undefined, top: Math.max(0, (target.line ?? 1) - 1) } : held
+    const rel = pane.preview?.rel ?? state.rel
+    const pv = await previewOf(await projectHost($, root), root, rel)
     const header = (
       <Box flexDirection="row">
         <Text>{inner > 0 ? ' ' : ''}</Text>
@@ -339,6 +351,11 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
         {child}
       </Box>
     )
+    if (state.line !== undefined && pv.text !== undefined) {
+      const s = sliced(pv.text)
+      const target = Math.min(state.line, lastPreviewLines)
+      return { header, body: s.text.split('\n').map((source, i) => <Box key={`preview-line-${s.top + i + 1}`} flexDirection="row"><Text color={color('accent')}>{s.top + i + 1 === target ? '›' : ' '}</Text><Code source={source} language={pv.language} path={baseName(rel)} wrap="truncate-end" /></Box>), actions }
+    }
     switch (pv.kind) {
       case 'code': {
         const s = sliced(pv.text ?? '')

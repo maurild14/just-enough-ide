@@ -38,7 +38,26 @@ export type JeiTree = {
 }
 
 /** The Files preview: the file shown, markdown source shown (`m`) and the first line in view. */
-export type JeiPreview = { rel: string; source: boolean; top: number }
+export type JeiPreview = { rel: string; source: boolean; top: number; line?: number }
+
+export type JeiSearch = {
+  text: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; globs: string; replacement: string
+  editing: 'query' | 'globs' | 'replacement' | null
+  matches: { rel: string; line: number; text: string; ranges: [number, number][] }[]
+  summary: string; engine: 'rg' | 'git grep'; busy: boolean
+  plan: { rel: string; before: string; after: string; count: number }[]
+  skipped: { rel: string; reason: 'binary' | 'not-utf8' | 'changed' | 'regex-differs' | 'outside-root' | 'too-large' | 'unreadable' | 'unsupported-path' }[]
+  expanded: string[]; top: number; confirm: string[] | null
+}
+
+export type JeiSymbolNode = { name: string; kind: 'function' | 'class' | 'method' | 'type' | 'interface' | 'enum' | 'const' | 'heading'; line: number; endLine: number; children: JeiSymbolNode[] }
+export type JeiSymbolRef = { rel: string; line: number; text: string; container: string | null }
+export type JeiSymbols = {
+  rel: string; nodes: JeiSymbolNode[]; source: 'lsp' | 'approximate'; notice: string
+  query: string; editing: boolean; busy: boolean; permission: boolean
+  result: { title: string; source: 'lsp' | 'approximate'; refs: JeiSymbolRef[] } | null
+  calls: { id: string; name: string; rel: string; node: JeiSymbolNode; direction: 'incomingCalls' | 'outgoingCalls'; depth: number; expanded: boolean; source: 'lsp' | 'approximate'; refs: JeiSymbolRef[] }[]
+}
 
 export type JeiFileStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted' | 'ignored'
 export type JeiCounts = Record<string, { added: number | null; removed: number | null }>
@@ -99,6 +118,8 @@ declare module 'claude-code' {
       tree: JeiTree
       gitUi: JeiGitUi
       history: Record<string, JeiHistory>
+      searches: Record<string, JeiSearch>
+      symbols: Record<string, JeiSymbols>
       preview: JeiPreview
       /** Bumped by the shimmer clock and by refreshed caches: a redraw. */
       tick: number

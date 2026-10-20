@@ -7,6 +7,11 @@ import type { GitSnapshot } from '../../core/git/service.ts'
 import type { StatusEntry } from '../../core/git/status.ts'
 import type { CommitMode } from '../../core/git/commands.ts'
 import type { JeiActivity, JeiCommitMode, JeiGit, JeiGitUi, JeiHistory, JeiPane, JeiPreview, JeiTab, JeiTree, JeiView } from '../../types/index.d.ts'
+import type { JeiSearch, JeiSymbols } from '../../types/index.d.ts'
+import type { Match } from '../../core/search/rg.ts'
+import type { ReplaceFile, Skipped } from '../../core/search/replace.ts'
+import type { SymbolNode } from '../../core/symbols/outline.ts'
+import type { SymbolRef } from '../../core/symbols/approx.ts'
 
 /** The pane's id: `$.ui.open({ id })` and the `requestId` its `ui.render` reads. */
 export const PANE_ID = 'jei'
@@ -28,6 +33,8 @@ export const tree = atom({ plugin: 'jei', key: 'tree' } as const, {
 export const preview = atom({ plugin: 'jei', key: 'preview' } as const, { rel: '', source: false, top: 0 } satisfies JeiPreview)
 export const tick = atom({ plugin: 'jei', key: 'tick' } as const, 0)
 export const history = atom({ plugin: 'jei', key: 'history' } as const, {})
+export const searches = atom({ plugin: 'jei', key: 'searches' } as const, {})
+export const symbols = atom({ plugin: 'jei', key: 'symbols' } as const, {})
 export const gitUi = atom({ plugin: 'jei', key: 'gitUi' } as const, {
   message: '',
   mode: 'commit',
@@ -38,6 +45,13 @@ export const gitUi = atom({ plugin: 'jei', key: 'gitUi' } as const, {
 } satisfies JeiGitUi)
 
 type StateHost = Pick<EngineInterface, 'state'>
+
+const emptySearch = (): JeiSearch => ({ text: '', caseSensitive: false, regex: false, wholeWord: false, globs: '', replacement: '', editing: 'query', matches: [], summary: '', engine: 'rg', busy: false, plan: [], skipped: [], expanded: [], top: 0, confirm: null })
+const emptySymbols = (): JeiSymbols => ({ rel: '', nodes: [], source: 'approximate', notice: '', query: '', editing: false, busy: false, permission: false, result: null, calls: [] })
+export async function readSearch($: StateHost, root: string): Promise<JeiSearch> { return (await read($, searches))[root] ?? emptySearch() }
+export function updateSearch($: StateHost, root: string, fn: (s: JeiSearch) => JeiSearch): Promise<Record<string, JeiSearch>> { return update($, searches, all => ({ ...all, [root]: fn(all[root] ?? emptySearch()) })) }
+export async function readSymbols($: StateHost, root: string): Promise<JeiSymbols> { return (await read($, symbols))[root] ?? emptySymbols() }
+export function updateSymbols($: StateHost, root: string, fn: (s: JeiSymbols) => JeiSymbols): Promise<Record<string, JeiSymbols>> { return update($, symbols, all => ({ ...all, [root]: fn(all[root] ?? emptySymbols()) })) }
 
 const emptyHistory = (): JeiHistory => ({ filter: '', draft: '', filtering: false, pages: 1, expanded: null, agents: [], newBranch: null, branchFilter: '', branchFiltering: false, compared: null })
 export async function readHistory($: StateHost, root: string): Promise<JeiHistory> {
@@ -136,5 +150,10 @@ const drift: [
   Same<Extract<JeiGit, { root: string }>['status']['entries'][number], StatusEntry>,
   Same<JeiActivity[string]['kind'], ActivityKind>,
   Same<JeiCommitMode, CommitMode>,
-] = [true, true, true, true, true, true]
+  Same<JeiSearch['matches'][number], Match>,
+  Same<JeiSearch['plan'][number], ReplaceFile>,
+  Same<JeiSearch['skipped'][number], Skipped>,
+  Same<JeiSymbols['nodes'][number], SymbolNode>,
+  Same<NonNullable<JeiSymbols['result']>['refs'][number], SymbolRef>,
+] = [true, true, true, true, true, true, true, true, true, true, true]
 void drift

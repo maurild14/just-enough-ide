@@ -35,3 +35,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0018 | `0018-safe-sync-review-recovery.md` | Prompt-only recovery for a missing Claude Sync review, retaining hooks, permissions and pending work |
 | 0019 | `0019-search-streams-and-safe-replace.md` | Streaming search, bounded first-occurrence fallback, safe replacement and preview origins |
 | 0020 | `0020-native-search-paths-and-zero-width-fallback.md` | Native literal filename boundaries and verified zero-width fallback matches |
+| 0021 | `0021-native-search-symbol-controls-and-path-evidence.md` | Compact native controls, fresh LSP checks, marked source previews and canonical path evidence |

@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
 import { claudeHost } from './host.ts'
+import { projectHost } from './files.tsx'
 
 /** Just the nouns claudeHost touches, answering from the test. */
 function fakeEngine(parts: { run?: unknown; stat?: unknown; read?: unknown; complete?: unknown; spawn?: unknown; write?: unknown; after?: unknown }): EngineInterface {
@@ -11,6 +12,15 @@ function fakeEngine(parts: { run?: unknown; stat?: unknown; read?: unknown; comp
     clock: { after: parts.after },
   } as unknown as EngineInterface
 }
+
+test('new project boundaries distinguish native UNC proof from POSIX backslash components and refuse ambiguous metadata', async () => {
+  const resolve = (realPath: string | undefined) => projectHost(fakeEngine({ stat: async () => ({ realPath }) }), '//work/acme-app')
+  expect((await resolve('/work/acme-app')).platform).toBe('linux')
+  expect((await resolve('/work/a\\b')).platform).toBe('linux')
+  expect((await resolve('\\\\server\\share\\acme-app')).platform).toBe('win32')
+  expect((await resolve('C:\\work\\acme-app')).platform).toBe('win32')
+  for (const value of [undefined, '//work/acme-app', 'work/acme-app', 'C:relative']) await expect(resolve(value)).rejects.toThrow('Cannot determine')
+})
 
 test('stream maps the verified spawn request, frames chunks, captures stderr and closes on cancel', async () => {
   const seen: unknown[] = []

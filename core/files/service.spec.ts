@@ -34,7 +34,7 @@ test('loadPreview: code, markdown, csv rows, empty, binary, image, too large', a
   writeFileSync(join(dir, 'huge.txt'), new Uint8Array(2 * 1024 * 1024 + 1).fill(97))
   expect(await loadPreview(host, dir, 'a.ts')).toEqual({ kind: 'code', text: 'const a = 1\n', language: 'typescript' })
   expect(await loadPreview(host, dir, 'r.md')).toMatchObject({ kind: 'markdown', text: '# Hi\n' })
-  expect(await loadPreview(host, dir, 'd.csv')).toMatchObject({ kind: 'csv', rows: [['a', 'b'], ['x,1', '2']] })
+  expect(await loadPreview(host, dir, 'd.csv')).toMatchObject({ kind: 'csv', text: 'a,b\n"x,1",2\n', rows: [['a', 'b'], ['x,1', '2']] })
   expect(await loadPreview(host, dir, 'e.txt')).toEqual({ kind: 'empty' })
   expect(await loadPreview(host, dir, 'b.bin')).toEqual({ kind: 'binary' })
   expect(await loadPreview(host, dir, 'p.png')).toEqual({ kind: 'image' })
