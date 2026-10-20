@@ -1,6 +1,7 @@
 import type { Color } from 'claude-code'
 import type { ActivityKind } from '../../core/activity/classify.ts'
 import type { FileStatus } from '../../core/git/status.ts'
+import type { GraphSpan } from '../../core/git/graph.ts'
 
 /** The semantic color tokens of docs/design.md section 2. */
 export type Token =
@@ -40,6 +41,15 @@ export function color(token: Token): Color {
 
 export function activityColor(kind: ActivityKind): Color {
   return THEME[`activity.${kind}`]
+}
+
+const LANES: readonly Color[] = ['suggestion', 'success', 'warning', 'autoAccept', 'merged', 'claude']
+export function graphColor(span: GraphSpan): Color | undefined {
+  if (span.role === 'lane') return LANES[(span.lane ?? 0) % LANES.length]
+  if (span.role === 'head' || span.role === 'agent') return 'suggestion'
+  if (span.role === 'local') return 'success'
+  if (span.role === 'remote') return 'autoAccept'
+  if (span.role === 'tag') return 'warning'
 }
 
 const LETTER: Readonly<Record<FileStatus, string>> = {

@@ -314,7 +314,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     const header = (
       <Box flexDirection="row">
         <Text>{inner > 0 ? ' ' : ''}</Text>
-        <Button key="back" plain onPress={act($, () => updatePane($, (s) => reducePane(s, { type: 'back' })))}>
+        <Button key="preview-title" plain onPress={act($, () => updatePane($, (s) => reducePane(s, { type: 'back' })))}>
           <Text wrap="truncate-end">{fitPath(rel, inner)}</Text>
         </Button>
       </Box>
@@ -532,7 +532,8 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
 
   const ids = items.map((i) => i.id)
   lastIds = items.filter((i) => i.isRow).map((i) => i.id)
-  const rows = Math.max(1, frame.bodyRows)
+  const filterPinned = tree.filtering && e.props.scroll.bodyRows < 6 ? [filterHeader] : []
+  const rows = Math.max(1, frame.bodyRows - filterPinned.length)
   const top = windowTop(mode, ids, selected, rows)
-  return { header, body: items.slice(top, top + rows).map((i) => i.el), actions }
+  return { header, body: [...filterPinned, ...items.slice(top, top + rows).map((i) => i.el)], actions }
 }

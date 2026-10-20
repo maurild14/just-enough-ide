@@ -57,10 +57,13 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   const [revision, setRevision] = createSignal(0)
   let filesAction: (action: string) => void = () => {}
   let gitAction: (action: string) => void = () => {}
-  let editing: () => boolean = () => false
+  const [editingAction, setEditingAction] = createSignal<() => boolean>(() => false)
+  const editing = () => editingAction()()
   const dimensions = useTerminalDimensions()
   const [height, setHeight] = createSignal(dimensions().height)
   const width = () => Math.max(0, Math.floor(props.input.width))
+  const showBack = () => height() >= 3 && (state().stack.length > 1 || editing())
+  const back = () => { if (error() || !snapshot()) dispatch({ type: 'back' }); else if (state().tab === 'files') filesAction('back'); else if (state().tab === 'git') gitAction('back'); else dispatch({ type: 'back' }) }
   let stopped = false
   let received = 0
   const live = new Map<string, number>()
@@ -120,10 +123,10 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     commands: [
       ...Object.entries(TAB_KEYS).map(([key, tab]) => ({ bind: key, title: TAB_NAMES[tab], enabled: () => !editing(), run: () => { dispatch({ type: 'tab', tab }) } })),
       ...KEYS[currentView(state())].map(({ key, action, label }) => ({ bind: key, title: label, run: () => {
-        if (state().tab === 'files') filesAction(action)
+        if (action === 'back') back()
+        else if (state().tab === 'files') filesAction(action)
         else if (state().tab === 'git') gitAction(action)
-        else if (action === 'back') dispatch({ type: 'back' })
-      }, enabled: () => !editing() || ['back', 'move-up', 'move-down', ...(state().tab === 'files' ? ['activate'] : [])].includes(action) })),
+      }, enabled: () => !editing() || key === 'esc' && action === 'back' || ['move-up', 'move-down', ...(state().tab === 'files' ? ['activate'] : [])].includes(action) })),
     ],
   }))
   const tabs = createMemo(() => tabBar(width(), width(), state().tab))
@@ -150,17 +153,18 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
       </box>
     </Show>
     <Show when={height() >= 8}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{'─'.repeat(width())}</text></Show>
+    <Show when={showBack()}><text height={1} flexShrink={0} fg={props.ctx.theme.text.action.primary.base} onMouseDown={back}>{editing() ? ' Back' : ` ${KEYS[currentView(state())].find(key => key.action === 'back')!.key} Back`}</text></Show>
     <Show when={state().tab !== 'files' || !snapshot() || error()} fallback={
       <Files ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} options={snapshot()!.options} git={snapshot()!.git}
         state={state()} dispatch={dispatch} activity={activity()} now={now()} revision={revision()} width={width()}
-        height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0)} header={height() >= 6}
-        focused={props.input.focused} bind={(run, isEditing) => { filesAction = run; editing = isEditing }} />
+        height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0) - (showBack() ? 1 : 0)} header={height() >= 6}
+        focused={props.input.focused} bind={(run, isEditing) => { filesAction = run; setEditingAction(() => isEditing) }} />
     }>
       <Show when={state().tab !== 'git' || !snapshot() || error()} fallback={
         <Git ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} git={snapshot()!.git}
           state={state()} dispatch={dispatch} revision={revision()} refresh={refreshAfterChange} smartCommit={snapshot()!.options.smartCommit} graphLimit={snapshot()!.options.graphLimit} width={width()}
-          height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0)} header={height() >= 6}
-          focused={props.input.focused} bind={(run, isEditing) => { gitAction = run; editing = isEditing }} />
+          height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0) - (showBack() ? 1 : 0)} header={height() >= 6}
+          focused={props.input.focused} bind={(run, isEditing) => { gitAction = run; setEditingAction(() => isEditing) }} />
       }>
       <Show when={height() >= 6}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{fitEnd(snapshot()?.cwd ?? 'JEI', width())}</text></Show>
       <box flexGrow={1} minHeight={1}><text height={1} fg={error() ? props.ctx.theme.text.feedback.error.base : props.ctx.theme.text.base}>{fitEnd(body(), width())}</text></box>

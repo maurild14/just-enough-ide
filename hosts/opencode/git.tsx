@@ -63,7 +63,7 @@ export function Git(props: {
   let diffAction: (action: string) => void = () => {}
   let branchesAction: (action: string) => void = () => {}
   const isDiff = () => currentView(props.state) === 'git.diff' && props.state.diff !== undefined
-  const isBranches = () => currentView(props.state) === 'git.branches'
+  const isBranches = () => currentView(props.state) === 'git.branches' || currentView(props.state) === 'git.compare'
   const [collapsed, setCollapsed] = createSignal<ReadonlySet<Group>>(new Set())
   const selected = () => props.state.selected.git
   const theme = () => props.ctx.theme
@@ -94,15 +94,15 @@ export function Git(props: {
   const items = createMemo(() => {
     const all: Row[] = [{ id: 'message' }, { id: 'commit-now' }, { id: 'commit' }, { id: 'generate-message' }, { id: 'sync' }]
     if (props.smartCommit && mode() !== 'amend' && !groups().staged.length && groups().changes.length) all.push({ id: 'smart-commit-note' })
+    all.push(...history.rows().map(row => ({ id: row.id, history: row })))
     for (const group of ['staged', 'changes'] as const) if (groups()[group].length) {
       all.push({ id: `group-${group}`, group })
       if (!collapsed().has(group)) all.push(...groups()[group])
     }
     if (!groups().staged.length && !groups().changes.length) all.push({ id: 'clean' })
-    all.push(...history.rows().map(row => ({ id: row.id, history: row })))
     return all
   })
-  createEffect(() => { if (!isDiff() && !isBranches() && !items().some((r) => r.id === selected()) && !(selected()?.startsWith('graph-') && !history.ready()) && !(selected()?.startsWith('commit-file-') && history.pending())) props.dispatch({ type: 'select', view: 'git', id: /^(graph-|commit-file-|checkout-|revert-|web-)/.test(selected() ?? '') ? 'group-graph' : items().find((r) => r.group)?.id ?? 'clean' }) })
+  createEffect(() => { if (!isDiff() && !isBranches() && history.settled() && !items().some((r) => r.id === selected()) && !(selected()?.startsWith('graph-') && !history.ready()) && !(selected()?.startsWith('commit-file-') && history.pending())) props.dispatch({ type: 'select', view: 'git', id: history.ready()?.commits.length ? 'group-graph' : items().find(row => row.group)?.id ?? 'clean' }) })
   const room = () => Math.max(1, props.height - (props.header ? 1 : 0) - 1)
   let listTop = 0
   const window = createMemo(() => {
@@ -263,7 +263,7 @@ export function Git(props: {
       if (stopped || props.state.diff !== d) return
       const at = files.findIndex(file => file.path === d.path); const next = files[at + by]
       if (next) {
-        props.dispatch({ type: 'select', view: d.source.kind === 'commit' ? 'git' : 'git.branches', id: d.source.kind === 'commit' ? `commit-file-${d.source.hash}-${next.path}` : `compare-file-${next.path}` })
+        props.dispatch({ type: 'select', view: d.source.kind === 'commit' ? 'git' : 'git.compare', id: d.source.kind === 'commit' ? `commit-file-${d.source.hash}-${next.path}` : `compare-file-${next.path}` })
         props.dispatch({ type: 'open-diff', path: next.path, source: d.source })
       }
       return
@@ -293,7 +293,7 @@ export function Git(props: {
       </box>
       <box flexGrow={1} minHeight={1} overflow="hidden" flexDirection="column">
           <For each={window()}>{(row) => <box height={1} flexShrink={0} width={props.width} flexDirection="row" backgroundColor={selected() === row.id ? theme().background?.action.primary.base : undefined}>
-            <Show when={!row.history} fallback={<Graph row={row.history!} ctx={props.ctx} width={props.width} activate={() => { setEditing(false); props.dispatch({ type: 'select', view: 'git', id: row.id }); invoke('activate') }} />}>
+            <Show when={!row.history} fallback={<Graph row={row.history!} ctx={props.ctx} width={props.width} selected={selected() === row.id} activate={() => { setEditing(false); props.dispatch({ type: 'select', view: 'git', id: row.id }); invoke('activate') }} />}>
             <text height={1} width={props.width - cellWidth(tail(row))}
             fg={row.id === 'commit-now' ? !subject().trim() || busy() ? theme().text.muted : theme().text.action.primary.base : theme().text.base}
             onMouseDown={() => { setEditing(false); props.dispatch({ type: 'select', view: 'git', id: row.id }); invoke('activate') }}>

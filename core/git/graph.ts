@@ -1,4 +1,4 @@
-import { cellWidth, fitEnd } from '../shared/fit.ts'
+import { cellWidth, fitEnd, padEnd, printable } from '../shared/fit.ts'
 import type { LogCommit } from './log.ts'
 
 export type GraphRow = { hash: string; column: number; lanes: number; glyph: string; connector: string | null }
@@ -61,14 +61,49 @@ export function layoutGraph(commits: readonly LogCommit[], set: 'unicode' | 'asc
 }
 
 /** `maxCells` includes lane separators and the active ellipsis, including ASCII `...`. */
-export function fitGraph(row: GraphRow, maxCells: number, ellipsis: string): { glyph: string; connector: string | null } {
+export function fitGraph(row: GraphRow, maxCells: number, ellipsis: string): { glyph: string; connector: string | null; offset: number } {
   const width = Math.max(0, Math.floor(maxCells))
-  if (width === 0) return { glyph: '', connector: row.connector === null ? null : '' }
-  if (cellWidth(row.glyph) <= width) return { glyph: row.glyph, connector: row.connector === null ? null : fitEnd(row.connector, width, ellipsis) }
+  if (width === 0) return { glyph: '', connector: row.connector === null ? null : '', offset: 0 }
+  if (cellWidth(row.glyph) <= width) return { glyph: row.glyph, connector: row.connector === null ? null : fitEnd(row.connector, width, ellipsis), offset: 0 }
   const marker = cellWidth(ellipsis) < width ? ellipsis : ''
   const count = Math.max(1, Math.floor((width - cellWidth(marker)) / 2))
   const tail = marker ? (2 * count + cellWidth(marker) <= width ? ' ' : '') + marker : ''
   const start = Math.max(0, row.column - count + 1) * 2
   const end = start + 2 * count - 1
-  return { glyph: row.glyph.slice(start, end) + tail, connector: row.connector === null ? null : fitEnd(row.connector.slice(start, end), width - cellWidth(tail), '') + tail }
+  return { glyph: row.glyph.slice(start, end) + tail, connector: row.connector === null ? null : fitEnd(row.connector.slice(start, end), width - cellWidth(tail), '') + tail, offset: start }
+}
+
+export type GraphSpan = { text: string; role?: 'lane' | 'head' | 'local' | 'remote' | 'tag' | 'muted' | 'agent'; lane?: number }
+
+/** Shared row anatomy; adapters map semantic roles to their installed host theme. */
+export function graphLine(commit: LogCommit, row: GraphRow, width: number, agent: boolean, now: number): { spans: GraphSpan[]; connector: GraphSpan[] } {
+  const cells = Math.max(cellWidth(row.glyph), cellWidth(row.connector ?? ''))
+  const graph = fitGraph(row, width < 22 ? 0 : Math.min(cells, Math.max(3, Math.floor(width / 4))), '…')
+  const lanes = (text: string, source: string): GraphSpan[] => Array.from(text, (text, index) => source[graph.offset + index] === text
+    ? { text, role: 'lane', lane: Math.floor((graph.offset + index) / 2) }
+    : { text, role: 'muted' })
+  const spans: GraphSpan[] = lanes(graph.glyph, row.glyph)
+  if (graph.glyph) spans.push({ text: ' ' })
+  if (agent && width >= 22) spans.push({ text: '✦ ', role: 'agent' })
+  const hash = fitEnd(commit.hash.slice(0, 7), width)
+  const available = Math.max(0, width - cellWidth(spans.map(s => s.text).join('')) - cellWidth(hash) - 1)
+  const refs: GraphSpan[] = []
+  let refWidth = 0
+  if (width >= 30) for (const ref of commit.refs) {
+    const text = printable(`[${ref.kind === 'head' ? 'HEAD' : `${ref.kind} ${ref.name}`}] `)
+    const size = cellWidth(text)
+    if (refWidth + size + Math.min(12, cellWidth(commit.subject)) > available) continue
+    refs.push({ text, role: ref.kind }); refWidth += size
+  }
+  spans.push(...refs)
+  const seconds = Math.max(0, Math.floor(now / 1000 - commit.time))
+  const time = seconds < 60 ? 'now' : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h ago` : `${Math.floor(seconds / 86400)}d ago`
+  const metadata = printable(`  ${commit.author} ${time}`)
+  const tail = width >= 58 && refWidth + cellWidth(commit.subject + metadata) <= available ? metadata : ''
+  const subject = fitEnd(commit.subject, Math.max(0, available - refWidth - cellWidth(tail)))
+  spans.push({ text: subject })
+  if (tail) spans.push({ text: tail, role: 'muted' })
+  const used = spans.map(s => s.text).join('')
+  spans.push({ text: padEnd('', Math.max(0, width - cellWidth(used) - cellWidth(hash))) }, { text: hash, role: 'muted' })
+  return { spans, connector: lanes(graph.connector ?? '', row.connector ?? '') }
 }

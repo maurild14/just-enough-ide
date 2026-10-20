@@ -78,3 +78,17 @@ test('historical diff returns to its Git origin and preserves selections', () =>
     }
   }
 })
+
+test('comparison has its own back level and selection', () => {
+  let state = reducePane(initialPane('git'), { type: 'select', view: 'git', id: 'graph-selected' })
+  state = reducePane(state, { type: 'branches' })
+  state = reducePane(state, { type: 'select', view: 'git.branches', id: 'branch-feature' })
+  state = reducePane(state, { type: 'compare' })
+  state = reducePane(state, { type: 'select', view: 'git.compare', id: 'compare-file-a.ts' })
+  state = reducePane(state, { type: 'open-diff', path: 'a.ts', source: { kind: 'compare', base: 'a'.repeat(40), head: 'b'.repeat(40) } })
+  for (const view of ['git.compare', 'git.branches', 'git'] as const) {
+    state = reducePane(state, { type: 'back' })
+    expect(currentView(state)).toBe(view)
+  }
+  expect(state.selected).toEqual({ git: 'graph-selected', 'git.branches': 'branch-feature', 'git.compare': 'compare-file-a.ts' })
+})

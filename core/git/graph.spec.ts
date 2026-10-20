@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { cellWidth } from '../shared/fit.ts'
-import { fitGraph, layoutGraph } from './graph.ts'
+import { fitGraph, graphLine, layoutGraph } from './graph.ts'
 import { parseLog, type LogCommit } from './log.ts'
 
 const fixture = (name: string) => parseLog(readFileSync(new URL(`../../test/fixtures/git/log-${name}.txt`, import.meta.url), 'utf8'))
@@ -71,4 +71,39 @@ test('fit uses real cell budgets, keeps the commit and includes the configured e
       else expect(fitted.glyph).toBe('')
     }
   }
+})
+
+test('graph presentation ends with an aligned hash and preserves semantic refs and lane colors', () => {
+  const commits = fixture('merge')
+  const commit = { ...commits[0]!, subject: 'feat: update 界面', refs: [
+    { kind: 'head', name: 'HEAD' }, { kind: 'local', name: 'main' },
+    { kind: 'remote', name: 'origin/main' }, { kind: 'tag', name: 'v1.0' },
+  ] } satisfies LogCommit
+  for (const set of ['unicode', 'ascii'] as const) for (const width of [22, 38, 78, 118]) {
+    const row = layoutGraph([commit], set)[0]!
+    const line = graphLine(commit, row, width, true, commit.time * 1000)
+    const text = line.spans.map(s => s.text).join('')
+    expect(cellWidth(text)).toBe(width)
+    expect(text).toEndWith(commit.hash.slice(0, 7))
+    expect(line.spans.find(s => s.role === 'lane')?.lane).toBe(0)
+    expect(line.connector.some(s => s.role === 'lane' && s.lane === 1)).toBe(true)
+    if (width === 118) for (const role of ['head', 'local', 'remote', 'tag']) expect(line.spans.some(s => s.role === role)).toBe(true)
+  }
+  const row = { hash: commit.hash, column: 5, lanes: 6, glyph: '│ │ │ │ │ ●', connector: '│ │ │ │ │ │' }
+  const clipped = graphLine(commit, row, 22, false, 0)
+  expect(clipped.spans.find(s => s.text === '●')?.lane).toBe(5)
+  expect(clipped.connector.find(s => s.text === '│')?.lane).toBe(4)
+})
+
+test('styled graph spans sanitize every display field without mutating action data', () => {
+  const commit = { ...fixture('linear')[0]!, author: 'Ana\tRivera\u001b', subject: 'fix: 界面\t\u0000', refs: [{ kind: 'remote', name: 'origin/界面\t\u001b' }] } satisfies LogCommit
+  const original = JSON.stringify(commit)
+  for (const width of [22, 38, 78, 118]) {
+    const line = graphLine(commit, layoutGraph([commit], 'unicode')[0]!, width, false, 0)
+    const text = line.spans.map(span => span.text).join('')
+    expect(text).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/)
+    expect(cellWidth(text)).toBe(width)
+    expect(text).toEndWith(commit.hash.slice(0, 7))
+  }
+  expect(JSON.stringify(commit)).toBe(original)
 })

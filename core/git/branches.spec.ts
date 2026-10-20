@@ -1,9 +1,20 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { branchesArgs, compareArgs, compareDiffArgs, createPlan, defaultBase, parseBranches, switchPlan } from './branches.ts'
+import { branchLine, branchesArgs, compareArgs, compareDiffArgs, createPlan, defaultBase, parseBranches, switchPlan } from './branches.ts'
+import { cellWidth } from '../shared/fit.ts'
 
 const hash = 'a'.repeat(40)
 const fixture = () => parseBranches(readFileSync(new URL('../../test/fixtures/git/refs-basic.txt', import.meta.url), 'utf8'))
+
+test('branch display spans preserve semantic identity and bounded tracking columns', () => {
+  for (const width of [22, 38, 78, 118]) for (const branch of fixture()) {
+    const spans = branchLine({ ...branch, name: branch.name + '/界面' }, width)
+    expect(spans[0]?.role).toBe(branch.current ? 'head' : branch.remote ? 'remote' : 'local')
+    expect(spans[1]?.role).toBe('muted')
+    expect(cellWidth(spans.map(span => span.text).join(''))).toBe(width)
+    if (branch.gone) expect(spans[1]?.text).toContain('gone')
+  }
+})
 
 test('branch records sort current/local/remote and retain gone upstream metadata', () => {
   const rows = fixture()

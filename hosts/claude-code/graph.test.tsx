@@ -2,12 +2,84 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, ROOT, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
 
+test('Graph precedes Changes with semantic lanes, distinct refs and right-aligned final hashes', async ($, on) => {
+  const r = await historyWorld($, on, { dirty: true }); r.topology = true
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await historyPane($, 120, 30, surface)
+    const buttons = (await ui.findAll({ type: 'Button' })).map(node => node.key)
+    expect(buttons.indexOf('group-graph')).toBeLessThan(buttons.indexOf('group-changes'))
+    const texts = await ui.findAll({ type: 'Text' })
+    expect(texts.find(node => node.text.includes('[HEAD]'))?.props.color).toBe('suggestion')
+    expect(texts.find(node => node.text.includes('[local main]'))?.props.color).toBe('success')
+    expect(texts.find(node => node.text.includes('[tag v1.0]'))?.props.color).toBe('warning')
+    const row = drawnLine(findKey(await ui.drawn() as Node, `graph-${A}`)!)
+    expect(row).toEndWith('aaaaaaa')
+    expect(row.length).toBe(118)
+    await select($, ui, `graph-${A}`)
+    const selectedTexts = await ui.findAll({ type: 'Text' })
+    expect(selectedTexts.find(node => node.text.includes('[HEAD]'))?.props.inverse).toBe(true)
+    expect(selectedTexts.find(node => node.text.includes('[HEAD]'))?.props.color).toBeUndefined()
+    await ui.press({ key: 'group-graph' })
+    expect(await ui.find({ key: `graph-${A}` })).toBeUndefined()
+    expect(await ui.find({ key: 'group-changes' })).toBeDefined()
+    await ui.press({ key: 'group-graph' })
+    await ui.unmount()
+  }
+})
+
+for (const width of [24, 40, 80, 120]) test(`Back has a shared q shortcut through comparison levels at ${width} by five rows`, async ($, on) => {
+  await historyWorld($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await historyPane($, width, 5, surface)
+    await select($, ui, `graph-${A}`); await ui.press({ key: 'key-b' })
+    await select($, ui, 'branch-refs/heads/feature'); await ui.press({ key: 'key-c' })
+    await ui.press({ key: 'compare-file-src/user.ts' })
+    for (const next of ['compare-file-src/user.ts', 'branch-refs/heads/feature', `graph-${A}`]) {
+      const back = await ui.find({ key: 'back' })
+      expect(back?.text).toBe('Back')
+      expect(back?.props.hotkey).toBe('q')
+      await ui.press({ key: 'back' })
+      expect(await ui.find({ key: next })).toBeDefined()
+      for (const cells of lineWidths(await ui.drawn() as Node)) expect(cells).toBeLessThanOrEqual(width)
+    }
+    await ui.unmount()
+  }
+})
+
+test('hidden inline editor state cannot consume Back from a diff', async ($, on) => {
+  await historyWorld($, on)
+  const ui = await historyPane($, 40, 10)
+  await ui.press({ key: `graph-${A}` })
+  await select($, ui, `graph-${A}`); await ui.press({ key: 'key-n' })
+  await select($, ui, `commit-file-${A}-src/user.ts`)
+  await ui.press({ key: `commit-file-${A}-src/user.ts` })
+  expect((await ui.find({ key: 'back' }))?.props.hotkey).toBe('q')
+  await ui.press({ key: 'back' })
+  expect(await ui.find({ key: 'new-branch' })).toBeDefined()
+  expect(await ui.find({ type: 'Code' })).toBeUndefined()
+  await ui.press({ key: 'branch-input-cancel' })
+})
+
+test('a retained working-tree question cannot consume Back from Branches', async ($, on) => {
+  await historyWorld($, on, { dirty: true })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await historyPane($, 40, 20, surface)
+    await select($, ui, 'change-src/user.ts'); await ui.press({ key: 'key-d' })
+    expect(await ui.find({ key: 'confirm-cancel' })).toBeDefined()
+    await select($, ui, 'group-graph'); await ui.press({ key: 'key-b' })
+    expect((await ui.find({ key: 'back' }))?.props.hotkey).toBe('q')
+    await ui.press({ key: 'back' })
+    expect(await ui.find({ key: 'confirm-cancel' })).toBeDefined()
+    await ui.press({ key: 'confirm-cancel' }); await ui.unmount()
+  }
+})
+
 test('merge topology preserves fork connectors and side-lane positions on both surfaces', async ($, on) => {
   const r = await historyWorld($, on); r.topology = true
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await historyPane($, 80, 30, surface)
-    expect((await ui.find({ key: `connector-${A}` }))?.text).toBe('├─╮')
-    expect(drawnLine(findKey(await ui.drawn() as Node, `graph-${C}`)!)).toContain('│ ● ccccccc')
+    expect((await ui.find({ key: `connector-${A}` }))?.text.trim()).toBe('├─╮')
+    expect(drawnLine(findKey(await ui.drawn() as Node, `graph-${C}`)!)).toMatch(/^│ ● .*ccccccc$/)
     await select($, ui, `graph-${C}`); await ui.redraw(props(24, 5))
     expect(await ui.find({ key: `graph-${C}` })).toBeDefined()
     const widths = lineWidths(await ui.drawn() as Node)

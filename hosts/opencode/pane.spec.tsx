@@ -163,7 +163,7 @@ test('bindings follow focus and the current view, including Esc at short heights
   f.key('2')
   await r.flush()
   const layer = f.layers.map((l) => l()).find((l) => l.commands?.some((c) => c.bind === 'esc'))!
-  expect(layer.commands?.map((c) => c.bind)).toEqual(['1', '2', '3', '4', 'up', 'down', 'enter', 'esc'])
+  expect(layer.commands?.map((c) => c.bind)).toEqual(['1', '2', '3', '4', 'up', 'down', 'enter', 'q', 'esc'])
   expect(f.layers.flatMap((l) => l().commands ?? []).some((c) => c.bind === 'ctrl+n' || c.bind === 'ctrl+p')).toBe(false)
   expect(r.captureCharFrame()).not.toContain('esc')
 })

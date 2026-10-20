@@ -156,6 +156,25 @@ test('f opens the filter and typing ranks the best file first', async ($, on) =>
   }
 })
 
+for (const width of WIDTHS) test(`Back retains the Files filter and q remains editable at ${width} by five rows`, async ($, on) => {
+  await world($, on)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
+    await ui.press({ key: 'key-f' })
+    expect((await ui.find({ key: 'back' }))?.props.hotkey).toBeUndefined()
+    await ui.input({ key: 'filter', text: 'usr', kind: 'submit' })
+    expect((await ui.find({ key: 'back' }))?.props.hotkey).toBe('q')
+    await ui.press({ key: 'back' })
+    expect((await ui.find({ key: 'filter' }))?.props.value).toBe('usr')
+    await ui.input({ key: 'filter', text: 'usrq', kind: 'change' })
+    expect((await ui.find({ key: 'filter' }))?.props.value).toBe('usrq')
+    await ui.press({ key: 'back' })
+    expect(await ui.find({ key: 'filter' })).toBeUndefined()
+    for (const cells of lineWidths(await ui.drawn() as Node)) expect(cells).toBeLessThanOrEqual(width)
+    await ui.unmount()
+  }
+})
+
 test('enter on a file shows its preview; the header goes back', async ($, on) => {
   await world($, on)
   for (const surface of SURFACES) {
@@ -383,7 +402,7 @@ test('follow-agent never takes over an open preview', async ($, on) => {
   await ui.press({ key: 'row-README.md' })
   await $.tool.call({ tool: 'Read', file_path: `${ROOT}/src/api/user.ts` } as never)
   expect((await ui.find({ type: 'Markdown' }))?.text).toContain('# acme-app')
-  expect((await ui.find({ key: 'back' }))?.text).toContain('README.md')
+    expect((await ui.find({ key: 'preview-title' }))?.text).toContain('README.md')
   await ui.press({ key: 'back' })
   expect(await ui.find({ key: 'glow-src/api/user.ts' })).toBeDefined()
   await ui.unmount()

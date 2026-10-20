@@ -25,17 +25,17 @@ Status: current. Defined in `core/host.ts`; the process, file and model half onl
 
 | View | key: action |
 | --- | --- |
-| `files` | `up`: move-up, `down`: move-down, `enter`: activate, `a`: mention, `o`: open-editor, `f`: filter, `h`: toggle-hidden, `esc`: back |
-| `files.preview` | `up`: scroll-up, `down`: scroll-down, `a`: mention, `o`: open-editor, `m`: toggle-markdown-source, `esc`: back |
-| `git` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: stage, `u`: unstage, `d`: discard, `c`: commit, `y`: copy-hash, `a`: ask, `b`: branches, `f`: filter, `t`: fetch, `n`: new-branch, `g`: generate-message, `e`: sync, `esc`: back |
-| `git.branches` | `up`: move-up, `down`: move-down, `enter`: switch, `n`: new-branch, `c`: compare, `f`: filter, `esc`: back |
+| `files` | `up`: move-up, `down`: move-down, `enter`: activate, `a`: mention, `o`: open-editor, `f`: filter, `h`: toggle-hidden, `q` / `esc`: back |
+| `files.preview` | `up`: scroll-up, `down`: scroll-down, `a`: mention, `o`: open-editor, `m`: toggle-markdown-source, `q` / `esc`: back |
+| `git` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: stage, `u`: unstage, `d`: discard, `c`: commit, `y`: copy-hash, `a`: ask, `b`: branches, `f`: filter, `t`: fetch, `n`: new-branch, `g`: generate-message, `e`: sync, `q` / `esc`: back |
+| `git.branches` | `up`: move-up, `down`: move-down, `enter`: switch, `n`: new-branch, `c`: compare, `f`: filter, `q` / `esc`: back |
 | `git.compare` | `up`: move-up, `down`: move-down, `enter`: activate, `q` / `esc`: back |
-| `git.diff` | `up`: scroll-up, `down`: scroll-down, `n`: next-hunk, `p`: prev-hunk, `j`: next-file, `k`: prev-file, `a`: ask-review, `o`: open-editor, `esc`: back |
-| `search`, `symbols` | `up`: move-up, `down`: move-down, `enter`: activate, `esc`: back (more keys arrive in 0.3) |
+| `git.diff` | `up`: scroll-up, `down`: scroll-down, `n`: next-hunk, `p`: prev-hunk, `j`: next-file, `k`: prev-file, `a`: ask-review, `o`: open-editor, `q` / `esc`: back |
+| `search`, `symbols` | `up`: move-up, `down`: move-down, `enter`: activate, `q` / `esc`: back (more keys arrive in 0.3) |
 
 Action names are stable; rename one only with every consumer in the same change.
 
-Every view also defines `q` as the portable Back binding; Esc remains host-reserved on Claude Code. Pane shells show Back using the same handler as the shortcut. Claude `navigation.ts` prioritizes an active question/editor/filter before popping the stack; OpenCode delegates both paths to the active view. Letter commands are suppressed while inputs edit, so `q` stays text. `compare` pushes `git.compare`, with up/down, Enter and Back; each selection survives diff → comparison → Branches → Git. No existing stack migration is needed for the added view.
+Every view also defines `q` as the portable Back binding; Esc remains host-reserved on Claude Code. Pane shells show Back using the same handler as the shortcut. Claude `navigation.ts` prioritizes a visible question/editor/filter before popping the stack; OpenCode delegates both paths to the active view. Letter commands are suppressed while inputs edit, so `q` stays text. `compare` pushes `git.compare`, with up/down, Enter and Back; each selection survives diff → comparison → Branches → Git. No existing stack migration is needed for the added view.
 
 The v0.2 keys are defined in core; see `docs/quality.md` for host availability. `n` in Git creates from the selected graph commit, while Branches creates from HEAD. `PaneState.diff` is `{ source: DiffSource; path: string }`, with working `{ kind: 'working'; staged; untracked }`, commit `{ kind: 'commit'; hash }` or compare `{ kind: 'compare'; base; head }` sources. `open-diff` carries the same fields; `branches` pushes `git.branches`. Diff/back preserves the current Git stack and selection. Both hosts consume all three sources.
 

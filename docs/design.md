@@ -9,7 +9,7 @@ JEI is drawn in character cells. There are no pixels and no fonts to pick, and t
 ## 1. Principles
 
 1. **Text first.** Show names, letters and numbers. Glyphs add meaning only where text would cost more columns.
-2. **Quiet by default.** Use one accent color outside the Git graph. History lanes and reference kinds use a small semantic host palette to make topology readable (ADR 0017). Everything else that isn't selected, changed or active is plain or muted. Draw no boxes.
+2. **Quiet by default.** Use one accent color outside Git history. Graph lanes, reference kinds and Branches names use a small semantic host palette to make topology and provenance readable (ADR 0017). Everything else that isn't selected, changed or active is plain or muted. Draw no boxes.
 3. **Never break.** At any width or height, every line fits, nothing wraps and the selected row stays visible.
 4. **Color is never the only signal.** Every colored state also has a letter, glyph or word, so `NO_COLOR` still works.
 5. **Motion only means "the agent just did this".** The activity shimmer is the only animation.
@@ -36,6 +36,8 @@ Views use semantic tokens only. No view contains a literal RGB, hex or ANSI colo
 | `activity.git` | Shimmer for git actions (green) | green |
 
 Graph lane indices cycle through existing host accents, preserving the original lane column through connector fitting. HEAD/agent, local, remote and tag spans map to distinct semantic host roles in `theme.ts` / `colors.ts`. Badges explicitly say `[HEAD]`, `[local name]`, `[remote name]` and `[tag name]`, so theme colors and `NO_COLOR` never carry their meaning alone. Selected graph rows use the host selection foreground instead of colored spans. The short hash is muted and ends at the final content column.
+
+Branches names reuse HEAD/current, local and remote roles; their `*` marker and Remote heading retain provenance without color. Counts and `gone` remain muted. Selected branch names use the normal readable selection foreground.
 
 Bold is allowed only for the active tab and conflicts. Never use italic, blink or underline for meaning, because many terminals drop them.
 

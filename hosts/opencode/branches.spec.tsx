@@ -2,13 +2,29 @@ import { expect, test } from 'bun:test'
 import { historyFixture, hash, other } from '../../test/opencode-history.tsx'
 import { cellWidth } from '../../core/shared/fit.ts'
 import { hintLine } from '../../core/keys.ts'
+import { paneMemory } from './pane.tsx'
+import { RGBA } from '@opentui/core'
+
+test('Branches names distinguish current, local and remote with host theme colors', async () => {
+  const f = historyFixture(); const r = await f.mount(80, 12)
+  f.key('b'); await r.flush()
+  const [, update] = paneMemory(f.ctx)
+  update(d => { d.panes['session-a']!.selected['git.branches'] = 'branch-refs/heads/feature' }); await r.flush()
+  const spans = r.captureSpans().lines.flatMap(line => line.spans)
+  expect(spans.find(span => span.text.includes('* main'))?.fg).toEqual(RGBA.fromHex('#0000ff'))
+  expect(spans.find(span => span.text.includes('origin/feature'))?.fg).toEqual(RGBA.fromHex('#ff00ff'))
+  update(d => { d.panes['session-a']!.selected['git.branches'] = 'branch-refs/heads/main' }); await r.flush()
+  expect(r.captureSpans().lines.flatMap(line => line.spans).find(span => span.text.includes('  feature'))?.fg).toEqual(RGBA.fromHex('#008000'))
+  f.setWidth(24); r.resize(24, 5); await r.flush()
+  expect(r.captureSpans().lines.flatMap(line => line.spans).find(span => span.text.includes('* main'))?.fg).toEqual(RGBA.fromHex('#ffffff'))
+})
 
 for (const width of [24, 40, 80, 120]) test(`Branches switches, creates, compares and preserves selection at ${width} columns and five rows`, async () => {
   const f = historyFixture(); const r = await f.mount(width, 5)
   const checkFrame = (selected: string, diff = false) => {
     const frame = r.captureCharFrame(); const hint = frame.trimEnd().split('\n').at(-1)!
     expect(frame).toContain(selected)
-    expect(hint).toBe(hintLine(diff ? 'git.diff' : 'git.branches', width))
+    expect(hint).toBe(hintLine(diff ? 'git.diff' : paneMemory(f.ctx)[0].panes['session-a']!.stack.at(-1)!, width))
     expect(r.captureSpans().rows).toBe(5)
     for (const line of frame.split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
   }
@@ -16,19 +32,20 @@ for (const width of [24, 40, 80, 120]) test(`Branches switches, creates, compare
   checkFrame('main')
   f.key('down'); await r.flush(); f.key('enter'); await r.flush()
   expect(f.calls.find(c => c.method === 'switchBranch')?.input).toEqual({ name: 'feature', remote: false, confirmed: false })
-  f.key('c'); await r.flush(); f.key('down'); f.key('down'); await r.flush(); f.key('enter'); await r.flush()
+  f.key('c'); await r.flush(); f.key('enter'); await r.flush()
   expect(f.calls.filter(c => c.method === 'diff').at(-1)?.input).toEqual({ path: 'a.ts', source: { kind: 'compare', base: hash, head: other } })
   checkFrame('a.ts', true)
   f.setWidth(120); r.resize(120, 5); await r.flush(); f.setWidth(width); r.resize(width, 5); await r.flush()
   checkFrame('a.ts', true)
   f.key('j'); await r.flush(); expect(f.calls.filter(c => c.method === 'diff').at(-1)?.input.path).toBe('b.ts')
   checkFrame('b.ts', true)
-  f.key('esc'); await r.flush(); expect(r.captureCharFrame()).toContain('a.ts')
+  f.key('esc'); await r.flush(); expect(r.captureCharFrame()).toContain('b.ts')
   checkFrame('b.ts')
+  f.key('q'); await r.flush()
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected['git.branches']).toBe('branch-refs/heads/feature')
   f.edit('new-topic'); f.key('n'); await r.flush(); expect(f.calls.find(c => c.method === 'createBranch')?.input).toEqual({ name: 'new-topic', confirmed: false })
   f.setWidth(120); r.resize(120, 5); await r.flush(); f.setWidth(width); r.resize(width, 5); await r.flush()
-  expect(r.captureCharFrame()).toContain('a.ts')
-  checkFrame('b.ts')
+  checkFrame('feature')
   for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
   f.key('esc'); await r.flush(); expect(f.calls.some(c => c.method === 'graph')).toBe(true)
 })

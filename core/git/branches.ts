@@ -1,7 +1,20 @@
 import { assertCommitHash } from './commit.ts'
+import type { GraphSpan } from './graph.ts'
+import { cellWidth, fitEnd, fitPath, padEnd } from '../shared/fit.ts'
 
 export type Branch = { name: string; remote: boolean; current: boolean; upstream: string | null; gone: boolean; ahead: number; behind: number; hash: string }
 export type SwitchPlan = { steps: string[][]; confirm: string | null }
+
+/** Keep branch identity separate from aligned, muted tracking metadata. */
+export function branchLine(branch: Branch, width: number): GraphSpan[] {
+  const prefix = fitEnd(`${branch.current ? '*' : ' '} `, width)
+  const counts = fitEnd(` ↑${branch.ahead} ↓${branch.behind}${branch.gone ? ' gone' : ''}`, Math.max(0, width - cellWidth(prefix)))
+  const room = Math.max(0, width - cellWidth(prefix + counts))
+  return [
+    { text: prefix + padEnd(fitPath(branch.name, room), room), role: branch.current ? 'head' : branch.remote ? 'remote' : 'local' },
+    { text: counts, role: 'muted' },
+  ]
+}
 
 export function branchesArgs(): string[] {
   return ['for-each-ref', '--format=%(refname)%00%(objectname)%00%(upstream:short)%00%(upstream:track,nobracket)%00%(HEAD)', 'refs/heads', 'refs/remotes']

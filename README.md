@@ -12,7 +12,7 @@ JEI is a pane with four tabs (Files, Search, Symbols, Git) that sits next to the
 - **Git:** a repository row (branch, Sync with your remote), Changes with stage, unstage and discard (always confirmed), commit, Commit & Push and amend, a ✦ Generate commit message from your own model, and a check before secrets such as `.env` or private keys are committed.
 - **Diff view:** a unified diff that replaces the pane, with hunk and file navigation, Ask about the change, and open in editor.
 - **Graph:** colored lanes and distinct reference badges above Staged and Changes, subjects with right-aligned final hashes, inline changed files, commit diffs, copy hash, Ask, confirmed checkout/revert, supported GitHub/GitLab links, session agent markers, filters and explicit paging. Fetch runs only when requested.
-- **Branches:** local/remote branches, dirty/detached switch confirmation, create from HEAD or a selected commit, and pinned comparisons with the main branch.
+- **Branches:** distinct colors for current, local and remote names, dirty/detached switch confirmation, create from HEAD or a selected commit, and pinned comparisons with the main branch.
 - **Keys:** `1`–`4` switch tabs; every view lists its keys on the last line.
 
 Coming next (see the milestones in [PRD.md §11](PRD.md#11-milestones)):

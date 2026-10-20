@@ -2,7 +2,7 @@ import type { EngineInterface, RenderElement } from 'claude-code'
 import { KEYS } from '../../core/keys.ts'
 import type { Options } from '../../core/options.ts'
 import { openUrlArgv } from '../../core/files/open.ts'
-import { fitGraph, layoutGraph } from '../../core/git/graph.ts'
+import { graphLine, layoutGraph } from '../../core/git/graph.ts'
 import { parseGraphFilter, type LogCommit } from '../../core/git/log.ts'
 import { checkout, commitFiles, createBranch, fetchAll, graph, revert, switchBranch, validBranchName, webUrl } from '../../core/git/service.ts'
 import { GitError } from '../../core/git/run.ts'
@@ -13,7 +13,7 @@ import { onRefresh } from './activity.ts'
 import { busy, runHookAware, type Repo } from './git.tsx'
 import { firstLine, hostFor, type FilesAction, type FilesFrame, type PaneRender } from './files.tsx'
 import { readGit, readGitUi, readHistory, updateGitUi, updateHistory, updatePane } from './state.ts'
-import { color } from './theme.ts'
+import { color, graphColor } from './theme.ts'
 
 export type HistoryItem = { id: string; isRow: boolean; el: RenderElement }
 type Question = Extract<JeiAsk, { kind: 'history' }>
@@ -28,7 +28,7 @@ export function historyKey(view: 'git' | 'git.branches', action: string): string
   return KEYS[view].find((key) => key.action === action)!.key
 }
 
-export async function openHistoryDiff($: EngineInterface, path: string, source: DiffSource, view: 'git' | 'git.branches', id: string): Promise<void> {
+export async function openHistoryDiff($: EngineInterface, path: string, source: DiffSource, view: 'git' | 'git.branches' | 'git.compare', id: string): Promise<void> {
   await updateGitUi($, (u) => ({ ...u, diffTop: 0 }))
   await updatePane($, (s) => reducePane(reducePane(s, { type: 'select', view, id }), { type: 'open-diff', path, source }))
 }
@@ -88,15 +88,7 @@ export function historyConfirmation($: EngineInterface, e: PaneRender, frame: Fi
   ]
 }
 
-function relativeTime(time: number, now: number): string {
-  const seconds = Math.max(0, Math.floor(now / 1000 - time))
-  if (seconds < 60) return 'now'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-  return `${Math.floor(seconds / 86400)}d ago`
-}
-
-export async function renderGraph($: EngineInterface, e: PaneRender, frame: FilesFrame, options: Options, g: Repo, selected: string | undefined) {
+export async function renderGraph($: EngineInterface, e: PaneRender, frame: FilesFrame, options: Options, g: Repo, selected: string | undefined, workingSelection?: string) {
   const { Box, Text, Button } = $.ui.resolve(e)
   const els = $.ui.resolve(e)
   const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : undefined
@@ -108,10 +100,6 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
     items.push({ id, isRow: !!run, el: <Box key={`line-${id}`} flexDirection="row"><Text> </Text>{run ? <Button key={id} plain onPress={run}>{content}</Button> : <Box key={id}>{content}</Box>}</Box> })
   }
   const closed = (await readGitUi($)).collapsed.includes('graph')
-  row('group-graph', `${closed ? '▸' : '▾'} Graph${historyUi.filter ? ' (filtered)' : ''}`, historyAct($, async () => {
-    await updatePane($, (s) => reducePane(s, { type: 'select', view: 'git', id: 'group-graph' }))
-    await updateGitUi($, (u) => ({ ...u, collapsed: closed ? u.collapsed.filter((x) => x !== 'graph') : [...u.collapsed, 'graph'] }))
-  }))
   let commits: LogCommit[] = []
   if (!closed) {
     const key = `${g.root}\0${historyUi.filter}\0${historyUi.pages}\0${options.graphLimit}`
@@ -120,26 +108,17 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
       if (!p) { p = graph(hostFor($, g.root), g.root, parseGraphFilter(historyUi.filter), options.graphLimit * historyUi.pages); cache.set(key, p) }
       const loaded = await p
       commits = loaded.commits
+      selected ??= commits.length ? 'group-graph' : workingSelection ?? 'group-graph'
       const now = commits.length ? await $.clock.now() : 0
       const glyphs = layoutGraph(commits, 'unicode')
       for (let i = 0; i < commits.length; i++) {
         const c = commits[i]!
         const id = `graph-${c.hash}`
-        const cells = Math.max(cellWidth(glyphs[i]!.glyph), cellWidth(glyphs[i]!.connector ?? ''))
-        const glyph = fitGraph(glyphs[i]!, Math.min(cells, Math.max(3, Math.floor(inner / 4))), '…')
-        const prefix = frame.columns < 24 ? '' : `${glyph.glyph} ${historyUi.agents.includes(c.hash) ? '✦ ' : ''}`
-        const hash = c.hash.slice(0, 7)
-        let badges = c.refs.map((r) => r.name).join(' ')
-        let tail = frame.columns >= 60 ? `  ${c.author} ${relativeTime(c.time, now)}` : ''
-        // Badges are optional; preserve the subject's available cells before decoration.
-        if (cellWidth(`${prefix}${hash} ${badges} ${c.subject}${tail}`) > inner) badges = ''
-        if (cellWidth(`${prefix}${hash} ${c.subject}${tail}`) > inner) tail = ''
-        const head = `${prefix}${hash}${badges ? ' ' : ''}`
-        const subject = ` ${fitEnd(c.subject, Math.max(0, inner - cellWidth(head + badges + tail) - 1))}${tail}`
+        const line = graphLine(c, glyphs[i]!, inner, historyUi.agents.includes(c.hash), now)
         items.push({ id, isRow: true, el: <Box key={`line-${id}`} flexDirection="row"><Text> </Text><Button key={id} plain onPress={historyAct($, async () => {
           await updatePane($, (s) => reducePane(s, { type: 'select', view: 'git', id }))
           await updateHistory($, g.root, (historyUi) => ({ ...historyUi, expanded: historyUi.expanded === c.hash ? null : c.hash }))
-        })}><Text inverse={selected === id}>{head}</Text>{badges && <Text inverse={selected === id} color={color('accent')}>{badges}</Text>}<Text inverse={selected === id}>{subject}</Text></Button></Box> })
+        })}>{line.spans.map(span => <Text inverse={selected === id} color={selected === id ? undefined : graphColor(span)} dimColor={selected !== id && span.role === 'muted'}>{span.text}</Text>)}</Button></Box> })
         if (historyUi.expanded === c.hash) {
           try {
             for (const file of await commitFiles(hostFor($, g.root), g.root, c.hash)) {
@@ -157,12 +136,18 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
             }))
           } catch (error) { row(`files-error-${c.hash}`, `Can't list files: ${firstLine(error)}.`, undefined, 'error') }
         }
-        if (glyph.connector && frame.columns >= 24) row(`connector-${c.hash}`, glyph.connector)
+        if (line.connector.length) items.push({ id: `connector-${c.hash}`, isRow: false, el: <Box key={`connector-${c.hash}`} flexDirection="row"><Text> </Text>{line.connector.map(span => <Text color={graphColor(span)} dimColor={span.role === 'muted'}>{span.text}</Text>)}</Box> })
       }
       if (loaded.more) row('graph-more', 'Load more', historyAct($, () => updateHistory($, g.root, (historyUi) => ({ ...historyUi, pages: historyUi.pages + 1 }))))
       if (!commits.length) row('graph-empty', historyUi.filter ? 'No commits match this filter.' : 'No commits yet.', undefined, 'muted')
     } catch (error) { row('graph-error', `Can't load history: ${firstLine(error)}.`, undefined, 'error') }
   }
+  selected ??= closed ? 'group-graph' : workingSelection ?? 'group-graph'
+  row('group-graph', `${closed ? '▸' : '▾'} Graph${historyUi.filter ? ' (filtered)' : ''}`, historyAct($, async () => {
+    await updatePane($, (s) => reducePane(s, { type: 'select', view: 'git', id: 'group-graph' }))
+    await updateGitUi($, (u) => ({ ...u, collapsed: closed ? u.collapsed.filter((x) => x !== 'graph') : [...u.collapsed, 'graph'] }))
+  }))
+  items.unshift(items.pop()!)
   const selectedCommit = commits.find((c) => selected === `graph-${c.hash}`)
   const actions: FilesAction[] = []
   const action = (name: string, fn: () => Promise<unknown>) => actions.push({ key: historyKey('git', name), run: historyAct($, fn) })
@@ -178,5 +163,5 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
   if (historyUi.filtering && Input) pinned.push(<Box key="graph-filter-row" flexDirection="row"><Text> </Text><Input key="graph-filter" placeholder="Filter: text, author:, path:, branch:*" value={historyUi.draft}
     onInput={(draft: string) => historyAct($, () => updateHistory($, g.root, (historyUi) => ({ ...historyUi, draft })))()}
     onSubmit={(filter: string) => historyAct($, async () => { await updateHistory($, g.root, (historyUi) => ({ ...historyUi, filter, draft: filter, filtering: false, pages: 1 })); await updatePane($, (s) => ({ ...s, selected: { ...s.selected, git: 'group-graph' } })) })()} /></Box>)
-  return { items, actions, pinned, commitSelected: !!selectedCommit, contextual: /^(graph-|group-graph$|commit-file-|checkout-|revert-|web-)/.test(selected ?? '') }
+  return { items, actions, pinned, commitSelected: !!selectedCommit, defaultSelection: commits.length || closed ? 'group-graph' : workingSelection ?? 'group-graph' }
 }

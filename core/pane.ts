@@ -27,6 +27,7 @@ export type PaneAction =
   | { type: 'tab'; tab: Tab }
   | { type: 'open-diff'; source: DiffSource; path: string }
   | { type: 'branches' }
+  | { type: 'compare' }
   | { type: 'preview'; rel: string }
   | { type: 'back' }
   | { type: 'select'; view: View; id: string }
@@ -67,6 +68,8 @@ export function reducePane(s: PaneState, a: PaneAction): PaneState {
       }
     case 'branches':
       return { tab: 'git', stack: push(s, 'git', 'git.branches'), selected: s.selected }
+    case 'compare':
+      return { tab: 'git', stack: push(s, 'git', 'git.compare'), selected: s.selected }
     case 'back': {
       if (s.stack.length <= 1) return s
       const stack = s.stack.slice(0, -1)

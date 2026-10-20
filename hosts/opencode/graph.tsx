@@ -1,7 +1,7 @@
 import type { RpcClient } from '@opencode/client'
 import type { Plugin } from '@opencode/plugin/tui'
 import { createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js'
-import { fitGraph, layoutGraph } from '../../core/git/graph.ts'
+import { graphLine, layoutGraph, type GraphSpan } from '../../core/git/graph.ts'
 import type { LogCommit } from '../../core/git/log.ts'
 import type { CommitFile } from '../../core/git/commit.ts'
 import { latest } from '../../core/latest.ts'
@@ -10,9 +10,10 @@ import { cellWidth, fitEnd, fitPath } from '../../core/shared/fit.ts'
 import { insideRel, joinPath } from '../../core/shared/paths.ts'
 import { handToAgent } from './hand-off.ts'
 import type { JeiRpc } from './rpc.ts'
+import { graphColor } from './colors.ts'
 
 type Commit = LogCommit & { agent: boolean }
-export type HistoryRow = { id: string; text: string; accent?: string; muted?: boolean; error?: boolean; activate?: () => Promise<void> | void }
+export type HistoryRow = { id: string; text: string; spans?: GraphSpan[]; muted?: boolean; error?: boolean; activate?: () => Promise<void> | void }
 export type Comparison = { source: Extract<DiffSource, { kind: 'compare' }>; files: CommitFile[]; label: string }
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid history reply.')
@@ -108,17 +109,8 @@ export function createGraph(props: HistoryProps) {
     if (!loaded()) { rows.push({ id: 'graph-loading', text: 'Loading…', muted: true }); return rows }
     const commits = loaded()!.commits; const glyphs = layoutGraph(commits, 'unicode'); const inner = props.width - 2
     commits.forEach((c, index) => {
-      const cells = Math.max(cellWidth(glyphs[index]!.glyph), cellWidth(glyphs[index]!.connector ?? ''))
-      const g = fitGraph(glyphs[index]!, Math.min(cells, Math.max(3, Math.floor(inner / 4))), '…')
-      const prefix = props.width < 24 ? '' : `${g.glyph} ${c.agent ? '✦ ' : ''}`
-      const head = prefix + c.hash.slice(0, 7)
-      let badges = c.refs.map(ref => ref.name).join(' ')
-      const seconds = Math.max(0, Date.now() / 1000 - c.time)
-      const time = seconds < 60 ? 'now' : seconds < 3600 ? `${Math.floor(seconds / 60)}m ago` : seconds < 86400 ? `${Math.floor(seconds / 3600)}h ago` : `${Math.floor(seconds / 86400)}d ago`
-      let tail = props.width >= 60 ? `  ${c.author} ${time}` : ''
-      if (cellWidth(`${head} ${badges} ${c.subject}${tail}`) > inner) badges = ''
-      if (cellWidth(`${head} ${c.subject}${tail}`) > inner) tail = ''
-      rows.push({ id: `graph-${c.hash}`, text: `${head}${badges ? ' ' + badges : ''} ${fitEnd(c.subject, Math.max(0, inner - cellWidth(head + (badges ? ' ' + badges : '') + tail) - 1))}${tail}`, accent: badges,
+      const line = graphLine(c, glyphs[index]!, inner, c.agent, Date.now())
+      rows.push({ id: `graph-${c.hash}`, text: line.spans.map(s => s.text).join(''), spans: line.spans,
         activate: () => update(d => { d.expanded = d.expanded === c.hash ? null : c.hash }) })
       if (ui().expanded === c.hash) {
         if (pending()) rows.push({ id: `files-loading-${c.hash}`, text: 'Loading…', muted: true })
@@ -131,7 +123,7 @@ export function createGraph(props: HistoryProps) {
         for (const method of ['checkout', 'revert'] as const) rows.push({ id: `${method}-${c.hash}`, text: method === 'checkout' ? 'Checkout' : 'Revert', activate: () => props.perform(method === 'checkout' ? 'Checkout' : 'Revert', () => historyAction(props, method, { hash: c.hash })) })
         if (url()) rows.push({ id: `web-${c.hash}`, text: `Open on ${url()!.startsWith('https://github.com/') ? 'GitHub' : 'GitLab'}`, activate: () => props.perform('Open link', async () => { await props.api.openWeb({ hash: c.hash }) }) })
       }
-      if (g.connector && props.width >= 24) rows.push({ id: `connector-${c.hash}`, text: g.connector, muted: true })
+      if (line.connector.length) rows.push({ id: `connector-${c.hash}`, text: line.connector.map(s => s.text).join(''), spans: line.connector })
     })
     if (loaded()!.more) rows.push({ id: 'graph-more', text: 'Load more', activate: () => update(d => { d.pages++ }) })
     if (!commits.length) rows.push({ id: 'graph-empty', text: ui().filter ? 'No commits match this filter.' : 'No commits yet.', muted: true })
@@ -148,13 +140,12 @@ export function createGraph(props: HistoryProps) {
     if (action === 'new-branch') { await props.perform('Create branch', () => newBranch(props, commit.hash)); return true }
     return false
   }
-  return { rows, run, files, ui, ready: loaded, pending }
+  return { rows, run, files, ui, ready: loaded, settled: () => !!loaded() || !!error(), pending }
 }
 
-export function Graph(props: { row: HistoryRow; ctx: Plugin.Context; width: number; activate: () => void }) {
+export function Graph(props: { row: HistoryRow; ctx: Plugin.Context; width: number; selected?: boolean; activate: () => void }) {
   const text = () => fitEnd(props.row.text, props.width - 2)
-  const at = () => props.row.accent ? text().indexOf(props.row.accent) : -1
   return <text height={1} width={props.width} fg={props.row.error ? props.ctx.theme.text.feedback.error.base : props.row.muted ? props.ctx.theme.text.muted : props.ctx.theme.text.base} onMouseDown={props.activate}>
-    {' '}{at() < 0 ? text() : <>{text().slice(0, at())}<span style={{ fg: props.ctx.theme.text.action.primary.base }}>{props.row.accent}</span>{text().slice(at() + props.row.accent!.length)}</>}
+    {' '}{props.row.spans ? props.row.spans.map(span => <span style={{ fg: props.selected ? props.ctx.theme.text.base : graphColor(props.ctx, span) }}>{span.text}</span>) : text()}
   </text>
 }

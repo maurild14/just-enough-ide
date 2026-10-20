@@ -34,6 +34,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 | Native history UI or tool attribution integration | `docs/decisions/0014-native-history-views-and-attribution.md` |
 | OpenCode history RPC, schema validation or native history dialogs | `docs/decisions/0015-opencode-history-rpc-and-native-dialogs.md` |
 | Host graph budgets, contextual Sync or URL opening | `docs/decisions/0016-history-cell-budgets-and-action-reachability.md` |
+| Colored history, right-aligned hashes or shared Back navigation | `docs/decisions/0017-colored-history-and-shared-back-navigation.md` |
 | Checking what is built and known debt | `docs/quality.md` |
 | Preparing a release (manual QA, release pipeline) | `docs/qa.md`, `CONTRIBUTING.md` |
 | Changing a rule or a past decision | `docs/decisions/README.md` |

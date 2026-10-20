@@ -2,6 +2,24 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { lineWidths, type Node } from './measure.ts'
 
+test('Branches names use semantic current, local and remote colors on both surfaces', async ($, on) => {
+  await historyWorld($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await historyPane($, 80, 20, surface)
+    await select($, ui, `graph-${A}`); await ui.press({ key: 'key-b' })
+    await select($, ui, 'branch-refs/heads/feature')
+    let texts = await ui.findAll({ type: 'Text' })
+    expect(texts.find(node => node.text.includes('* main'))?.props.color).toBe('suggestion')
+    expect(texts.find(node => node.text.includes('origin/main'))?.props.color).toBe('autoAccept')
+    await select($, ui, 'branch-refs/heads/main')
+    texts = await ui.findAll({ type: 'Text' })
+    expect(texts.find(node => node.text.includes('  feature'))?.props.color).toBe('success')
+    expect(texts.find(node => node.text.includes('* main'))?.props.inverse).toBe(true)
+    expect(texts.find(node => node.text.includes('* main'))?.props.color).toBeUndefined()
+    await ui.press({ key: 'back' }); await ui.unmount()
+  }
+})
+
 test('branches errors and empty rows use semantic Text props and a single period', async ($, on) => {
   const r = await historyWorld($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -38,6 +56,7 @@ for (const width of [24, 40, 80, 120]) test(`branches switch, create, compare an
   expect((await ui.find({ type: 'Code' }))?.text).toContain('+after')
   await ui.press({ key: 'key-j' }); await ui.press({ key: 'key-k' }); await ui.press({ key: 'back' })
   expect(await ui.find({ key: 'compare-file-src/user.ts' })).toBeDefined()
+  await ui.press({ key: 'back' })
   await select($, ui, 'branch-refs/heads/feature'); await ui.redraw(props(width, 5))
   expect(await ui.find({ key: 'branch-refs/heads/feature' })).toBeDefined(); expect(await ui.find({ key: 'hint' })).toBeDefined()
   for (const w of lineWidths(await ui.drawn() as Node)) expect(w).toBeLessThanOrEqual(width)

@@ -798,10 +798,10 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     ...(groups.changes.length > 0 ? [`${GROUP_PREFIX}changes`, ...(ui.collapsed.includes('changes') ? [] : groups.changes.map((r) => r.id))] : []),
   ]
   const wanted = pane.selected.git
-  const firstFile = selectable.find((id) => !id.startsWith(GROUP_PREFIX))
-  const graphView = await renderGraph($, e, frame, options, g, wanted ?? firstFile ?? 'group-graph')
-  selectable.push(...graphView.items.filter((i) => i.isRow).map((i) => i.id))
-  const selected = wanted !== undefined && selectable.includes(wanted) ? wanted : (firstFile ?? selectable[0])
+  const firstFile = selectable.find(id => !id.startsWith(GROUP_PREFIX))
+  const graphView = await renderGraph($, e, frame, options, g, wanted, firstFile)
+  selectable.unshift(...graphView.items.filter((i) => i.isRow).map((i) => i.id))
+  const selected = wanted !== undefined && selectable.includes(wanted) ? wanted : graphView.defaultSelection
   const list = await gitList($)
   list.ids = selectable
   list.selected = selected
@@ -891,6 +891,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     )
   }
 
+  items.push(...graphView.items)
   for (const group of ['staged', 'changes'] as const) {
     const rows = groups[group]
     if (rows.length === 0) continue
@@ -898,7 +899,6 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     if (ui.collapsed.includes(group)) continue
     for (const r of rows) items.push({ id: r.id, isRow: true, el: fileRow(r) })
   }
-  items.push(...graphView.items)
 
   const workingActions: FilesAction[] = [
     { key: 's', run: act($, () => keyStage($)) },
@@ -908,7 +908,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     { key: 'g', run: act($, () => generate($, options)) },
     { key: 'e', run: act($, () => syncNow($)) },
   ]
-  const actions = graphView.pinned.length ? [] : graphView.contextual
+  const actions = graphView.pinned.length ? [] : /^(graph-|group-graph$|commit-file-|checkout-|revert-|web-)/.test(selected ?? '')
     ? [...graphView.actions, ...(graphView.commitSelected ? [] : workingActions.filter(a => a.key === 'e'))]
     : workingActions
 

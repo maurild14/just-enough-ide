@@ -10,6 +10,7 @@ import { renderFiles, type FilesAction } from './files.tsx'
 import { renderGit } from './git.tsx'
 import { renderBranches } from './branches.tsx'
 import { readCwd, readPane, updatePane } from './state.ts'
+import { backContext, goBack } from './navigation.ts'
 
 export type PaneRender = RenderInput<'Pane'>
 
@@ -26,7 +27,7 @@ function rootName(dir: string): string {
 /** Header text for a view: what the body is about. */
 function headerOf(view: View, root: string): string {
   if (view === 'files' || view === 'files.preview') return rootName(root)
-  if (view === 'git' || view === 'git.diff' || view === 'git.branches') return TAB_NAMES.git
+  if (view === 'git' || view === 'git.diff' || view === 'git.branches' || view === 'git.compare') return TAB_NAMES.git
   return TAB_NAMES[view]
 }
 
@@ -107,6 +108,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const state = await readPane($)
   const root = await readCwd($)
   const view = currentView(state)
+  const back = await backContext($)
   const columns = Math.max(0, Math.floor(e.props.bodyColumns))
   const rows = e.props.scroll.bodyRows
   // Column 0 is the gutter and the last column stays empty (design.md section 4).
@@ -116,7 +118,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const bar = tabBar(columns, room, state.tab, BUTTON_CHROME)
 
   const isFiles = view === 'files' || view === 'files.preview'
-  const isGit = view === 'git' || view === 'git.diff' || view === 'git.branches'
+  const isGit = state.tab === 'git'
   // Letter keys live on the hint's Buttons, so a view with letter actions keeps
   // its hint (bare below 10 rows) down to 3 rows (docs/design.md section 6).
   const showHint = isFiles || isGit ? rows >= 3 : rows >= 10
@@ -124,8 +126,9 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const showRule = rows >= 8
   const showHeader = rows >= 6
   const showBar = rows >= 3
+  const showBack = back.active && !back.inline && rows >= 3
 
-  const pinned = (showBar ? 1 : 0) + (showRule ? 1 : 0) + (showHeader ? 1 : 0) + (showHint ? 1 : 0)
+  const pinned = (showBar ? 1 : 0) + (showRule ? 1 : 0) + (showHeader ? 1 : 0) + (showHint ? 1 : 0) + (showBack ? 1 : 0)
   const frame = { columns, inner, bodyRows: Math.max(1, rows - pinned), isFocused: e.props.isFocused }
   // Tabs that draw their own header, body and letter actions.
   const content = isFiles
@@ -134,7 +137,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
       ? await renderGit($, e, frame, options)
       : view === 'git.diff'
         ? await renderDiff($, e, frame, options)
-        : view === 'git.branches' ? await renderBranches($, e, frame) : null
+        : view === 'git.branches' || view === 'git.compare' ? await renderBranches($, e, frame) : null
 
   const hintRow = (): RenderElement => {
     if (content === null) {
@@ -195,6 +198,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
       {showHeader && (
         <Box key="header">{content ? content.header : <Text wrap="truncate-end">{row(headerOf(view, root))}</Text>}</Box>
       )}
+      {showBack && <Box key="back-row" flexDirection="row"><Text> </Text><Button key="back" plain hotkey={back.editing ? undefined : KEYS[view].find(key => key.action === 'back')!.key} label="Back" onPress={() => { void goBack($).catch(err => $.ui.log(`jei: back failed: ${String(err)}`)) }} /></Box>}
       <Box flexDirection="column" flexGrow={1}>
         {content
           ? content.body

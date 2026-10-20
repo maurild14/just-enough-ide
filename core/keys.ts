@@ -1,12 +1,13 @@
 export type Tab = 'files' | 'search' | 'symbols' | 'git'
-export type View = 'files' | 'files.preview' | 'search' | 'symbols' | 'git' | 'git.diff' | 'git.branches'
+export type View = 'files' | 'files.preview' | 'search' | 'symbols' | 'git' | 'git.diff' | 'git.branches' | 'git.compare'
 export type Key = { key: string; action: string; label: string }
 
 const up: Key = { key: 'up', action: 'move-up', label: 'move' }
 const down: Key = { key: 'down', action: 'move-down', label: 'move' }
 const scrollUp: Key = { key: 'up', action: 'scroll-up', label: 'scroll' }
 const scrollDown: Key = { key: 'down', action: 'scroll-down', label: 'scroll' }
-const back: Key = { key: 'esc', action: 'back', label: 'back' }
+const back: Key = { key: 'q', action: 'back', label: 'back' }
+const escape: Key = { key: 'esc', action: 'back', label: 'back' }
 
 // Order is priority: the hint line drops items from the end first.
 // Search and Symbols only carry navigation until their milestones (0.3, 0.4).
@@ -19,7 +20,7 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     { key: 'o', action: 'open-editor', label: 'open in editor' },
     { key: 'f', action: 'filter', label: 'filter' },
     { key: 'h', action: 'toggle-hidden', label: 'hidden' },
-    back,
+    back, escape,
   ],
   'files.preview': [
     scrollUp,
@@ -27,10 +28,10 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     { key: 'a', action: 'mention', label: 'mention' },
     { key: 'o', action: 'open-editor', label: 'open in editor' },
     { key: 'm', action: 'toggle-markdown-source', label: 'source' },
-    back,
+    back, escape,
   ],
-  search: [up, down, { key: 'enter', action: 'activate', label: 'open' }, back],
-  symbols: [up, down, { key: 'enter', action: 'activate', label: 'open' }, back],
+  search: [up, down, { key: 'enter', action: 'activate', label: 'open' }, back, escape],
+  symbols: [up, down, { key: 'enter', action: 'activate', label: 'open' }, back, escape],
   git: [
     up,
     down,
@@ -47,7 +48,7 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     { key: 'n', action: 'new-branch', label: 'new branch' },
     { key: 'g', action: 'generate-message', label: 'generate' },
     { key: 'e', action: 'sync', label: 'sync' },
-    back,
+    back, escape,
   ],
   'git.branches': [
     up, down,
@@ -55,8 +56,9 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     { key: 'n', action: 'new-branch', label: 'new' },
     { key: 'c', action: 'compare', label: 'compare' },
     { key: 'f', action: 'filter', label: 'filter' },
-    back,
+    back, escape,
   ],
+  'git.compare': [up, down, { key: 'enter', action: 'activate', label: 'open' }, back, escape],
   'git.diff': [
     scrollUp,
     scrollDown,
@@ -66,7 +68,7 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     { key: 'k', action: 'prev-file', label: 'prev file' },
     { key: 'a', action: 'ask-review', label: 'ask' },
     { key: 'o', action: 'open-editor', label: 'open in editor' },
-    back,
+    back, escape,
   ],
 }
 

@@ -5,7 +5,7 @@
 // (hosts/claude-code/state.ts). Every value is JSON data.
 
 export type JeiTab = 'files' | 'search' | 'symbols' | 'git'
-export type JeiView = 'files' | 'files.preview' | 'search' | 'symbols' | 'git' | 'git.diff' | 'git.branches'
+export type JeiView = 'files' | 'files.preview' | 'search' | 'symbols' | 'git' | 'git.diff' | 'git.branches' | 'git.compare'
 
 export type JeiDiffSource =
   | { kind: 'working'; staged: boolean; untracked: boolean }

@@ -84,7 +84,7 @@ async function stepFile($: EngineInterface, by: 1 | -1): Promise<void> {
     const files = source.kind === 'commit' ? await commitFiles(host, g.root, source.hash) : await compare(host, g.root, source.base, source.head)
     const next = files[files.findIndex((file) => file.path === d.path) + by]
     if (!next) { $.ui.toast(by > 0 ? 'This is the last file.' : 'This is the first file.'); return }
-    const view = source.kind === 'commit' ? 'git' : 'git.branches'
+    const view = source.kind === 'commit' ? 'git' : 'git.compare'
     const id = source.kind === 'commit' ? `commit-file-${source.hash}-${next.path}` : `compare-file-${next.path}`
     await updateGitUi($, (u) => ({ ...u, diffTop: 0 }))
     await updatePane($, (s) => reducePane(reducePane(s, { type: 'select', view, id }), { type: 'open-diff', path: next.path, source }))
@@ -141,7 +141,7 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
     const header = (
       <Box flexDirection="row">
         <Text>{inner > 0 ? ' ' : ''}</Text>
-        <Button key="back" plain onPress={back} label={fitEnd('Git', inner)} />
+        <Button key="diff-title" plain onPress={back} label={fitEnd('Git', inner)} />
       </Box>
     )
     return { header, body: [line('No diff to show.', { dim: true }, 'notice')], actions: [] }
@@ -163,7 +163,7 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
   const header = (
     <Box flexDirection="row">
       <Text>{inner > 0 ? ' ' : ''}</Text>
-      <Button key="back" plain onPress={back}>
+      <Button key="diff-title" plain onPress={back}>
         <Text>{d.source.kind === 'working' ? fitPath(d.path, Math.max(0, pathRoom())) : fitEnd(source, inner)}</Text>
         {d.source.kind === 'working' && showSource && <Text dimColor>{` · ${source}`}</Text>}
         {d.source.kind === 'working' && showCounts && <Text color={color('added')}>{`  ${plus}`}</Text>}

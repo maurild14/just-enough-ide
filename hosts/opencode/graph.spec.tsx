@@ -5,6 +5,64 @@ import { paneMemory } from './pane.tsx'
 import { cellWidth } from '../../core/shared/fit.ts'
 import { hintLine, KEYS } from '../../core/keys.ts'
 
+test('colored history rows end with hashes and precede working groups', async () => {
+  const f = historyFixture()
+  f.handlers.graph = async () => ({ commits: [{ ...commit, refs: [
+    { kind: 'head', name: 'HEAD' }, { kind: 'local', name: 'main' },
+    { kind: 'remote', name: 'origin/main' }, { kind: 'tag', name: 'v1' },
+  ] }], more: false })
+  const r = await f.mount(120, 24)
+  const frame = r.captureCharFrame()
+  expect(frame.indexOf('Graph')).toBeLessThan(frame.indexOf('Staged'))
+  const line = r.captureSpans().lines.find(line => line.spans.some(span => span.text.includes('1111111')))!
+  expect(line.spans.map(span => span.text).join('').trimEnd()).toEndWith('1111111')
+  expect(line.spans.find(span => span.text.includes('[local main]'))?.fg).toEqual(RGBA.fromHex('#008000'))
+  expect(line.spans.find(span => span.text.includes('[remote origin/main]'))?.fg).toEqual(RGBA.fromHex('#ff00ff'))
+})
+
+test('visible Back and q return through diff, comparison, branches and Graph one level at a time', async () => {
+  const f = historyFixture(); const r = await f.mount(24, 5)
+  f.key('b'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Back')
+  f.key('down'); await r.flush(); f.key('c'); await r.flush()
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.stack).toEqual(['git', 'git.branches', 'git.compare'])
+  f.key('enter'); await r.flush()
+  for (const view of ['git.compare', 'git.branches', 'git'] as const) {
+    expect(r.captureCharFrame()).toContain('Back')
+    f.key('q'); await r.flush()
+    expect(paneMemory(f.ctx)[0].panes['session-a']!.stack.at(-1)).toBe(view)
+  }
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected['git.branches']).toBe('branch-refs/heads/feature')
+})
+
+for (const input of ['keyboard', 'mouse'] as const) test(`Back survives a failed state refresh via ${input}`, async () => {
+  const f = historyFixture(); const r = await f.mount(24, 5)
+  f.key('b'); await r.flush()
+  f.handlers.state = async () => { throw new Error('State unavailable.') }
+  f.changed(); await r.flush()
+  expect(r.captureCharFrame()).toContain('State unavailable.')
+  expect(r.captureCharFrame()).toContain('q Back')
+  if (input === 'keyboard') f.key('q')
+  else {
+    const lines = r.captureCharFrame().split('\n'); const y = lines.findIndex(line => line.includes('Back'))
+    await r.mockMouse.click(lines[y]!.indexOf('Back') + 1, y)
+  }
+  await r.flush()
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.stack).toEqual(['git'])
+})
+
+test('a full Graph page collapses so working changes remain reachable', async () => {
+  const f = historyFixture()
+  f.handlers.graph = async () => ({ commits: Array.from({ length: 200 }, (_, i) => ({ ...commit, hash: i.toString(16).padStart(40, '0'), parents: [], refs: [], subject: `Change ${i}` })), more: false })
+  const r = await f.mount(24, 5)
+  expect(r.captureCharFrame()).toContain('Graph')
+  f.key('enter'); await r.flush()
+  f.key('down'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Staged')
+  f.key('down'); await r.flush(); f.key('u'); await r.flush()
+  expect(f.calls.some(call => call.method === 'unstage')).toBe(true)
+})
+
 test('merge topology preserves fork connectors and side-lane positions through narrow resize', async () => {
   const f = historyFixture(); const [, update] = paneMemory(f.ctx)
   const left = '2'.repeat(40); const right = '3'.repeat(40); const parent = '4'.repeat(40)
@@ -16,10 +74,10 @@ test('merge topology preserves fork connectors and side-lane positions through n
   ], more: false })
   const r = await f.mount(80, 24)
   expect(r.captureCharFrame()).toContain('├─╮')
-  expect(r.captureCharFrame()).toContain('│ ● 3333333')
+  expect(r.captureCharFrame().split('\n').find(line => line.includes('3333333'))?.trim()).toMatch(/^│ ● .*3333333$/)
   update(d => { d.panes['session-a']!.selected.git = `graph-${right}` })
   f.setWidth(24); r.resize(24, 5); await r.flush()
-  expect(r.captureCharFrame()).toContain('│ ● 3333333')
+  expect(r.captureCharFrame().split('\n').find(line => line.includes('3333333'))?.trim()).toMatch(/^│ ● .*3333333$/)
   expect(r.captureSpans().rows).toBe(5)
   for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(24)
 })
