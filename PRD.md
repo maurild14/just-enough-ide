@@ -459,6 +459,9 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - TypeScript plugin stack with no build step and zero runtime dependencies.
 
 **Calls made by the spec author (review these)**
+- v0.2 toolbar simplification: Fetch (`t`) and Filter (`f`); pull/push remain in Sync (`e`) and the existing Commit & Push path. Refresh is automatic.
+- v0.2 revert simplification: merge commits are refused with `Reverting a merge commit is not supported.`
+- OpenCode history uses native editable filter/branch dialogs and session-aware RPC with pinned comparison hashes; installed schema patterns are unsupported, so handlers enforce the exact hash regex. See ADR 0015.
 - Host-independent `core/` with a `Host` interface; both adapters are thin. A feature ships on both hosts or on neither.
 - The repo root is both the Claude Code plugin and the OpenCode npm package.
 - On OpenCode, git, rg and file work run in the server entry; the TUI only draws (works with remote servers).

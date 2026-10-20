@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { A, historyPane, historyWorld, props, select } from './history-fixture.ts'
+import { A, B, C, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { lineWidths, type Node } from './measure.ts'
 
 for (const width of [24, 40, 80, 120]) test(`branches switch, create, compare and short resize at ${width}`, async ($, on) => {
@@ -37,6 +37,16 @@ test('compare without main shows the specified notice', async ($, on) => {
   await select($, ui, `graph-${A}`); await ui.press({ key: 'key-b' })
   await ui.press({ key: 'key-c' })
   expect(r.toasts.at(-1)).toBe('No main branch to compare with.')
+})
+
+for (const surface of ['terminal', 'desktop'] as const) test(`compare preserves the custom remote main base on ${surface}`, async ($, on) => {
+  const r = await historyWorld($, on)
+  r.originHead = 'refs/remotes/main'; r.remoteRef = 'main'; r.remoteHash = C
+  const ui = await historyPane($, 40, 10, surface)
+  await select($, ui, `graph-${A}`); await ui.press({ key: 'key-b' })
+  await select($, ui, 'branch-refs/heads/feature'); await ui.press({ key: 'key-c' })
+  expect(r.runs.some(argv => argv.includes(`${C}...${B}`))).toBe(true)
+  expect((await ui.find({ key: 'compare-heading' }))?.text).toContain('Compared with main')
 })
 
 for (const surface of ['terminal', 'desktop'] as const) test(`dirty switch suspends and restores the filter within five rows on ${surface}`, async ($, on) => {

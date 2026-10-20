@@ -8,11 +8,13 @@ import { cellWidth, fitEnd, fitPath, padEnd } from '../../core/shared/fit.ts'
 import { insideRel, joinPath, toPosix } from '../../core/shared/paths.ts'
 import { handToAgent } from './hand-off.ts'
 import { Diff } from './diff.tsx'
+import { createGraph, Graph, historyError, readFiles, type HistoryRow } from './graph.tsx'
+import { Branches } from './branches.tsx'
 import type { JeiRpc } from './rpc.ts'
 
 const STATUS: Record<FileStatus, string> = { modified: 'M', added: 'A', deleted: 'D', renamed: 'R', untracked: 'U', conflicted: 'C', ignored: '' }
 type Group = 'staged' | 'changes'
-type Row = { id: string; path?: string; status?: FileStatus; group?: Group; added?: number | null; removed?: number | null }
+type Row = { id: string; path?: string; status?: FileStatus; group?: Group; added?: number | null; removed?: number | null; history?: HistoryRow }
 const MODES: readonly { value: CommitMode; title: string }[] = [
   { value: 'commit', title: 'Commit' }, { value: 'commit-push', title: 'Commit & Push' }, { value: 'amend', title: 'Commit (amend)' },
 ]
@@ -44,7 +46,7 @@ function readGit(raw: unknown, cwd: string) {
 
 export function Git(props: {
   ctx: Plugin.Context; api: RpcClient<typeof JeiRpc>; sessionID: string; cwd: string; git: Record<string, unknown>
-  state: PaneState; dispatch: (action: PaneAction) => void; revision: number; refresh: () => Promise<void>; smartCommit: boolean
+  state: PaneState; dispatch: (action: PaneAction) => void; revision: number; refresh: () => Promise<void>; smartCommit: boolean; graphLimit: number
   width: number; height: number; header: boolean; focused: boolean; bind: (run: (action: string) => void, editing: () => boolean) => void
 }) {
   const draft = createMemo(() => props.ctx.storage.memory<{ message: string; mode: CommitMode; busy: string }>(`jei.git.${props.sessionID}`, { initial: { message: '', mode: 'commit', busy: '' } }))
@@ -59,7 +61,9 @@ export function Git(props: {
   const setMode = (mode: CommitMode) => draft()[1]((d) => { d.mode = mode })
   const [editing, setEditing] = createSignal(false)
   let diffAction: (action: string) => void = () => {}
+  let branchesAction: (action: string) => void = () => {}
   const isDiff = () => currentView(props.state) === 'git.diff' && props.state.diff !== undefined
+  const isBranches = () => currentView(props.state) === 'git.branches'
   const [collapsed, setCollapsed] = createSignal<ReadonlySet<Group>>(new Set())
   const selected = () => props.state.selected.git
   const theme = () => props.ctx.theme
@@ -81,6 +85,12 @@ export function Git(props: {
     for (const rows of Object.values(result)) rows.sort((a, b) => a.path! < b.path! ? -1 : a.path! > b.path! ? 1 : 0)
     return result
   })
+  const historyProps = {
+    get ctx() { return props.ctx }, get api() { return props.api }, get sessionID() { return props.sessionID },
+    get root() { return repo().value?.root ?? props.cwd }, get cwd() { return props.cwd }, get revision() { return props.revision }, get width() { return props.width }, active: () => !stopped,
+    get graphLimit() { return props.graphLimit }, get selected() { return selected() }, dispatch: props.dispatch, refresh: props.refresh, perform,
+  }
+  const history = createGraph(historyProps)
   const items = createMemo(() => {
     const all: Row[] = [{ id: 'message' }, { id: 'commit-now' }, { id: 'commit' }, { id: 'generate-message' }, { id: 'sync' }]
     if (props.smartCommit && mode() !== 'amend' && !groups().staged.length && groups().changes.length) all.push({ id: 'smart-commit-note' })
@@ -89,9 +99,10 @@ export function Git(props: {
       if (!collapsed().has(group)) all.push(...groups()[group])
     }
     if (!groups().staged.length && !groups().changes.length) all.push({ id: 'clean' })
+    all.push(...history.rows().map(row => ({ id: row.id, history: row })))
     return all
   })
-  createEffect(() => { if (!items().some((r) => r.id === selected())) props.dispatch({ type: 'select', view: 'git', id: items().find((r) => r.group)?.id ?? 'clean' }) })
+  createEffect(() => { if (!isDiff() && !isBranches() && !items().some((r) => r.id === selected()) && !(selected()?.startsWith('graph-') && !history.ready()) && !(selected()?.startsWith('commit-file-') && history.pending())) props.dispatch({ type: 'select', view: 'git', id: /^(graph-|commit-file-|checkout-|revert-|web-)/.test(selected() ?? '') ? 'group-graph' : items().find((r) => r.group)?.id ?? 'clean' }) })
   const room = () => Math.max(1, props.height - (props.header ? 1 : 0) - 1)
   let listTop = 0
   const window = createMemo(() => {
@@ -105,7 +116,7 @@ export function Git(props: {
     if (stopped || current.busy) return
     update((d) => { d.busy = label })
     try { await fn() } catch (error) {
-      const reason = error instanceof Error ? error.message.split(/\r?\n/)[0] || 'Unknown error' : 'Unknown error'
+      const reason = historyError(error)
       if (!stopped) props.ctx.ui.toast.show({ message: fitEnd(`${label} failed: ${reason}`, Math.max(1, Math.min(props.width, 256))), variant: 'error' })
     } finally { update((d) => { d.busy = '' }) }
   }
@@ -175,17 +186,23 @@ export function Git(props: {
   }
   async function run(action: string) {
     if (isDiff()) { diffAction(action); return }
+    if (isBranches()) { branchesAction(action); return }
     if (action === 'back') { if (editing()) setEditing(false); else props.dispatch({ type: 'back' }); return }
     if (repo().error) return
     if (action === 'activate' && !repo().value) { await perform('Initialize', async () => { await props.api.init({}); await props.refresh() }); return }
     if (!repo().value) return
     if (action === 'move-up' || action === 'move-down') {
       setEditing(false)
-      const rows = items(); const at = rows.findIndex((r) => r.id === selected())
+      const rows = items().filter(row => !row.history || row.history.activate); const at = rows.findIndex((r) => r.id === selected())
       const next = rows[Math.max(0, Math.min(rows.length - 1, at + (action === 'move-up' ? -1 : 1)))]
       if (next) props.dispatch({ type: 'select', view: 'git', id: next.id })
       return
     }
+    if (action === 'activate') {
+      const row = items().find(row => row.id === selected())
+      if (row?.history) { await row.history.activate?.(); return }
+    }
+    if (await history.run(action)) return
     if (action === 'commit') {
       await perform('Choose commit mode', async () => {
         const choice = await props.ctx.ui.dialog.select<CommitMode>({ title: 'Commit mode', current: mode(), options: MODES })
@@ -214,7 +231,7 @@ export function Git(props: {
     }
   }
   const invoke = (action: string) => { void run(action) }
-  props.bind(invoke, () => !isDiff() && editing())
+  props.bind(invoke, () => !isDiff() && !isBranches() && editing())
   let stopped = false
   onCleanup(() => { stopped = true; props.bind(() => {}, () => false) })
   const header = () => {
@@ -237,8 +254,21 @@ export function Git(props: {
     props.dispatch({ type: 'select', view: 'git', id: row.id })
     props.dispatch({ type: 'open-diff', path: row.path!, source: { kind: 'working', staged: row.group === 'staged', untracked: row.status === 'untracked' } })
   }
-  function nextFile(by: 1 | -1) {
-    const d = props.state.diff!; if (d.source.kind !== 'working') return; const rows = groups()[d.source.staged ? 'staged' : 'changes']; const at = rows.findIndex((r) => r.path === d.path)
+  async function nextFile(by: 1 | -1) {
+    const d = props.state.diff!
+    if (d.source.kind !== 'working') {
+      const files = (d.source.kind === 'commit' ? readFiles(await props.api.commitFiles({ hash: d.source.hash })) : history.ui().compared?.files ?? []).flatMap(file => {
+        const path = insideRel(props.cwd, joinPath(historyProps.root, file.path)); return path ? [{ ...file, path }] : []
+      })
+      if (stopped || props.state.diff !== d) return
+      const at = files.findIndex(file => file.path === d.path); const next = files[at + by]
+      if (next) {
+        props.dispatch({ type: 'select', view: d.source.kind === 'commit' ? 'git' : 'git.branches', id: d.source.kind === 'commit' ? `commit-file-${d.source.hash}-${next.path}` : `compare-file-${next.path}` })
+        props.dispatch({ type: 'open-diff', path: next.path, source: d.source })
+      }
+      return
+    }
+    const rows = groups()[d.source.staged ? 'staged' : 'changes']; const at = rows.findIndex((r) => r.path === d.path)
     if (rows[at + by]) openDiff(rows[at + by]!)
   }
   const placeholder = () => {
@@ -247,6 +277,7 @@ export function Git(props: {
   }
   return <Show when={!isDiff()} fallback={<Diff ctx={props.ctx} api={props.api} sessionID={props.sessionID} cwd={props.cwd} target={props.state.diff!}
     revision={props.revision} width={props.width} height={props.height} header={props.header} back={() => props.dispatch({ type: 'back' })} next={nextFile} bind={(run) => { diffAction = run }} />}>
+  <Show when={!isBranches()} fallback={<Branches {...historyProps} state={props.state} height={props.height} header={props.header} bind={run => { branchesAction = run }} />}>
   <box flexGrow={1} minHeight={1} flexDirection="column">
     <Show when={props.header}><box height={1} flexShrink={0} flexDirection="row">
       <text height={1} width={props.width - (repo().value && props.width >= 60 ? 5 : 0)} fg={repo().value && (!repo().value!.branch.head || !repo().value!.branch.upstream) ? theme().text.feedback.warning.base : theme().text.muted}>{' ' + fitEnd(header(), inner() - (repo().value && props.width >= 60 ? 5 : 0))}</text>
@@ -262,6 +293,7 @@ export function Git(props: {
       </box>
       <box flexGrow={1} minHeight={1} overflow="hidden" flexDirection="column">
           <For each={window()}>{(row) => <box height={1} flexShrink={0} width={props.width} flexDirection="row" backgroundColor={selected() === row.id ? theme().background?.action.primary.base : undefined}>
+            <Show when={!row.history} fallback={<Graph row={row.history!} ctx={props.ctx} width={props.width} activate={() => { setEditing(false); props.dispatch({ type: 'select', view: 'git', id: row.id }); invoke('activate') }} />}>
             <text height={1} width={props.width - cellWidth(tail(row))}
             fg={row.id === 'commit-now' ? !subject().trim() || busy() ? theme().text.muted : theme().text.action.primary.base : theme().text.base}
             onMouseDown={() => { setEditing(false); props.dispatch({ type: 'select', view: 'git', id: row.id }); invoke('activate') }}>
@@ -278,8 +310,9 @@ export function Git(props: {
                 <span style={{ fg: theme().diff?.text.removed ?? theme().text.feedback.error.base }}>{counts(row) ? ' ' + counts(row).split(' ')[1] : ''}</span>
               </Show>
             </text>
+            </Show>
           </box>}</For>
       </box>
     </Show>
-  </box></Show>
+  </box></Show></Show>
 }

@@ -82,9 +82,9 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
       if (!rows.base) { $.ui.toast('No main branch to compare with.'); return }
       const branch = rows.branches.find((b) => `branch-${refOf(b)}` === selected)
       if (!branch) { $.ui.toast('Select a branch first.'); return }
-      const base = rows.branches.find((b) => b.name === rows.base && b.remote === !['main', 'master'].includes(rows.base!))
+      const base = rows.branches.find((b) => refOf(b) === rows.base)
       if (!base) { $.ui.toast('No main branch to compare with.'); return }
-      await updateHistory($, root, (historyUi) => ({ ...historyUi, compared: { base: base.hash, head: branch.hash, label: rows.base! } }))
+      await updateHistory($, root, (historyUi) => ({ ...historyUi, compared: { base: base.hash, head: branch.hash, label: base.name } }))
     }) },
     { key: historyKey('git.branches', 'filter'), run: historyAct($, async () => {
       await updateHistory($, root, (historyUi) => ({ ...historyUi, branchFiltering: true }))

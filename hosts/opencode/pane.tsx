@@ -127,6 +127,14 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     ],
   }))
   const tabs = createMemo(() => tabBar(width(), width(), state().tab))
+  const hints = () => {
+    const selected = state().selected.git ?? ''
+    const history = /^(graph-|group-graph$|commit-file-|checkout-|revert-|web-)/.test(selected)
+    const commit = /^graph-[0-9a-f]{40}$/.test(selected)
+    return currentView(state()) === 'git' && history
+      ? hintLine('git', width(), KEYS.git.filter(key => ['branches', 'filter', 'fetch', 'back', ...(commit ? ['copy-hash', 'ask', 'new-branch'] : [])].includes(key.action)))
+      : hintLine(currentView(state()), width())
+  }
   const body = () => error() || (state().tab === 'search' || state().tab === 'symbols' ? 'Coming in a later version.' :
     !snapshot() ? 'Loading…' : state().tab === 'files' && state().selected.files ? fitPath(state().selected.files!, width()) : TAB_NAMES[state().tab])
   return <box width={width()} height="100%" flexDirection="column" onSizeChange={function () { setHeight(this.height) }} onMouseDown={() => props.input.focus()}>
@@ -147,7 +155,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     }>
       <Show when={state().tab !== 'git' || !snapshot() || error()} fallback={
         <Git ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} git={snapshot()!.git}
-          state={state()} dispatch={dispatch} revision={revision()} refresh={refreshAfterChange} smartCommit={snapshot()!.options.smartCommit} width={width()}
+          state={state()} dispatch={dispatch} revision={revision()} refresh={refreshAfterChange} smartCommit={snapshot()!.options.smartCommit} graphLimit={snapshot()!.options.graphLimit} width={width()}
           height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (height() >= 10 ? 1 : 0)} header={height() >= 6}
           focused={props.input.focused} bind={(run, isEditing) => { gitAction = run; editing = isEditing }} />
       }>
@@ -155,6 +163,6 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
       <box flexGrow={1} minHeight={1}><text height={1} fg={error() ? props.ctx.theme.text.feedback.error.base : props.ctx.theme.text.base}>{fitEnd(body(), width())}</text></box>
       </Show>
     </Show>
-    <Show when={height() >= 10}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{hintLine(currentView(state()), width())}</text></Show>
+    <Show when={height() >= 10}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{hints()}</text></Show>
   </box>
 }

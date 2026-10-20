@@ -95,6 +95,21 @@ const paths = { type: 'object', properties: { paths: strings }, required: ['path
 const mode = { enum: ['commit', 'commit-push', 'amend'] } as const
 const pathErrors = { outside_root: empty } as const
 
+const hash = { type: 'string', minLength: 40, maxLength: 40 } as const
+const source = { oneOf: [
+  { type: 'object', properties: { kind: { const: 'working' }, staged: flag, untracked: flag }, required: ['kind', 'staged', 'untracked'], additionalProperties: false },
+  { type: 'object', properties: { kind: { const: 'commit' }, hash }, required: ['kind', 'hash'], additionalProperties: false },
+  { type: 'object', properties: { kind: { const: 'compare' }, base: hash, head: hash }, required: ['kind', 'base', 'head'], additionalProperties: false },
+] } as const
+const commitFile = { type: 'object', properties: { path: text, from: text, status: { enum: ['M', 'A', 'D', 'R', 'T'] }, added: count, removed: count }, required: ['path', 'status', 'added', 'removed'], additionalProperties: false } as const
+const files = { type: 'array', items: commitFile } as const
+const hashInput = { type: 'object', properties: { hash }, required: ['hash'], additionalProperties: false } as const
+const confirmedHash = { type: 'object', properties: { hash, confirmed: flag }, required: ['hash', 'confirmed'], additionalProperties: false } as const
+const actionResult = { oneOf: [
+  { type: 'object', properties: { ok: { const: true } }, required: ['ok'], additionalProperties: false },
+  { type: 'object', properties: { ok: { const: false }, confirm: text }, required: ['ok', 'confirm'], additionalProperties: false },
+] } as const
+
 /** One portable JSON Schema contract, shared by the server and a possibly remote TUI. */
 export const JeiRpc = Rpc.define({
   id: 'jei',
@@ -138,9 +153,9 @@ export const JeiRpc = Rpc.define({
     unstage: { input: paths, output: empty, errors: pathErrors },
     discard: { input: paths, output: empty, errors: pathErrors },
     diff: {
-      input: { type: 'object', properties: { path: text, staged: flag, untracked: flag }, required: ['path', 'staged', 'untracked'], additionalProperties: false },
+      input: { type: 'object', properties: { path: text, source }, required: ['path', 'source'], additionalProperties: false },
       output: {
-        type: 'object', properties: { file: { anyOf: [diffFile, { type: 'null' }] }, truncated: flag },
+        type: 'object', properties: { file: { anyOf: [diffFile, { type: 'null' }] }, truncated: flag, label: text },
         required: ['file', 'truncated'], additionalProperties: false,
       }, errors: pathErrors,
     },
@@ -168,6 +183,28 @@ export const JeiRpc = Rpc.define({
         ],
       },
     },
+    graph: {
+      input: { type: 'object', properties: { filter: text, count: { type: 'integer', minimum: 1 }, sessionID: text }, required: ['filter', 'count', 'sessionID'], additionalProperties: false },
+      output: { type: 'object', properties: { more: flag, commits: { type: 'array', items: {
+        type: 'object', properties: { hash, parents: { type: 'array', items: hash }, author: text, time: { type: 'number' }, subject: text, agent: flag,
+          refs: { type: 'array', items: { type: 'object', properties: { kind: { enum: ['head', 'local', 'remote', 'tag'] }, name: text }, required: ['kind', 'name'], additionalProperties: false } } },
+        required: ['hash', 'parents', 'author', 'time', 'subject', 'agent', 'refs'], additionalProperties: false,
+      } } }, required: ['commits', 'more'], additionalProperties: false },
+    },
+    commitFiles: { input: hashInput, output: { type: 'object', properties: { files }, required: ['files'], additionalProperties: false } },
+    branches: { input: empty, output: { type: 'object', properties: { base: nullableText, branches: { type: 'array', items: {
+      type: 'object', properties: { name: text, hash, remote: flag, current: flag, upstream: nullableText, gone: flag, ahead: { type: 'integer', minimum: 0 }, behind: { type: 'integer', minimum: 0 } },
+      required: ['name', 'hash', 'remote', 'current', 'upstream', 'gone', 'ahead', 'behind'], additionalProperties: false,
+    } } }, required: ['branches', 'base'], additionalProperties: false } },
+    switchBranch: { input: { type: 'object', properties: { name: text, remote: flag, confirmed: flag }, required: ['name', 'remote', 'confirmed'], additionalProperties: false }, output: actionResult },
+    createBranch: { input: { type: 'object', properties: { name: text, start: hash, confirmed: flag }, required: ['name', 'confirmed'], additionalProperties: false }, output: actionResult },
+    compare: { input: { type: 'object', properties: { base: text, head: text }, required: ['base', 'head'], additionalProperties: false },
+      output: { type: 'object', properties: { files, source: source.oneOf[2] }, required: ['files', 'source'], additionalProperties: false } },
+    checkout: { input: confirmedHash, output: actionResult },
+    revert: { input: confirmedHash, output: actionResult },
+    fetch: { input: empty, output: empty },
+    webUrl: { input: hashInput, output: { type: 'object', properties: { url: nullableText }, required: ['url'], additionalProperties: false } },
+    openWeb: { input: hashInput, output: empty },
   },
   events: {
     activity: { schema: { type: 'object', properties: { rel: text, kind: activityKind }, required: ['rel', 'kind'], additionalProperties: false } },

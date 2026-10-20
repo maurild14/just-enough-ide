@@ -13,7 +13,7 @@ type Handlers = { [K in keyof typeof JeiRpc.methods]: (
   input: unknown, context: { signal: AbortSignal; error: Rpc.ErrorFactory<(typeof JeiRpc.methods)[K]> },
 ) => Promise<unknown> }
 type State = { cwd: string; options: Options; git: WireGitSnapshot; activity: ReturnType<ActivityLog['toJSON']> }
-type ToolEvent = { tool: string; input: unknown; status: 'completed' | 'error' }
+type ToolEvent = { sessionID?: string; id?: string; tool: string; input: unknown; status: 'completed' | 'error' }
 const disposers: Plugin.Cleanup[] = []
 let gitEnv: Record<string, string | undefined> = {}
 
@@ -40,6 +40,7 @@ afterEach(async () => {
 async function start(directory: string, options: Record<string, unknown> = {}) {
   let handlers: Handlers | undefined
   let hook: ((event: ToolEvent) => void | Promise<void>) | undefined
+  let before: ((event: ToolEvent) => void | Promise<void>) | undefined
   let registered: unknown
   let rpcDisposed = false
   let hookDisposed = false
@@ -57,8 +58,8 @@ async function start(directory: string, options: Record<string, unknown> = {}) {
       return { events: { async emit(name: string, data: unknown) { emitted.push({ name, data }) } }, async dispose() { rpcDisposed = true } }
     } },
     tool: { async hook(name: string, callback: typeof hook) {
-      expect(name).toBe('execute.after')
-      hook = callback
+      if (name === 'execute.before') before = callback
+      else { expect(name).toBe('execute.after'); hook = callback }
       return { async dispose() { hookDisposed = true } }
     } },
     generate: { async text(input: unknown) { generated.push(input); return { text: '"feat: update file"' } } },
@@ -85,6 +86,7 @@ async function start(directory: string, options: Record<string, unknown> = {}) {
       const error = ((type: string, message: string, data: unknown) => ({ type, message, data })) as Rpc.ErrorFactory<(typeof JeiRpc.methods)[K]>
       return handlers[name](input, { signal: new AbortController().signal, error })
     },
+    async before(event: ToolEvent) { if (!before) throw new Error('Before hook missing'); await before(event) },
     async tool(event: ToolEvent) {
       if (!hook) throw new Error('Tool hook was not registered')
       await hook(event)
@@ -134,7 +136,7 @@ test('every path RPC rejects escapes before touching any member of a batch', asy
     for (const name of ['listDir', 'preview', 'open'] as const) {
       expect(await server.call(name, { rel: path })).toMatchObject({ type: 'outside_root', data: {} })
     }
-    expect(await server.call('diff', { path, staged: false, untracked: false })).toMatchObject({ type: 'outside_root' })
+    expect(await server.call('diff', { path, source: { kind: 'working', staged: false, untracked: false } })).toMatchObject({ type: 'outside_root' })
     for (const name of ['stage', 'unstage', 'discard'] as const) {
       expect(await server.call(name, { paths: ['a.txt', path] })).toMatchObject({ type: 'outside_root' })
     }
@@ -143,7 +145,7 @@ test('every path RPC rejects escapes before touching any member of a batch', asy
   expect(state.git.root !== null && state.git.status.entries).toEqual([{ path: 'a.txt', index: null, worktree: 'modified' }])
   for (const [name, input] of [
     ['stage', { paths: ['a.txt', 3] }], ['preview', { rel: null }],
-    ['diff', { path: 'a.txt', staged: 'false', untracked: false }], ['open', { rel: 'a.txt', line: 0 }],
+    ['diff', { path: 'a.txt', source: { kind: 'working', staged: 'false', untracked: false } }], ['open', { rel: 'a.txt', line: 0 }],
     ['commit', { message: 'feat: change', mode: 'commit', approvedSensitive: 'false' }],
     ['commit', { message: 'feat: change', mode: 'commit', approvedSensitive: ['.env', 3] }],
     ['commitPlan', { message: 'feat: change', mode: 'other' }], ['sync', { choice: 'other' }],
@@ -173,12 +175,12 @@ test('git RPCs keep literal paths, fresh discard entries and working/staged diff
   await server.call('state')
   repo.write('[a].txt', 'after\n')
   repo.write('new.txt', 'new\n')
-  const diff = await server.call('diff', { path: '[a].txt', staged: false, untracked: false })
+  const diff = await server.call('diff', { path: '[a].txt', source: { kind: 'working', staged: false, untracked: false } })
   expect(diff).toMatchObject({ file: { path: '[a].txt', added: 1, removed: 1 }, truncated: false })
   expect(await server.call('stage', { paths: [join(repo.dir, '[a].txt')] })).toEqual({})
-  expect(await server.call('diff', { path: '[a].txt', staged: true, untracked: false })).toMatchObject({ file: { added: 1, removed: 1 } })
+  expect(await server.call('diff', { path: '[a].txt', source: { kind: 'working', staged: true, untracked: false } })).toMatchObject({ file: { added: 1, removed: 1 } })
   expect(await server.call('unstage', { paths: ['[a].txt'] })).toEqual({})
-  expect(await server.call('diff', { path: 'new.txt', staged: false, untracked: true })).toMatchObject({ file: { path: 'new.txt', added: 1 } })
+  expect(await server.call('diff', { path: 'new.txt', source: { kind: 'working', staged: false, untracked: true } })).toMatchObject({ file: { path: 'new.txt', added: 1 } })
   expect(await server.call('discard', { paths: ['./[a].txt', 'new.txt', 'missing.txt'] })).toEqual({})
   expect(existsSync(join(repo.dir, 'new.txt'))).toBe(false)
   expect(await server.call('preview', { rel: '[a].txt' })).toMatchObject({ text: 'before\n' })
@@ -397,4 +399,109 @@ test('commit refuses while a merge conflict is unresolved, and commits nothing',
   await expect(server.call('commit', { message: 'm', mode: 'commit', approvedSensitive: [] })).rejects.toThrow('Resolve conflicts first.')
   expect(await repo.git('log', '-1', '--format=%s')).toBe('feat: ours')
   expect(await repo.git('diff', '--name-only', '--diff-filter=U')).toBe('a.txt')
+})
+
+
+test('history RPC validates exact hashes, refs, confirmations and extra properties at the server boundary', async () => {
+  const repo = await makeRepo({ 'a.txt': 'before\n' })
+  await repo.git('branch', 'feature')
+  const server = await start(repo.dir)
+  const hash = await repo.git('rev-parse', 'HEAD')
+  for (const method of ['commitFiles', 'checkout', 'revert', 'webUrl', 'openWeb'] as const) {
+    await expect(server.call(method, { hash: '-x', confirmed: true })).rejects.toThrow()
+    const input = ['checkout', 'revert'].includes(method) ? { hash: 'g'.repeat(40), confirmed: true } : { hash: 'g'.repeat(40) }
+    await expect(server.call(method, input)).rejects.toThrow('Invalid commit hash')
+  }
+  await expect(server.call('graph', { filter: '', count: 5, sessionID: 'session-a', extra: true })).rejects.toThrow('Invalid RPC input')
+  await expect(server.call('createBranch', { name: '-x', confirmed: true })).rejects.toThrow()
+  await expect(server.call('compare', { base: hash, head: hash })).rejects.toThrow('Invalid branch')
+  repo.write('a.txt', 'dirty\n')
+  expect(await server.call('switchBranch', { name: 'feature', remote: false, confirmed: false })).toMatchObject({ ok: false, confirm: expect.stringContaining('uncommitted') })
+  expect(await repo.git('branch', '--show-current')).toBe('main')
+  expect(await server.call('createBranch', { name: 'from-commit', start: hash, confirmed: false })).toMatchObject({ ok: false })
+  expect(await server.call('checkout', { hash, confirmed: false })).toMatchObject({ ok: false, confirm: expect.stringContaining('detached HEAD') })
+  expect(await server.call('revert', { hash, confirmed: false })).toMatchObject({ ok: false })
+  expect(await server.call('switchBranch', { name: 'feature', remote: false, confirmed: true })).toEqual({ ok: true })
+  expect(await repo.git('branch', '--show-current')).toBe('feature')
+  expect(readFileSync(join(repo.dir, 'a.txt'), 'utf8')).toBe('dirty\n')
+})
+
+test('tool identity and session attribution mark agent commits and suppress overlapping JEI commits', async () => {
+  const repo = await makeRepo({ 'a.txt': 'before\n' })
+  const server = await start(repo.dir)
+  const event = { tool: 'shell', input: { command: 'git commit' }, status: 'completed' as const, sessionID: 'session-a', id: 'call-a' }
+  await server.before(event)
+  repo.write('a.txt', 'agent\n'); await repo.git('commit', '-am', 'feat: agent')
+  const agent = await repo.git('rev-parse', 'HEAD')
+  await server.tool(event)
+  const graph = (sessionID: string) => server.call('graph', { filter: '', count: 10, sessionID }) as Promise<{ commits: { hash: string; agent: boolean }[] }>
+  expect((await graph('session-a')).commits.find(c => c.hash === agent)?.agent).toBe(true)
+  expect((await graph('session-b')).commits.some(c => c.agent)).toBe(false)
+  await server.before({ ...event, id: 'call-b' })
+  repo.write('a.txt', 'jei\n')
+  await server.call('commit', { message: 'feat: jei', mode: 'commit', approvedSensitive: [] })
+  const jei = await repo.git('rev-parse', 'HEAD')
+  await server.tool({ ...event, id: 'call-b' })
+  expect((await graph('session-a')).commits.find(c => c.hash === jei)?.agent).toBe(false)
+  await server.before({ ...event, id: 'call-c' }); await server.before({ ...event, id: 'call-d' })
+  repo.write('a.txt', 'overlap\n'); await repo.git('commit', '-am', 'feat: overlapping')
+  const overlap = await repo.git('rev-parse', 'HEAD')
+  await server.tool({ ...event, id: 'call-c' }); await server.tool({ ...event, id: 'call-d' })
+  expect((await graph('session-a')).commits.find(c => c.hash === overlap)?.agent).toBe(false)
+})
+
+test('a pending before-hook cannot attribute a JEI commit, and missing reflog evidence leaves the tool successful', async () => {
+  const repo = await makeRepo({ 'a.txt': 'before\n' }); const server = await start(repo.dir)
+  const event = { tool: 'shell', input: { command: 'git commit' }, status: 'completed' as const, sessionID: 'session-a', id: 'pending' }
+  const pending = server.before(event)
+  repo.write('a.txt', 'jei\n')
+  await server.call('commit', { message: 'feat: jei', mode: 'commit', approvedSensitive: [] })
+  await pending; await server.tool(event)
+  expect(await server.call('graph', { filter: '', count: 10, sessionID: 'session-a' })).toMatchObject({ commits: expect.arrayContaining([expect.objectContaining({ subject: 'feat: jei', agent: false })]) })
+  await server.before({ ...event, id: 'missing-evidence' })
+  await repo.git('reflog', 'expire', '--expire=all', '--all')
+  repo.write('a.txt', 'agent\n'); await repo.git('commit', '-am', 'feat: no evidence')
+  await server.tool({ ...event, id: 'missing-evidence' })
+  expect(await server.call('graph', { filter: '', count: 10, sessionID: 'session-a' })).toMatchObject({ commits: expect.arrayContaining([expect.objectContaining({ subject: 'feat: no evidence', agent: false })]) })
+})
+
+test('agent windows starting during a held JEI hook stay suppressed for the whole mutation', async () => {
+  const repo = await makeRepo({ 'a.txt': 'before\n' }); const server = await start(repo.dir)
+  repo.write('a.txt', 'jei\n')
+  writeFiles(repo.dir, { '.git/hooks/pre-commit': '#!/bin/sh\ntouch .git/ready-jei\nwhile [ ! -f .git/allow-jei ]; do sleep 0.1; done\n' })
+  chmodSync(join(repo.dir, '.git/hooks/pre-commit'), 0o755)
+  const committing = server.call('commit', { message: 'feat: held jei', mode: 'commit', approvedSensitive: [] })
+  try {
+    const deadline = Date.now() + 10000
+    while (!existsSync(join(repo.dir, '.git/ready-jei')) && Date.now() < deadline) await Bun.sleep(10)
+    expect(existsSync(join(repo.dir, '.git/ready-jei'))).toBe(true)
+    const event = { tool: 'shell', input: { command: 'git commit' }, status: 'completed' as const, sessionID: 'session-a', id: 'inside-jei' }
+    await server.before(event)
+    writeFiles(repo.dir, { '.git/allow-jei': '' })
+    await committing; await server.tool(event)
+    expect(await server.call('graph', { filter: '', count: 10, sessionID: 'session-a' })).toMatchObject({ commits: expect.arrayContaining([expect.objectContaining({ subject: 'feat: held jei', agent: false })]) })
+  } finally { writeFiles(repo.dir, { '.git/allow-jei': '' }); await committing }
+})
+
+test('comparison RPC pins branch hashes before later movement and diff keeps its original source', async () => {
+  const repo = await makeRepo({ 'a.txt': 'before\n' }); const server = await start(repo.dir)
+  await repo.git('switch', '-c', 'feature')
+  repo.write('a.txt', 'feature\n'); await repo.git('commit', '-am', 'feat: feature')
+  const before = await server.call('compare', { base: 'refs/heads/main', head: 'refs/heads/feature' }) as { source: { kind: string; base: string; head: string }; files: unknown[] }
+  expect(before.files).toMatchObject([{ path: 'a.txt', added: 1, removed: 1 }])
+  repo.write('a.txt', 'later\n'); await repo.git('commit', '-am', 'feat: later')
+  expect(await server.call('diff', { path: 'a.txt', source: before.source })).toMatchObject({ file: { hunks: [{ lines: expect.arrayContaining([expect.objectContaining({ text: 'feature' })]) }] } })
+  const hash = before.source.head
+  expect(await server.call('diff', { path: 'a.txt', source: { kind: 'commit', hash } })).toMatchObject({ label: `${hash.slice(0, 7)} feat: feature` })
+  for (const source of [{ kind: 'compare', base: 'HEAD', head: hash }, { kind: 'commit', hash, extra: true }, { kind: 'working', staged: false, untracked: false, hash }]) await expect(server.call('diff', { path: 'a.txt', source })).rejects.toThrow()
+})
+
+test('branches RPC retains full default-base provenance for custom remote targets and local fallback', async () => {
+  const repo = await makeRepo({ 'a.txt': 'before\n' }); const server = await start(repo.dir)
+  const hash = await repo.git('rev-parse', 'HEAD')
+  await repo.git('update-ref', 'refs/remotes/main', hash)
+  await repo.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/main')
+  expect(await server.call('branches')).toMatchObject({ base: 'refs/remotes/main' })
+  await repo.git('symbolic-ref', '--delete', 'refs/remotes/origin/HEAD')
+  expect(await server.call('branches')).toMatchObject({ base: 'refs/heads/main' })
 })

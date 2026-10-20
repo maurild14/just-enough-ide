@@ -16,10 +16,11 @@ function record(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 const natural = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
-function readDiff(raw: unknown): { file: DiffFile | null; truncated: boolean } {
+function readDiff(raw: unknown): { file: DiffFile | null; truncated: boolean; label?: string } {
   const data = record(raw)
-  if (typeof data.truncated !== 'boolean') throw new Error('Invalid diff reply.')
-  if (data.file === null) return { file: null, truncated: data.truncated }
+  if (typeof data.truncated !== 'boolean' || data.label !== undefined && typeof data.label !== 'string') throw new Error('Invalid diff reply.')
+  const label = data.label as string | undefined
+  if (data.file === null) return { file: null, truncated: data.truncated, label }
   const f = record(data.file)
   if (typeof f.path !== 'string' || f.origPath !== undefined && typeof f.origPath !== 'string' || f.change !== undefined && f.change !== 'new' && f.change !== 'deleted' || typeof f.binary !== 'boolean' || !natural(f.added) || !natural(f.removed) || !Array.isArray(f.hunks)) throw new Error('Invalid diff reply.')
   const hunks = f.hunks.map((raw) => {
@@ -33,12 +34,12 @@ function readDiff(raw: unknown): { file: DiffFile | null; truncated: boolean } {
     }) }
   })
   const change = f.change as DiffFile['change']
-  return { file: { path: f.path, origPath: f.origPath as string | undefined, binary: f.binary, added: f.added, removed: f.removed, hunks, ...(change ? { change } : {}) }, truncated: data.truncated }
+  return { file: { path: f.path, origPath: f.origPath as string | undefined, binary: f.binary, added: f.added, removed: f.removed, hunks, ...(change ? { change } : {}) }, truncated: data.truncated, label }
 }
 
 export function Diff(props: {
   ctx: Plugin.Context; api: RpcClient<typeof JeiRpc>; sessionID: string; cwd: string; target: Target; revision: number
-  width: number; height: number; header: boolean; back: () => void; next: (by: 1 | -1) => void; bind: (run: (action: string) => void) => void
+  width: number; height: number; header: boolean; back: () => void; next: (by: 1 | -1) => void | Promise<void>; bind: (run: (action: string) => void) => void
 }) {
   const [loaded, setLoaded] = createSignal<ReturnType<typeof readDiff>>()
   const [error, setError] = createSignal('')
@@ -53,8 +54,7 @@ export function Diff(props: {
   const load = latest(async (target: Target) => {
     const safe = insideRel(cwd(), target.path)
     if (!safe || safe !== target.path) throw new Error('Invalid diff path.')
-    if (target.source.kind !== 'working') return { file: null, truncated: false }
-    return readDiff(await props.api.diff({ path: target.path, staged: target.source.staged, untracked: target.source.untracked }))
+    return readDiff(await props.api.diff({ path: target.path, source: target.source }))
   })
   createEffect(() => {
     const selected = target(); props.revision; cwd()
@@ -64,7 +64,9 @@ export function Diff(props: {
     })
   })
   createEffect(() => { target(); setPosition({ logical: 0, offset: 0 }) })
-  const room = () => Math.max(1, props.height - (props.header ? 1 : 0) - (loaded()?.truncated && props.height > 1 ? 1 : 0))
+  const historical = () => props.target.source.kind !== 'working'
+  const truncatedNotice = () => loaded()?.truncated && props.height > (historical() ? 2 : 1)
+  const room = () => Math.max(1, props.height - (props.header ? 1 : 0) - (historical() && props.height > 1 ? 1 : 0) - (truncatedNotice() ? 1 : 0))
   const layout = createMemo(() => {
     const file = loaded()?.file
     const rows: { text: string; gutter: string; kind: DiffLine['kind'] | 'hunk'; logical: number; offset: number }[] = []
@@ -107,7 +109,7 @@ export function Diff(props: {
   const visible = () => layout().rows.slice(Math.min(top(), Math.max(0, layout().rows.length - 1)), top() + room())
   async function run(action: string) {
     if (action === 'back') props.back()
-    else if (action === 'next-file' || action === 'prev-file') props.next(action === 'next-file' ? 1 : -1)
+    else if (action === 'next-file' || action === 'prev-file') await props.next(action === 'next-file' ? 1 : -1)
     else if (action === 'scroll-up' || action === 'scroll-down') setTop((n) => Math.max(0, Math.min(layout().rows.length - 1, n + (action === 'scroll-up' ? -1 : 1))))
     else if (action === 'next-hunk' || action === 'prev-hunk') {
       const next = action === 'next-hunk' ? layout().starts.find((n) => n > top()) : [...layout().starts].reverse().find((n) => n < top())
@@ -125,12 +127,15 @@ export function Diff(props: {
   onCleanup(() => { stopped = true; props.bind(() => {}) })
   const header = () => {
     const f = loaded()?.file; const d = props.target.source; const source = d.kind === 'working' ? d.staged ? 'staged' : d.untracked ? 'untracked' : 'working tree' : d.kind
+    if (d.kind === 'commit') return loaded()?.label ?? d.hash.slice(0, 7)
+    if (d.kind === 'compare') return `${d.base.slice(0, 7)}...${d.head.slice(0, 7)}`
     const suffix = ` · ${source}${f ? ` +${f.added} −${f.removed}` : ''}`
     return props.width >= 40 ? fitPath(props.target.path, Math.max(8, props.width - cellWidth(suffix) - 2)) + suffix : fitPath(props.target.path, props.width - 2)
   }
   return <box flexGrow={1} minHeight={1} flexDirection="column" overflow="hidden">
     <Show when={props.header}><text height={1} flexShrink={0} onMouseDown={props.back}>{' ' + fitEnd(header(), props.width - 2)}</text></Show>
-    <Show when={loaded()?.truncated && props.height > 1}><text height={1} flexShrink={0} fg={theme().text.feedback.warning.base}>{fitEnd(`Diff truncated at ${DIFF_MAX_LINES.toLocaleString('en-US')} lines.`, props.width)}</text></Show>
+    <Show when={historical() && props.height > 1}><text height={1} flexShrink={0}>{' ' + fitPath(props.target.path, props.width - 2)}</text></Show>
+    <Show when={truncatedNotice()}><text height={1} flexShrink={0} fg={theme().text.feedback.warning.base}>{fitEnd(`Diff truncated at ${DIFF_MAX_LINES.toLocaleString('en-US')} lines.`, props.width)}</text></Show>
     <Show when={!notice()} fallback={<text height={1} fg={error() ? theme().text.feedback.error.base : theme().text.muted}>{fitEnd(notice(), props.width)}</text>}>
       <For each={visible()}>{(row) => <text height={1} flexShrink={0}>
         {' '}<span style={{ fg: theme().diff?.lineNumber.text ?? theme().text.muted }}>{row.gutter}</span><span style={{ fg: row.kind === 'add' ? colors()?.added ?? theme().text.feedback.success.base : row.kind === 'del' ? colors()?.removed ?? theme().text.feedback.error.base : row.kind === 'hunk' ? colors()?.hunkHeader ?? theme().text.muted : colors()?.context ?? theme().text.base }}>{row.text}</span>

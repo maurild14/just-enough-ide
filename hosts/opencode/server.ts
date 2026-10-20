@@ -2,8 +2,15 @@ import { Plugin } from '@opencode/plugin'
 import { classifyTool } from '../../core/activity/classify.ts'
 import { ActivityLog, allows } from '../../core/activity/log.ts'
 import { allFiles, listDir, loadPreview, openFile } from '../../core/files/service.ts'
+import { openUrlArgv } from '../../core/files/open.ts'
+import { AgentCommits } from '../../core/git/agent.ts'
+import { assertCommitHash } from '../../core/git/commit.ts'
+import { logArgs, parseGraphFilter, parseLog } from '../../core/git/log.ts'
+import { git } from '../../core/git/run.ts'
+import { isRepo } from '../../core/git/status.ts'
+import type { RpcHandlers } from '@opencode/plugin/promise/rpc'
 import type { CommitMode } from '../../core/git/commands.ts'
-import { commitPlan, discard, fileDiff, generateMessage, initRepo, runSteps, snapshot, stage, sync, unstage } from '../../core/git/service.ts'
+import { agentCandidates, branches, captureReflog, checkout, commitDiff, commitFiles, compare, compareDiff, createBranch, fetchAll, graph, revert, switchBranch, webUrl, commitPlan, discard, fileDiff, generateMessage, initRepo, runSteps, snapshot, stage, sync, unstage } from '../../core/git/service.ts'
 import { parseOptions } from '../../core/options.ts'
 import { insideRel, joinPath } from '../../core/shared/paths.ts'
 import { nodeHost } from './host.ts'
@@ -12,6 +19,16 @@ import { JeiRpc, toWire } from './rpc.ts'
 function record(input: unknown): Record<string, unknown> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid RPC input')
   return input as Record<string, unknown>
+}
+
+function closed(input: unknown, allowed: readonly string[], required: readonly string[] = allowed): Record<string, unknown> {
+  const data = record(input)
+  if (Object.keys(data).some((key) => !allowed.includes(key)) || required.some((key) => !Object.hasOwn(data, key))) throw new Error('Invalid RPC input')
+  return data
+}
+
+function hash(input: unknown, key = 'hash'): string {
+  const value = text(input, key); assertCommitHash(value); return value
 }
 
 function text(input: unknown, key: string): string {
@@ -59,7 +76,51 @@ export default Plugin.define({
       if (snap.root === null) throw new Error('Not a git repository.')
       return snap
     }
-    const registration = await ctx.rpc.register(JeiRpc, {
+    const trackers = new Map<string, AgentCommits>()
+    const windows = new Map<string, Promise<(() => Promise<void>) | null>>()
+    let mutations = 0
+    let epoch = 0
+    let calls = 0
+    const invalidate = () => { epoch++; for (const tracker of trackers.values()) tracker.invalidate() }
+    const trackerFor = (sessionID: string, root: string) => {
+      const key = `${sessionID}\0${root}`
+      let tracker = trackers.get(key)
+      if (!tracker) { tracker = new AgentCommits(); trackers.set(key, tracker) }
+      return tracker
+    }
+    async function headAt(root: string): Promise<string | null> {
+      try { const value = (await git(host, root, ['rev-parse', '--verify', '--quiet', 'HEAD'])).stdout.trim(); assertCommitHash(value); return value } catch { return null }
+    }
+    async function mutation<T>(fn: () => Promise<T>): Promise<T> {
+      mutations++; invalidate()
+      try { return await fn() } finally { mutations--; invalidate() }
+    }
+    async function agentWindow(sessionID: string) {
+      // Pending evidence reads count as overlap before the first await.
+      calls++; if (calls > 1 || mutations) invalidate()
+      const started = epoch
+      let tracker: AgentCommits | undefined; let token: number | undefined
+      try {
+        const root = await isRepo(host, ctx.location.directory)
+        if (!root) { calls--; return null }
+        tracker = trackerFor(sessionID, root)
+        const from = await headAt(root)
+        token = tracker.toolStart(from, Date.now() / 1000)
+        const boundary = await captureReflog(host, root, from)
+        if (started !== epoch || calls > 1 || mutations) tracker.invalidate()
+        const active = tracker; const identity = token
+        return async () => {
+          try {
+            const head = await headAt(root)
+            const candidates = head === null ? [] : await agentCandidates(host, root, from, head, boundary)
+            if (started !== epoch || calls > 1 || mutations) active.invalidate()
+            active.toolEnd(identity, head, candidates)
+          } catch { active.invalidate(); active.toolEnd(identity, null, []) }
+          finally { calls-- }
+        }
+      } catch { tracker?.invalidate(); if (token !== undefined) tracker?.toolEnd(token, null, []); calls--; return null }
+    }
+    const handlers: RpcHandlers<typeof JeiRpc> = {
       async state() {
         return { cwd: ctx.location.directory, options, git: toWire(await snapshot(host, ctx.location.directory)), activity: activity.toJSON() }
       },
@@ -115,7 +176,22 @@ export default Plugin.define({
         const root = ctx.location.directory
         const rel = insideRel(root, text(input, 'path'))
         if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
-        return fileDiff(host, root, rel, { staged: flag(input, 'staged'), untracked: flag(input, 'untracked') })
+        const source = record(record(input).source)
+        if (source.kind === 'working') {
+          closed(source, ['kind', 'staged', 'untracked'])
+          return fileDiff(host, root, rel, { staged: flag(source, 'staged'), untracked: flag(source, 'untracked') })
+        }
+        const snap = await repoSnapshot()
+        const path = insideRel(snap.root, joinPath(root, rel))
+        if (path === null) return context.error('outside_root', 'That path is outside the project.', {})
+        if (source.kind === 'commit') {
+          closed(source, ['kind', 'hash']); const commit = hash(source)
+          const result = await commitDiff(host, snap.root, commit, path)
+          const info = parseLog((await git(host, snap.root, logArgs({ branch: commit }, 0))).stdout)[0]
+          return { ...result, label: `${commit.slice(0, 7)} ${info?.subject ?? ''}`.trim() }
+        }
+        if (source.kind === 'compare') { closed(source, ['kind', 'base', 'head']); return compareDiff(host, snap.root, hash(source, 'base'), hash(source, 'head'), path) }
+        throw new Error('Invalid RPC input')
       },
       async generate() {
         const snap = await repoSnapshot()
@@ -142,7 +218,60 @@ export default Plugin.define({
         const snap = await repoSnapshot()
         return sync(host, snap.root, snap.status.branch, choice)
       },
-    })
+      async graph(input) {
+        const filter = parseGraphFilter(text(input, 'filter')); const sessionID = text(input, 'sessionID')
+        const count = record(input).count
+        if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 1) throw new Error('Invalid RPC input')
+        const root = (await repoSnapshot()).root
+        const result = await graph(host, root, filter, count)
+        const tracker = trackerFor(sessionID, root)
+        return { ...result, commits: result.commits.map((commit) => ({ ...commit, agent: tracker.has(commit.hash) })) }
+      },
+      async commitFiles(input) { return { files: await commitFiles(host, (await repoSnapshot()).root, hash(input)) } },
+      async branches() { return branches(host, (await repoSnapshot()).root) },
+      async switchBranch(input) {
+        const name = text(input, 'name'); const remote = flag(input, 'remote'); const confirmed = flag(input, 'confirmed')
+        const root = (await repoSnapshot()).root
+        const ref = `refs/${remote ? 'remotes' : 'heads'}/${name}`
+        if (!(await branches(host, root)).branches.some((branch) => branch.name === name && branch.remote === remote)) throw new Error('Invalid branch.')
+        return switchBranch(host, root, ref, confirmed)
+      },
+      async createBranch(input) {
+        const start = record(input).start
+        return createBranch(host, (await repoSnapshot()).root, text(input, 'name'), start === undefined ? null : hash(input, 'start'), flag(input, 'confirmed'))
+      },
+      async compare(input) {
+        const root = (await repoSnapshot()).root
+        const rows = (await branches(host, root)).branches
+        const resolve = (name: string) => {
+          const matches = rows.filter(branch => `refs/${branch.remote ? 'remotes' : 'heads'}/${branch.name}` === name)
+          if (matches.length !== 1) throw new Error('Invalid branch.')
+          return matches[0]!.hash
+        }
+        const base = resolve(text(input, 'base')); const head = resolve(text(input, 'head'))
+        return { files: await compare(host, root, base, head), source: { kind: 'compare' as const, base, head } }
+      },
+      async checkout(input) { return checkout(host, (await repoSnapshot()).root, hash(input), flag(input, 'confirmed')) },
+      async revert(input) { return revert(host, (await repoSnapshot()).root, hash(input), flag(input, 'confirmed')) },
+      async fetch() { await fetchAll(host, (await repoSnapshot()).root); return {} },
+      async webUrl(input) { return { url: await webUrl(host, (await repoSnapshot()).root, hash(input)) } },
+      async openWeb(input) {
+        const url = await webUrl(host, (await repoSnapshot()).root, hash(input))
+        if (url) {
+          const argv = openUrlArgv(url, host.platform)
+          if (argv) { const result = await host.run(argv); if (result.exitCode) throw new Error(result.stderr.split(/\r?\n/)[0] || 'Could not open link.') }
+        }
+        return {}
+      },
+    }
+    const mutating = new Set(['stage', 'unstage', 'discard', 'commit', 'init', 'sync', 'switchBranch', 'createBranch', 'checkout', 'revert', 'fetch'])
+    const checked = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [name, async (input: unknown, context: Parameters<typeof handler>[1]) => {
+      const schema = JeiRpc.methods[name as keyof typeof JeiRpc.methods].input
+      closed(input, Object.keys(schema.properties), schema.required)
+      const run = () => (handler as (input: unknown, context: Parameters<typeof handler>[1]) => Promise<unknown>)(input, context)
+      return mutating.has(name) ? mutation(run) : run()
+    }])) as typeof handlers
+    const registration = await ctx.rpc.register(JeiRpc, checked)
     function report(error: unknown) {
       console.error(`jei: background update failed: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -154,7 +283,7 @@ export default Plugin.define({
       clearTimeout(timer)
       timer = setTimeout(() => { void emit('changed', {}) }, 300)
     }
-    let hook: { dispose(): Promise<void> } | undefined
+    const hooks: { dispose(): Promise<void> }[] = []
     let watching: Promise<void> | undefined
     async function cleanup() {
       if (stopped) return
@@ -162,11 +291,25 @@ export default Plugin.define({
       clearTimeout(timer)
       controller.abort()
       await watching
-      try { await hook?.dispose() } finally { await registration.dispose() }
+      const results = await Promise.allSettled(hooks.map(hook => hook.dispose()))
+      await registration.dispose()
+      const failed = results.find(result => result.status === 'rejected')
+      if (failed?.status === 'rejected') throw failed.reason
     }
     try {
-      hook = await ctx.tool.hook('execute.after', async (event) => {
-        if (stopped || event.status !== 'completed') return
+      hooks.push(await ctx.tool.hook('execute.before', async (event) => {
+        if (stopped || typeof event.sessionID !== 'string' || typeof event.id !== 'string') return
+        const key = `${event.sessionID}\0${event.id}`
+        if (windows.has(key)) { invalidate(); return }
+        windows.set(key, agentWindow(event.sessionID))
+        await windows.get(key)
+      }))
+      hooks.push(await ctx.tool.hook('execute.after', async (event) => {
+        if (stopped) return
+        const key = `${event.sessionID}\0${event.id}`
+        const pending = windows.get(key); windows.delete(key)
+        try { await (await pending)?.() } catch { invalidate() }
+        if (event.status !== 'completed') return
         const touch = classifyTool(event.tool, event.input)
         if (!touch) {
           // An unclassified shell command may still have changed files.
@@ -182,7 +325,7 @@ export default Plugin.define({
           }
         }
         if (touch.kind !== 'read' && (rels.length > 0 || touch.paths.length === 0)) changed()
-      })
+      }))
       const stream = ctx.event.subscribe({ signal: controller.signal })
       watching = (async () => {
         for await (const event of stream) {

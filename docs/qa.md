@@ -1,6 +1,6 @@
 # Manual QA checklist
 
-> Purpose: the hand checks run on both hosts before every release, for what the test kits cannot see · Status: current · Last reviewed: 2026-10-19
+> Purpose: the hand checks run on both hosts before every release, for what the test kits cannot see · Status: current · Last reviewed: 2026-10-20
 
 The specs cover logic and rendered frames (`docs/testing.md`). They cannot see real paint, real terminals, a real agent or a real model. Before each release, run this list on **Claude Code** and on **OpenCode 2.0.32+**, on **Windows** and on **one of macOS or Linux**. Use a disposable copy of the sample repo `acme-app` (fictional authors, a bare repo as `origin`), never a real project. Load the working copy as described in `CONTRIBUTING.md` ("Running each host from the working copy").
 
@@ -57,3 +57,18 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] `npm pack --dry-run` lists only `index.ts`, `tui.ts`, `rpc.ts`, `core/`, `hosts/opencode/` (no specs), `LICENSE`, `README.md`, `package.json`.
 - [ ] Run a secret scan over the full history (gitleaks).
 - [ ] Take the README screenshots, one per host, from `acme-app`, with no personal paths or names in the title bar or prompt.
+
+## 7. Graph and Branches (both hosts, 0.2)
+
+- [ ] At 24/40/80/120 columns and five rows, paint linear/fork/merge lanes, expand a commit and resize while retaining focus.
+- [ ] Open a commit diff; check subject/path, hunk keys, j/k navigation and return to the expanded row.
+- [ ] y copies the full hash (OpenCode unsupported/false OSC 52 opens Commit hash); a uses the expected commit text. Cancel Ask, then edit/confirm it.
+- [ ] Checkout/revert cancel without mutation, then confirm; merge revert reports the shared refusal. A real repository hook runs.
+- [ ] Filter message, quoted author, path, a branch and branch:*; cancel retains the old filter. Load more adds graphLimit commits; t fetch reports failures.
+- [ ] b opens Branches; locals/remotes, current marker, gone and ahead/behind counts are readable. Dirty/detached switch: cancel retains state, confirm carries changes only if Git allows.
+- [ ] n creates from HEAD in Branches and the selected commit in Graph. Invalid names fail without lost work.
+- [ ] c compares with the default main branch; open a file diff and use j/k/back. Move the branch and verify the comparison stays pinned. Check missing-base and empty notices.
+- [ ] A real agent commit gains a session-local marker; a JEI commit (including hook-aware Claude execution) never does. Another session/repository must not inherit it. Ambiguous overlap or unavailable evidence may omit markers.
+- [ ] Repeat clipboard/focus/native dialogs in light/dark themes, real terminal resize and another OS.
+
+Task 4 smoke completed on Windows with OpenCode 2.0.32: the checkout loaded in an isolated private session, Graph painted a real commit, and b opened main/feature Branches. No model prompt was sent. This fixed 80-column PTY smoke does not mark the broader checklist complete.

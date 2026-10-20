@@ -12,7 +12,7 @@ test('branches reads real local/remote/gone metadata and origin default base', a
   const { r } = await remotePair()
   await r.git('branch', 'feature')
   await r.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
-  expect((await branches(r.host, r.dir)).base).toBe('origin/main')
+  expect((await branches(r.host, r.dir)).base).toBe('refs/remotes/origin/main')
   expect((await branches(r.host, r.dir)).branches.map((branch) => branch.name)).toEqual(['main', 'feature', 'origin/main'])
   await r.git('update-ref', '-d', 'refs/remotes/origin/main')
   expect((await branches(r.host, r.dir)).branches[0]).toMatchObject({ name: 'main', upstream: null, gone: true })

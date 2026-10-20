@@ -88,10 +88,10 @@ const SEP = ' · '
  * columns everything is bare. The number of keys shown never drops as width
  * grows: a labelled prefix is only used when it costs no keys.
  */
-export function hintLine(view: View, columns: number): string {
+export function hintLine(view: View, columns: number, keys: readonly Key[] = KEYS[view]): string {
   const width = Math.max(0, Math.floor(columns))
   const items: { keyText: string; label: string }[] = []
-  for (const k of KEYS[view]) {
+  for (const k of keys) {
     const keyText = k.key === 'up' || k.key === 'down' ? '↑↓' : k.key
     if (keyText === '↑↓' && items.some((i) => i.keyText === '↑↓')) continue
     items.push({ keyText, label: k.label })

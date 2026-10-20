@@ -2,7 +2,7 @@
 
 > Purpose: how every JEI view looks and behaves at any pane size · Status: current · Last reviewed: 2026-10-20
 
-Status: Files and working Git views are built on both hosts. Graph and Branches are built on Claude Code in milestone 0.2; OpenCode integration remains draft for its next task. Search is draft for 0.3; Symbols is draft for 0.4. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
+Status: Files and working Git views are built on both hosts. Graph and Branches are built on both hosts in milestone 0.2. Search is draft for 0.3; Symbols is draft for 0.4. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
 
 JEI is drawn in character cells. There are no pixels and no fonts to pick, and the colors come from the host. This guide covers how every view looks and how it behaves at any pane size. If a view breaks one of these rules, treat it as a bug.
 
@@ -102,7 +102,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 
 **Drop order.** Graph drops ref badges first, then author/time, then truncates its subject while retaining its seven-character hash. Other rows drop author, hash, optional refs, folder, time, +/−, roll-up counts and the touched marker. Status letters, selection and names remain. ADR 0014 supersedes the earlier graph anatomy.
 
-Graph uses `fitGraph` with a cell budget of `min(lanes, max(3, floor(inner/4)))`; connector rows contain only the glyph. Claude Code uses plain Unicode graph cells with every current icon setting; ASCII remains the shared core fallback, not a new option. The Graph header is `▾ Graph` / `▸ Graph`, adding `(filtered)` for an active filter. Load more is an explicit selectable final row. Expanded files show status, fitted path and +/−, followed by selectable Checkout, Revert and a supported web link. Branches shows locals then a Remote header, current `*`, fitted name, aligned ahead/behind counts and `gone`. Comparison files appear under `Compared with <base>`.
+Graph uses `fitGraph` with a cell budget of `min(lanes, max(3, floor(inner/4)))`; connector rows contain only the glyph. Both hosts use plain Unicode graph cells with every current icon setting; ASCII remains the shared core fallback, not a new option. The Graph header is `▾ Graph` / `▸ Graph`, adding `(filtered)` for an active filter. Load more is an explicit selectable final row. Expanded files show status, fitted path and +/−, followed by selectable Checkout, Revert and a supported web link. Branches shows locals then a Remote header, current `*`, fitted name, aligned ahead/behind counts and `gone`. Comparison files appear under `Compared with <base>`.
 
 Claude Code keeps the six working action hints on working rows and substitutes the six graph commit hints `y/a/b/f/t/n` on a selected commit. The Graph header supplies `b/f/t`; expanded action rows are reached with the shared arrows/Enter. This keeps every applicable shortcut Button visible at 24 columns. Branches keeps `n/c/f`. Active history filters and the new-branch editor remain above the list viewport; confirmations replace editors until answered, preserving both answer Buttons at five rows. Historical diff headers identify the commit or comparison, and a path row sits immediately above the hunks. No browser animation or CSS applies to these character-cell views.
 
@@ -200,3 +200,5 @@ Render every view (Files tree, Files preview, Search, Quick Open, Symbols, Git, 
   - [ ] Views contain no raw color values (a lint rule forbids hex, RGB and ANSI escapes outside `theme.ts`).
 - **Resize sequence:** 120 → 24 → 10 rows → 120. After it, the selection id is unchanged and the final output equals a fresh render.
 - **Shimmer:** a touch produces 8 frames in truecolor and 3 frames with 16 colors, then a static `•`. `activity: none` produces 0 frames.
+
+OpenCode keeps its permanent shared key layer active while short panes hide chrome. Contextual Graph hints select applicable keys from the shared map. Filter/name editors use native editable dialogs; cancel retains the prior filter and confirmations use the fresh core question. Historical diff paths keep a body row at short heights. See ADR 0015.

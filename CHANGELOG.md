@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — 0.2
+
+* Graph and Branches on both hosts: fitted lanes, inline commit files, historical diffs, copy/Ask, checkout/revert confirmation, supported web links, filter, fetch and explicit paging.
+* Branch switching/creation with fresh dirty/detached confirmation and comparisons pinned to the selected branch hashes.
+* Conservative session/repository agent commit markers from before/after tool evidence; JEI mutations and ambiguous overlaps are excluded.
+* Full-hash/ref validation across OpenCode RPC; native dialogs and clipboard fallback. Merge reverts remain unsupported. No version bump or release is made by this entry.
+
 ## 0.1.0
 
 First release, published by hand (see `CONTRIBUTING.md`, Releases).

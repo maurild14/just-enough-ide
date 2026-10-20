@@ -15,10 +15,17 @@ test('branch records sort current/local/remote and retain gone upstream metadata
 
 test('default base prefers the actual origin HEAD target, main, then master', () => {
   const rows = fixture()
-  expect(defaultBase(rows, 'refs/remotes/origin/feature')).toBe('origin/feature')
-  expect(defaultBase(rows, 'origin/missing')).toBe('main')
+  expect(defaultBase(rows, 'refs/remotes/origin/feature')).toBe('refs/remotes/origin/feature')
+  expect(defaultBase(rows, 'origin/missing')).toBe('refs/heads/main')
   expect(defaultBase(rows.filter((branch) => branch.name !== 'main'), null)).toBeNull()
-  expect(defaultBase([{ ...rows[0]!, name: 'master' }], null)).toBe('master')
+  expect(defaultBase([{ ...rows[0]!, name: 'master' }], null)).toBe('refs/heads/master')
+})
+
+test('default base retains remote provenance when a custom target collides with local main', () => {
+  const local = { ...fixture()[0]!, name: 'main', remote: false }
+  const remote = { ...local, remote: true, hash: 'b'.repeat(40) }
+  expect(defaultBase([local, remote], 'refs/remotes/main')).toBe('refs/remotes/main')
+  expect(defaultBase([remote, local], null)).toBe('refs/heads/main')
 })
 
 test('safe switch plans track remote branches or use an existing local branch', () => {

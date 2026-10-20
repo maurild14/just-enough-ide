@@ -23,9 +23,9 @@ export function parseBranches(stdout: string): Branch[] {
 }
 
 export function defaultBase(branches: readonly Branch[], originHead: string | null): string | null {
-  const target = originHead?.replace(/^refs\/remotes\//, '')
-  if (target && branches.some((branch) => branch.remote && branch.name === target)) return target
-  return ['main', 'master'].find((name) => branches.some((branch) => !branch.remote && branch.name === name)) ?? null
+  if (originHead && branches.some((branch) => branch.remote && `refs/remotes/${branch.name}` === originHead)) return originHead
+  const local = ['main', 'master'].find((name) => branches.some((branch) => !branch.remote && branch.name === name))
+  return local ? `refs/heads/${local}` : null
 }
 
 const DIRTY_CONFIRM = 'You have uncommitted changes. Switch and carry them over?'

@@ -13,7 +13,7 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
   const clock = mock.clock(on, { now: 2_000_000_000_000 })
   const r = { root: ROOT, head: A, dirty: false, hooks: false, merge: false, fetchError: '', copy: true, logError: false,
     runs: [] as string[][], copies: [] as string[], fills: [] as string[], toasts: [] as string[], tools: [] as string[],
-    reflog: [] as string[], shell: async (_command: string) => {}, session: 'history-session', base: true, evidenceError: false, clock,
+    reflog: [] as string[], shell: async (_command: string) => {}, session: 'history-session', base: true, originHead: '', remoteRef: 'origin/main', remoteHash: A, evidenceError: false, clock,
     histories: {} as Record<string, Record<string, { agents: string[] }>>, beforeRun: async (_argv: string[]) => {}, time: 2_000_000_000, ...initial }
   const out = (stdout = '', exitCode = 0, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
   const log = (hash: string) => [hash, hash === A ? (r.merge ? `${B} ${C}` : B) : '', hash === B ? 'Leo Park' : 'Ana Rivera', String(r.time), hash === A ? 'HEAD -> refs/heads/main, tag: refs/tags/v1.0' : '', hash === A ? 'feat: add user' : hash === B ? 'fix: validate input' : 'feat: agent commit'].join('\0') + '\0'
@@ -37,9 +37,9 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
     if (a.includes('--git-path')) return out('.git/hooks\n')
     if (a.includes('reflog')) return r.evidenceError ? out('', 1, 'unavailable evidence') : out(r.reflog.join(''))
     if (a.includes('rev-parse')) return out((a.some((v) => v.includes('feature')) ? B : r.head) + '\n')
-    if (a.includes('symbolic-ref')) return out('', 1)
+    if (a.includes('symbolic-ref')) return r.originHead && a.at(-1) === 'refs/remotes/origin/HEAD' ? out(r.originHead + '\n') : out('', 1)
     if (a.includes('check-ref-format')) return a.at(-1) === 'a..b' ? out('', 128, 'invalid') : out(a.at(-1) + '\n')
-    if (a.includes('for-each-ref')) return out(`${r.base ? `refs/heads/main\0${A}\0origin/main\0ahead 1, behind 2\0*\n` : ''}refs/heads/feature\0${B}\0origin/feature\0gone\0\nrefs/remotes/origin/main\0${A}\0\0\0\n`)
+    if (a.includes('for-each-ref')) return out(`${r.base ? `refs/heads/main\0${A}\0origin/main\0ahead 1, behind 2\0*\n` : ''}refs/heads/feature\0${B}\0origin/feature\0gone\0\nrefs/remotes/${r.remoteRef}\0${r.remoteHash}\0\0\0\n`)
     if (a.includes('remote')) return out('https://github.com/acme/acme-app.git\n')
     if (a.includes('log')) {
       if (r.logError) return out('', 1, 'history unavailable')

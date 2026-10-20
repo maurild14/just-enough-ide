@@ -6,20 +6,30 @@ JEI is a pane with four tabs (Files, Search, Symbols, Git) that sits next to the
 
 <!-- screenshots: added by the maintainer from acme-app before the public release -->
 
-## What 0.1 ships
+## What 0.2 ships
 
 - **Files:** a lazy file tree with git status, a shimmer on the files the agent reads (purple), writes (orange) or touches through git (green), follow-the-agent, a filter, previews (code, Markdown, CSV/TSV), mention into the agent, and open in your editor.
 - **Git:** a repository row (branch, Sync with your remote), Changes with stage, unstage and discard (always confirmed), commit, Commit & Push and amend, a ✦ Generate commit message from your own model, and a check before secrets such as `.env` or private keys are committed.
 - **Diff view:** a unified diff that replaces the pane, with hunk and file navigation, Ask about the change, and open in editor.
+- **Graph:** fitted commit lanes, inline changed files, commit diffs, copy hash, Ask, confirmed checkout/revert, supported GitHub/GitLab links, session agent markers, filters and explicit paging. Fetch runs only when requested.
+- **Branches:** local/remote branches, dirty/detached switch confirmation, create from HEAD or a selected commit, and pinned comparisons with the main branch.
 - **Keys:** `1`–`4` switch tabs; every view lists its keys on the last line.
 
 Coming next (see the milestones in [PRD.md §11](PRD.md#11-milestones)):
 
-- **0.2:** Git Graph and Branches.
 - **0.3:** Search and Quick Open.
 - **0.4:** Symbols.
 
 Until then the Search and Symbols tabs show "Coming in a later version."
+
+| View | Keys |
+| --- | --- |
+| Git | `enter` expand/open, `s` stage, `u` unstage, `d` discard, `c` commit mode, `g` generate, `e` sync |
+| Graph | `y` copy hash, `a` Ask, `b` branches, `f` filter, `t` fetch, `n` new branch from the selected commit |
+| Branches | `enter` switch, `n` new branch from HEAD, `c` compare, `f` filter |
+| Diff | `n/p` hunk, `j/k` file, `a` Ask, `o` editor |
+
+OpenCode uses Esc to go back; Claude Code uses the header button or tab digit. Graph filters accept text plus `author:`, `path:` and `branch:` fields (`branch:*` includes all branches). Merge commits cannot be reverted by JEI.
 
 ## Install
 
