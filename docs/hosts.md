@@ -94,7 +94,7 @@ Target: **OpenCode 2.x only**, minimum **2.0.32**. The 1.x line has no `session.
 | Commit message model | `ctx.generate.text({ prompt, model? })` returns `{ text }`; `prompt` is a string, `model` is `{ providerID, id, variant? }` |
 | Storage | `context.storage` in the TUI, `ctx.storage` on the server |
 
-**Foundation.** Built in Tasks 13-14: `nodeHost(generate)` implements the core Host with Node processes and async filesystem calls; `hosts/opencode/rpc.ts` contains the single portable `Rpc.define` contract and `GitSnapshot` wire converters, re-exported by root `rpc.ts`. Root `index.ts` re-exports the server plugin in `hosts/opencode/server.ts`. Its 25 handlers narrow SDK inputs, validate every path under `ctx.location.directory` (the whole batch before changing files), and invoke core services. Methods return objects (`allFiles`: `{ files }`, `generate`: `{ message }`, void: `{}`). The preview schema includes `error`, and core still rejects symlink previews outside the real root. Discard and commit take fresh snapshots; `commitPlan` carries `refusal` while a file is unmerged, and commit throws it before any step; commit validates `approvedSensitive: string[]` and refuses before Git steps when any current sensitive path is absent from that literal approved list. The shell consumes state/events; Files and Git own their actions and dialogs, including confirmation before calling discard.
+**Foundation.** Built in Tasks 13-14: `nodeHost(generate)` implements the core Host with Node processes and async filesystem calls; `hosts/opencode/rpc.ts` contains the single portable `Rpc.define` contract and `GitSnapshot` wire converters, re-exported by root `rpc.ts`. Root `index.ts` re-exports the server plugin in `hosts/opencode/server.ts`. Its handlers narrow SDK inputs, validate every path under `ctx.location.directory` (the whole batch before changing files), and invoke core services. Methods return objects (`allFiles`: `{ files }`, `generate`: `{ message }`, void: `{}`). The preview schema includes `error`, and core still rejects symlink previews outside the real root. Discard and commit take fresh snapshots; `commitPlan` carries `refusal` while a file is unmerged, and commit throws it before any step; commit validates `approvedSensitive: string[]` and refuses before Git steps when any current sensitive path is absent from that literal approved list. The shell consumes state/events; Files and Git own their actions and dialogs, including confirmation before calling discard.
 
 Verified against installed 2.0.32 types: `Rpc.define` preserves the literal definition; JSON Schema method inputs and outputs infer as `unknown` in the SDK, so consumers must narrow them. `RpcRegistration.events.emit(name, data)` sends events (there is no direct `registration.emit`). `GenerateTextInput` is flat: `ctx.generate.text({ prompt: text, ...(model ? { model: { providerID, id } } : {}) })`; an empty model omits `model` and uses the host default.
 
@@ -122,7 +122,7 @@ The installed OpenTUI 0.5.17 input strips CR/LF and defaults to 1,000 characters
 
 **Known gaps.**
 - No API to insert text into the user's prompt. Mention and send open an editable `ui.dialog.prompt` prefilled with the text, then send it with `client.session.prompt({ sessionID, text })`. Esc cancels.
-- No LSP or symbol call in the 2.x client, so Symbols is approximate only there (milestone 0.3; re-check then).
+- Installed plugin/client/protocol 2.0.32 exposes no LSP query API; Symbols is approximate only. The client lsp field configures servers and is not a query method.
 - No diff element: JEI renders `core`'s parsed hunks line by line with theme colors.
 
 **Keys.** `keymap` allows chords, but JEI uses the same single-letter and digit keys as Claude Code. Never bind `ctrl+n` or `ctrl+p` (reserved by OpenCode's dialogs). On narrow terminals OpenCode shows panels full screen.
@@ -134,6 +134,16 @@ The installed OpenTUI 0.5.17 input strips CR/LF and defaults to 1,000 characters
 ## Both hosts
 
 Every view renders at 40 columns; git always runs with `--no-optional-locks` and `GIT_OPTIONAL_LOCKS=0`; no shell strings; agent labels use the host's name (Ask Claude, Ask OpenCode). Behavior differences are limited to those listed above and are recorded in `PRD.md` §13.
+
+## OpenCode Search and Symbols (0.3)
+
+Rechecked installed `@opencode/plugin` 2.0.32 `dist/promise/plugin.d.ts`, `tool.d.ts`, client and protocol declarations: no supported LSP/symbol query API is exported. Client `generated/types.d.ts` has LSP configuration only. Symbols is approximate throughout.
+
+`search.tsx` and `symbols.tsx` use existing native input, theme, selection window, session memory and key-layer patterns. Search debounces 150 ms; the server batches at 200 matches or 100 ms. `RpcCallContext` supplies signal/error only; stateful calls carry sessionID explicitly. Pending ordinary RPC calls use the installed second `{signal}` argument, while persistent streams use searchCancel and server cleanup. Listeners unsubscribe on unmount and late generations cannot navigate or refill busy state. Result/call-child Send resolves the actual selected symbol.
+
+Replacement RPC owns reviewed snapshots per session/project and validates the complete selected subset before writes. Per-file apply preserves known written/skipped results plus optional error after a later write exception; remaining files survive, and changed is emitted even after a possible partial write. Outline returns `{file,nodes}` to distinguish unsupported regular files from directory/missing selections; supported-file read failures are explicit. Recursive schemas use installed-supported top-level `$defs`, with no pattern. TUI relative-path checks preserve colon/whitespace names without claiming to know the remote OS; native and realpath guards stay server-side.
+
+Search/Symbols hints remain at five rows. Submit/Cancel releases letter/digit shortcuts. Shared preview targets route across tabs and show a native gutter marker in a bounded source window, including delimited raw text; ordinary wrapping/tables remain. See ADR 0022 and the distinct automated/live evidence in testing and QA.
 
 ## OpenCode history API evidence
 

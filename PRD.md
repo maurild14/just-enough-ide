@@ -487,3 +487,4 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - Sync follows the user's pull config; otherwise `--ff-only`, and on divergence it asks (merge / rebase / ask the agent).
 - Search Replace skips non-UTF-8/binary files.
 - Claude Code LSP permission is checked with `$.tool.check` first; no surprise dialogs.
+- OpenCode 0.3 Search and replacement state is scoped by explicit sessionID plus the server-owned project root. Stored reviewed plans validate the entire selected subset before writes; partial operational failures return known written/skipped paths and an optional error. Outline RPC also reports whether a confined regular file exists, distinguishing unsupported languages from directory/missing selections. TUI wire-path checks are lexical; native platform/realpath checks stay server-side. See ADR 0022.

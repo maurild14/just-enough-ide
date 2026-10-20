@@ -349,7 +349,7 @@ test('native input focus suppresses JEI shortcuts even when focus arrives outsid
 test('the drafted message and current commit mode survive switching tabs', async () => {
   const f = fixture(); const r = await f.mount()
   f.choose('amend'); f.key('c'); await r.flush(); await r.mockInput.typeText('fix: keep draft'); f.key('esc'); await r.flush()
-  f.key('2'); await r.flush(); f.key('4'); await r.flush()
+  f.key('2'); await r.flush(); f.key('esc'); f.key('4'); await r.flush()
   const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
   expect(input.value).toBe('fix: keep draft')
   f.choose(undefined); f.key('c'); await r.flush(); expect(f.selects.at(-1).current).toBe('amend')
@@ -361,7 +361,7 @@ test('a pending commit stays busy across a tab remount and preserves a newer dra
   f.handlers.commit = () => new Promise((resolve) => { finish = resolve })
   f.key('g'); await r.flush(); f.choose('commit'); f.key('c'); await r.flush()
   ;(r.renderer.root.findDescendantById('git-message') as InputRenderable).submit(); await r.flush()
-  f.key('esc'); f.key('2'); await r.flush(); f.key('4'); await r.flush()
+  f.key('esc'); f.key('2'); await r.flush(); f.key('esc'); f.key('4'); await r.flush()
   const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
   input.focus(); await r.mockInput.typeText(' next'); input.submit(); await r.flush()
   expect(f.calls.filter((c) => c.method === 'commit')).toHaveLength(1)
@@ -385,7 +385,7 @@ for (const separator of ['\n\n', '\r\n\r\n']) test(`generated body survives nati
 test('a generated subject longer than the native default limit survives editing, resize and tab remount', async () => {
   const f = fixture(); const subject = 'feat: ' + 'x'.repeat(1100)
   f.handlers.generate = async () => ({ message: subject })
-  const r = await f.mount(); f.key('g'); await r.flush(); f.key('2'); await r.flush(); f.key('4'); await r.flush()
+  const r = await f.mount(); f.key('g'); await r.flush(); f.key('2'); await r.flush(); f.key('esc'); f.key('4'); await r.flush()
   const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
   expect(input.value).toBe(subject)
   for (const h of [2, 5, 10, 24]) for (const w of [24, 40, 80, 120]) {

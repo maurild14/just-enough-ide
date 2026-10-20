@@ -12,7 +12,13 @@ import type { RpcHandlers } from '@opencode/plugin/promise/rpc'
 import type { CommitMode } from '../../core/git/commands.ts'
 import { agentCandidates, branches, captureReflog, checkout, commitDiff, commitFiles, compare, compareDiff, createBranch, fetchAll, graph, revert, switchBranch, webUrl, commitPlan, discard, fileDiff, generateMessage, initRepo, runSteps, snapshot, stage, sync, unstage } from '../../core/git/service.ts'
 import { parseOptions } from '../../core/options.ts'
-import { insideRel, joinPath } from '../../core/shared/paths.ts'
+import { insideRel, nativeRel, joinPath } from '../../core/shared/paths.ts'
+import type { Host } from '../../core/host.ts'
+import type { Match, SearchQuery } from '../../core/search/rg.ts'
+import type { ReplaceFile } from '../../core/search/replace.ts'
+import { search, quickOpenFiles, buildReplacePlan, applyReplace } from '../../core/search/service.ts'
+import { fileOutline, findSymbol, definitions, references, incoming, outgoing, readSource } from '../../core/symbols/service.ts'
+import { enclosing, languageFor, outline } from '../../core/symbols/outline.ts'
 import { nodeHost } from './host.ts'
 import { JeiRpc, toWire } from './rpc.ts'
 
@@ -56,6 +62,16 @@ function commitInput(input: unknown): { message: string; mode: CommitMode } {
   return { message, mode }
 }
 
+function searchQuery(input: unknown): SearchQuery {
+  const q = closed(input, ['text', 'caseSensitive', 'regex', 'wholeWord', 'include', 'exclude'])
+  return { text: text(q, 'text'), caseSensitive: flag(q, 'caseSensitive'), regex: flag(q, 'regex'), wholeWord: flag(q, 'wholeWord'), include: paths(q, 'include'), exclude: paths(q, 'exclude') }
+}
+function symbolName(input: unknown): string {
+  const name = text(input, 'name')
+  if (name.length > 200 || /[\r\n]/.test(name)) throw new Error('Invalid RPC input')
+  return name
+}
+
 function parseModel(model: string): { providerID: string; id: string } {
   const slash = model.indexOf('/')
   if (slash <= 0 || slash === model.length - 1) throw new Error('Use provider/model for the commit model.')
@@ -70,6 +86,17 @@ export default Plugin.define({
     const activity = new ActivityLog()
     const controller = new AbortController()
     let stopped = false
+    let serial = 0
+    type RunningSearch = { id: string; sessionID: string; stream: ReturnType<typeof search>; timer?: ReturnType<typeof setTimeout>; batch: Match[]; pending: Promise<void> }
+    const searches = new Map<string, RunningSearch>()
+    const plans = new Map<string, { id: string; files: ReplaceFile[]; busy: boolean }>()
+    const scope = (sessionID: string, root = ctx.location.directory) => `${sessionID}\0${root}`
+    const cancelSearch = (key: string) => { const active = searches.get(key); if (active) { searches.delete(key); clearTimeout(active.timer); active.batch = []; active.stream.cancel() } }
+    const requestHost = (signal: AbortSignal): Host => {
+      const active = AbortSignal.any([signal, controller.signal])
+      return { ...host, run: (argv, options) => host.run(argv, { ...options, signal: active }), stream: (argv, options) => host.stream(argv, { ...options, signal: active }) }
+    }
+    const safeRel = (root: string, rel: string) => rel.includes('\0') ? null : nativeRel(root, rel, host.platform)
     let timer: ReturnType<typeof setTimeout> | undefined
     async function repoSnapshot() {
       const snap = await snapshot(host, ctx.location.directory)
@@ -132,14 +159,14 @@ export default Plugin.define({
       },
       async preview(input, context) {
         const root = ctx.location.directory
-        const rel = insideRel(root, text(input, 'rel'))
+        const rel = safeRel(root, text(input, 'rel'))
         if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
         return loadPreview(host, root, rel)
       },
       async allFiles() { return { files: await allFiles(host, ctx.location.directory) } },
       async open(input, context) {
         const root = ctx.location.directory
-        const rel = insideRel(root, text(input, 'rel'))
+        const rel = safeRel(root, text(input, 'rel'))
         if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
         const line = record(input).line
         if (line !== undefined && (typeof line !== 'number' || !Number.isInteger(line) || line < 1)) throw new Error('Invalid RPC input')
@@ -263,8 +290,86 @@ export default Plugin.define({
         }
         return {}
       },
+      async searchStart(input) {
+        const root = ctx.location.directory, sessionID = text(input, 'sessionID'), id = text(input, 'id'), query = searchQuery(record(input).query), key = scope(sessionID, root)
+        cancelSearch(key)
+        const active: RunningSearch = { id, sessionID, batch: [], pending: Promise.resolve(), stream: undefined! }
+        const current = () => !stopped && searches.get(key) === active
+        const flush = () => {
+          clearTimeout(active.timer); active.timer = undefined
+          const matches = active.batch; active.batch = []
+          if (matches.length) active.pending = active.pending.then(async () => { if (current()) await emit('searchMatches', { sessionID, id, matches }) })
+        }
+        searches.set(key, active)
+        active.stream = search(host, root, query, match => {
+          if (!current()) return
+          active.batch.push(match)
+          if (active.batch.length >= 200) flush()
+          else active.timer ??= setTimeout(flush, 100)
+        })
+        void active.stream.done.then(async result => {
+          if (!current()) return
+          flush(); await active.pending
+          if (current()) { await emit('searchDone', { sessionID, id, ...result }); if (current()) searches.delete(key) }
+        }).catch(report)
+        return {}
+      },
+      async searchCancel(input) { const key = scope(text(input, 'sessionID')); if (searches.get(key)?.id === text(input, 'id')) cancelSearch(key); return {} },
+      async replacePlan(input, context) {
+        const root = ctx.location.directory, key = scope(text(input, 'sessionID'), root), query = searchQuery(record(input).query), replacement = text(input, 'replacement')
+        if (plans.get(key)?.busy) throw new Error('Replacement is already running.')
+        const plan = { id: String(++serial), files: [] as ReplaceFile[], busy: false }; plans.set(key, plan)
+        const result = await buildReplacePlan(requestHost(context.signal), root, query, replacement)
+        context.signal.throwIfAborted()
+        if (stopped || plans.get(key) !== plan) throw new Error('Replacement plan was canceled.')
+        plan.files = result.files
+        return { planId: plan.id, ...result }
+      },
+      async replaceApply(input, context) {
+        const root = ctx.location.directory, key = scope(text(input, 'sessionID'), root), plan = plans.get(key), id = text(input, 'planId'), requested = paths(input, 'rels')
+        if (requested.some(rel => safeRel(root, rel) !== rel || !rel)) return context.error('outside_root', 'That path is outside the project.', {})
+        if (!plan || plan.id !== id || plan.busy || new Set(requested).size !== requested.length || requested.some(rel => !plan.files.some(file => file.rel === rel))) throw new Error('Invalid replacement plan.')
+        const result: { written: string[]; skipped: Awaited<ReturnType<typeof applyReplace>>['skipped']; error?: string } = { written: [], skipped: [] }
+        plan.busy = true
+        try {
+          for (const path of requested) {
+            const file = plan.files.find(file => file.rel === path)!
+            try { const applied = await applyReplace(host, root, [file]); result.written.push(...applied.written); result.skipped.push(...applied.skipped) }
+            catch (error) { result.error = error instanceof Error ? error.message.split(/\r?\n/)[0] : 'Unable to write file.'; break }
+          }
+          plan.files = plan.files.filter(file => !result.written.includes(file.rel) && !result.skipped.some(skip => skip.rel === file.rel))
+          return result
+        } finally { plan.busy = false; await emit('changed', {}) }
+      },
+      async quickOpenFiles(_input, context) { return { files: await quickOpenFiles(requestHost(context.signal), ctx.location.directory) } },
+      async outline(input, context) {
+        const root = ctx.location.directory, rel = safeRel(root, text(input, 'rel'))
+        if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
+        const [info, rootInfo] = await Promise.all([host.stat(joinPath(root, rel)), host.stat(root)])
+        if (!info || info.kind !== 'file') return { nodes: null, file: false }
+        if (!rootInfo || safeRel(rootInfo.realPath, info.realPath) === null) return context.error('outside_root', 'That path is outside the project.', {})
+        if (!languageFor(rel)) return { nodes: null, file: true }
+        const source = await readSource(host, root, rel); context.signal.throwIfAborted()
+        if (source === null) throw new Error("Can't read this file.")
+        return { nodes: outline(rel, source), file: true }
+      },
+      async findSymbol(input, context) { return { refs: await findSymbol(requestHost(context.signal), ctx.location.directory, symbolName(input)) } },
+      async definitions(input, context) {
+        const root = ctx.location.directory, name = symbolName(input), rel = safeRel(root, text(input, 'fromRel'))
+        if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
+        return { refs: await definitions(requestHost(context.signal), root, name, rel) }
+      },
+      async references(input, context) { return { refs: await references(requestHost(context.signal), ctx.location.directory, symbolName(input)) } },
+      async incoming(input, context) { return { refs: await incoming(requestHost(context.signal), ctx.location.directory, symbolName(input)) } },
+      async outgoing(input, context) {
+        const root = ctx.location.directory, rel = safeRel(root, text(input, 'rel')), line = record(input).line
+        if (typeof line !== 'number' || !Number.isSafeInteger(line) || line < 1) throw new Error('Invalid RPC input')
+        if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
+        const node = enclosing(await fileOutline(host, root, rel) ?? [], line); context.signal.throwIfAborted()
+        return { refs: node ? await outgoing(requestHost(context.signal), root, rel, node) : [] }
+      },
     }
-    const mutating = new Set(['stage', 'unstage', 'discard', 'commit', 'init', 'sync', 'switchBranch', 'createBranch', 'checkout', 'revert', 'fetch'])
+    const mutating = new Set(['stage', 'unstage', 'discard', 'commit', 'init', 'sync', 'switchBranch', 'createBranch', 'checkout', 'revert', 'fetch', 'replaceApply'])
     const checked = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [name, async (input: unknown, context: Parameters<typeof handler>[1]) => {
       const schema = JeiRpc.methods[name as keyof typeof JeiRpc.methods].input
       closed(input, Object.keys(schema.properties), schema.required)
@@ -288,8 +393,12 @@ export default Plugin.define({
     async function cleanup() {
       if (stopped) return
       stopped = true
+      const pendingSearches = [...searches.values()].map(search => search.stream.done)
+      for (const key of searches.keys()) cancelSearch(key)
+      plans.clear()
       clearTimeout(timer)
       controller.abort()
+      await Promise.allSettled(pendingSearches)
       await watching
       const results = await Promise.allSettled(hooks.map(hook => hook.dispose()))
       await registration.dispose()

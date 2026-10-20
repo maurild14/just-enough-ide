@@ -9,6 +9,7 @@ import { createMemo, createSignal, onCleanup } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import { parseOptions } from '../core/options.ts'
 import { paneMemory } from '../hosts/opencode/pane.tsx'
+import { JeiRpc } from '../hosts/opencode/rpc.ts'
 import plugin from '../tui.ts'
 
 type Context = Plugin.Context
@@ -28,7 +29,7 @@ const diff = (path = 'src/app.ts') => ({ file: { path, binary: false, added: 2, 
 
 export function historyFixture(options: Record<string, unknown> = {}) {
   const layers: (() => Layer)[] = []
-  const listeners = new Set<() => void>()
+  const listeners = new Map<string, Set<(event: { data: unknown }) => void>>()
   const memory = new Map<string, unknown>()
   const [width, setWidth] = createSignal(80)
   const calls: { method: string; input: any }[] = []
@@ -47,8 +48,8 @@ export function historyFixture(options: Record<string, unknown> = {}) {
     compare: async () => ({ files: [{ path: 'a.ts', status: 'M', added: 2, removed: 1 }, { path: 'b.ts', status: 'A', added: 1, removed: 0 }], source: { kind: 'compare', base: hash, head: other } }),
     switchBranch: async () => ({ ok: true }), createBranch: async () => ({ ok: true }), checkout: async (i) => i.confirmed ? { ok: true } : { ok: false, confirm: 'Check out 1111111 (detached HEAD)?' }, revert: async (i) => i.confirmed ? { ok: true } : { ok: false, confirm: 'Revert 1111111?' },
   }
-  const api = Object.fromEntries(['state', 'stage', 'unstage', 'discard', 'diff', 'generate', 'commitPlan', 'commit', 'init', 'sync', 'open', 'graph', 'commitFiles', 'branches', 'compare', 'createBranch', 'switchBranch', 'checkout', 'revert', 'fetch', 'webUrl', 'openWeb'].map((method) => [method, async (input: any) => { calls.push({ method, input }); return handlers[method]?.(input) ?? {} }]))
-  api.events = { on(name: string, fn: () => void) { if (name === 'changed') listeners.add(fn); return () => listeners.delete(fn) } } as any
+  const api = Object.fromEntries(Object.keys(JeiRpc.methods).map((method) => [method, async (input: any) => { calls.push({ method, input }); return handlers[method]?.(input) ?? {} }]))
+  api.events = { on(name: string, fn: (event: { data: unknown }) => void) { const set = listeners.get(name) ?? new Set(); listeners.set(name, set); set.add(fn); return () => set.delete(fn) } } as any
   const copied: string[] = []; let copyResult = true
   const ctx = { renderer: { copyToClipboardOSC52(text: string) { copied.push(text); return copyResult } },
     options: { ...options, defaultTab: 'git' }, theme: { text: { base: 'white', muted: 'gray', action: { primary: { base: 'blue' } }, feedback: { error: { base: 'red' }, warning: { base: 'yellow' }, success: { base: 'green' }, info: { base: 'magenta' } } },
@@ -68,6 +69,7 @@ export function historyFixture(options: Record<string, unknown> = {}) {
   function key(bind: string) { return layers.flatMap((l) => l().commands ?? []).findLast((c) => c.bind === bind && (typeof c.enabled === 'function' ? c.enabled() : c.enabled !== false))?.run() }
   return { ctx, mount, copied, copy(value: boolean) { copyResult = value }, key, calls, confirms, selects, prompts, sent, notices, handlers, setWidth, layers,
     setGit(value: unknown) { git = value }, confirm(value: boolean | undefined) { confirmation = value }, choose(value: unknown) { selection = value }, edit(value: string | undefined) { edited = value },
-    changed() { for (const fn of listeners) fn() },
+    emit(name: string, data: unknown) { for (const fn of listeners.get(name) ?? []) fn({ data }) },
+    changed() { for (const fn of listeners.get('changed') ?? []) fn({ data: {} }) },
   }
 }

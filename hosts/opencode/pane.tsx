@@ -14,6 +14,8 @@ import { TAB_NAMES, tabBar } from '../../core/shared/tabs.ts'
 import { insideRel } from '../../core/shared/paths.ts'
 import { Files } from './files.tsx'
 import { Git } from './git.tsx'
+import { Search } from './search.tsx'
+import { Symbols } from './symbols.tsx'
 import { JeiRpc } from './rpc.ts'
 
 type Context = Plugin.Context
@@ -57,13 +59,17 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   const [revision, setRevision] = createSignal(0)
   let filesAction: (action: string) => void = () => {}
   let gitAction: (action: string) => void = () => {}
+  let searchAction: (action: string) => void = () => {}
+  let symbolsAction: (action: string) => void = () => {}
   const [editingAction, setEditingAction] = createSignal<() => boolean>(() => false)
   const editing = () => editingAction()()
   const dimensions = useTerminalDimensions()
   const [height, setHeight] = createSignal(dimensions().height)
   const width = () => Math.max(0, Math.floor(props.input.width))
-  const showBack = () => height() >= 3 && (state().stack.length > 1 || editing())
-  const back = () => { if (error() || !snapshot()) dispatch({ type: 'back' }); else if (state().tab === 'files') filesAction('back'); else if (state().tab === 'git') gitAction('back'); else dispatch({ type: 'back' }) }
+  const isFiles = () => currentView(state()) === 'files.preview' || state().tab === 'files'
+  const activeAction = (action: string) => { if (isFiles()) filesAction(action); else if (state().tab === 'git') gitAction(action); else if (state().tab === 'search') searchAction(action); else symbolsAction(action) }
+  const showBack = () => height() >= 3 && (state().stack.length > 1 || editing()) && !(editing() && ['search', 'symbols'].includes(state().tab))
+  const back = () => { if (error() || !snapshot()) dispatch({ type: 'back' }); else activeAction('back') }
   let stopped = false
   let received = 0
   const live = new Map<string, number>()
@@ -124,13 +130,13 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
       ...Object.entries(TAB_KEYS).map(([key, tab]) => ({ bind: key, title: TAB_NAMES[tab], enabled: () => !editing(), run: () => { dispatch({ type: 'tab', tab }) } })),
       ...KEYS[currentView(state())].map(({ key, action, label }) => ({ bind: key, title: label, run: () => {
         if (action === 'back') back()
-        else if (state().tab === 'files') filesAction(action)
-        else if (state().tab === 'git') gitAction(action)
+        else activeAction(action)
       }, enabled: () => !editing() || key === 'esc' && action === 'back' || ['move-up', 'move-down', ...(state().tab === 'files' ? ['activate'] : [])].includes(action) })),
     ],
   }))
   const tabs = createMemo(() => tabBar(width(), width(), state().tab))
-  const showHints = () => height() >= (state().tab === 'git' ? 5 : 10)
+  const showHints = () => height() >= (state().tab === 'files' ? 10 : 5)
+  const bodyHeight = () => Math.max(0, height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0) - (showBack() ? 1 : 0))
   const hints = () => {
     const selected = state().selected.git ?? ''
     const history = /^(graph-|group-graph$|commit-file-|checkout-|revert-|web-)/.test(selected)
@@ -141,8 +147,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
         ? KEYS.git.filter(key => !['copy-hash', 'ask', 'new-branch'].includes(key.action))
         : undefined)
   }
-  const body = () => error() || (state().tab === 'search' || state().tab === 'symbols' ? 'Coming in a later version.' :
-    !snapshot() ? 'Loading…' : state().tab === 'files' && state().selected.files ? fitPath(state().selected.files!, width()) : TAB_NAMES[state().tab])
+  const body = () => error() || (!snapshot() ? 'Loading…' : TAB_NAMES[state().tab])
   return <box width={width()} height="100%" flexDirection="column" onSizeChange={function () { setHeight(this.height) }} onMouseDown={() => props.input.focus()}>
     <Show when={height() >= 3}>
       <box flexDirection="row" height={1} flexShrink={0} gap={tabs().gap}>
@@ -154,21 +159,24 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     </Show>
     <Show when={height() >= 8}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{'─'.repeat(width())}</text></Show>
     <Show when={showBack()}><text height={1} flexShrink={0} fg={props.ctx.theme.text.action.primary.base} onMouseDown={back}>{editing() ? ' Back' : ` ${KEYS[currentView(state())].find(key => key.action === 'back')!.key} Back`}</text></Show>
-    <Show when={state().tab !== 'files' || !snapshot() || error()} fallback={
+    <Show when={snapshot() && !error()} fallback={<box flexGrow={1} minHeight={0}><text height={1} fg={error() ? props.ctx.theme.text.feedback.error.base : props.ctx.theme.text.base}>{fitEnd(body(), width())}</text></box>}>
+    <Show when={`${props.input.sessionID}\0${snapshot()!.cwd}`} keyed>{() => <Show when={!isFiles()} fallback={
       <Files ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} options={snapshot()!.options} git={snapshot()!.git}
         state={state()} dispatch={dispatch} activity={activity()} now={now()} revision={revision()} width={width()}
-        height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0) - (showBack() ? 1 : 0)} header={height() >= 6}
+        height={bodyHeight()} header={height() >= 6}
         focused={props.input.focused} bind={(run, isEditing) => { filesAction = run; setEditingAction(() => isEditing) }} />
     }>
       <Show when={state().tab !== 'git' || !snapshot() || error()} fallback={
         <Git ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} git={snapshot()!.git}
           state={state()} dispatch={dispatch} revision={revision()} refresh={refreshAfterChange} smartCommit={snapshot()!.options.smartCommit} graphLimit={snapshot()!.options.graphLimit} width={width()}
-          height={height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0) - (showBack() ? 1 : 0)} header={height() >= 6}
+          height={bodyHeight()} header={height() >= 6}
           focused={props.input.focused} bind={(run, isEditing) => { gitAction = run; setEditingAction(() => isEditing) }} />
       }>
-      <Show when={height() >= 6}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{fitEnd(snapshot()?.cwd ?? 'JEI', width())}</text></Show>
-      <box flexGrow={1} minHeight={1}><text height={1} fg={error() ? props.ctx.theme.text.feedback.error.base : props.ctx.theme.text.base}>{fitEnd(body(), width())}</text></box>
+      <Show when={state().tab === 'search'} fallback={<Symbols ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} state={state()} dispatch={dispatch} activity={activity()} revision={revision()} width={width()} height={bodyHeight()} header={height() >= 6} focused={props.input.focused} bind={(run, isEditing) => { symbolsAction = run; setEditingAction(() => isEditing) }} />}>
+        <Search ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} state={state()} dispatch={dispatch} activity={activity()} revision={revision()} refresh={refreshAfterChange} width={width()} height={bodyHeight()} header={height() >= 6} focused={props.input.focused} bind={(run, isEditing) => { searchAction = run; setEditingAction(() => isEditing) }} />
       </Show>
+      </Show>
+    </Show>}</Show>
     </Show>
     <Show when={showHints()}><text height={1} flexShrink={0} fg={props.ctx.theme.text.muted}>{hints()}</text></Show>
   </box>

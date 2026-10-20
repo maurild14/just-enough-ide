@@ -14,7 +14,7 @@ import { latest } from '../../core/latest.ts'
 import type { Options } from '../../core/options.ts'
 import { currentView, type PaneAction, type PaneState } from '../../core/pane.ts'
 import { cellWidth, fitEnd, fitPath, padEnd } from '../../core/shared/fit.ts'
-import { insideRel, joinPath, toPosix } from '../../core/shared/paths.ts'
+import { insideRel, nativeRel, joinPath, toPosix } from '../../core/shared/paths.ts'
 import { activityColor } from './colors.ts'
 import { handToAgent } from './hand-off.ts'
 import type { JeiRpc } from './rpc.ts'
@@ -53,7 +53,8 @@ function readPreview(value: unknown): Preview {
       return { kind: data.kind, text: data.text, language: data.language as string | undefined }
     case 'csv': case 'tsv':
       if (!Array.isArray(data.rows)) throw new Error('Invalid Files reply.')
-      return { kind: data.kind, rows: data.rows.slice(0, 200).map(strings) }
+      if (data.text !== undefined && typeof data.text !== 'string') throw new Error('Invalid Files reply.')
+      return { kind: data.kind, rows: data.rows.slice(0, 200).map(strings), text: data.text as string | undefined }
     case 'image': case 'binary': case 'too-large': case 'empty': case 'error': return { kind: data.kind }
     default: throw new Error('Invalid Files reply.')
   }
@@ -85,7 +86,7 @@ export function Files(props: {
   const relOf = (path: string) => insideRel(cwd(), path)
   const editing = () => filtering() && !isPreview()
   const inner = () => Math.max(0, props.width - 2)
-  const room = () => Math.max(1, props.height - (props.header || editing() ? 1 : 0))
+  const room = () => Math.max(0, props.height - (props.header || editing() ? 1 : 0))
   const theme = () => props.ctx.theme
   const syntax = createMemo(() => SyntaxStyle.fromStyles(Object.fromEntries(Object.entries(theme().syntax ?? {}).map(([name, fg]) => [name, { fg: fg as RGBA }]))))
   createEffect(() => { const style = syntax(); onCleanup(() => style.destroy()) })
@@ -125,7 +126,11 @@ export function Files(props: {
     })
   })
   const load = latest(async (rel: string | undefined) => rel === undefined ? undefined : readPreview(await props.api.preview({ rel })))
-  const previewPath = createMemo(() => isPreview() ? previewRel() || selected() : undefined)
+  const previewPath = createMemo(() => isPreview() ? props.state.preview?.rel || previewRel() || selected() : undefined)
+  const targetLine = () => isPreview() ? props.state.preview?.line : undefined
+  const source = createMemo(() => preview()?.text?.split('\n') ?? [])
+  const markedLine = () => targetLine() === undefined ? undefined : Math.max(1, Math.min(source().length, targetLine()!))
+  createEffect(() => { previewPath(); const line = markedLine(); if (line !== undefined) setTop(line - 1) })
   createEffect(() => {
     cwd(); props.revision
     const rel = previewPath()
@@ -185,7 +190,8 @@ export function Files(props: {
     return all.slice(treeTop, treeTop + room())
   })
   async function run(action: string) {
-    const rel = relOf(isPreview() ? previewRel() || selected() || '' : selected() || '')
+    const path = previewPath() || ''
+    const rel = isPreview() ? path && !path.includes('\0') && nativeRel('', path, 'linux') === path ? path : null : relOf(selected() || '')
     switch (action) {
       case 'back':
         if (isPreview()) props.dispatch({ type: 'back' })
@@ -213,14 +219,15 @@ export function Files(props: {
       case 'toggle-hidden': setHidden(!hidden()); return
       case 'scroll-up': case 'scroll-down': {
         const by = action === 'scroll-up' ? -1 : 1
-        if (code && !code.isDestroyed && (preview()?.kind === 'code' || preview()?.kind === 'markdown')) { code.scrollY += by; setTop(code.scrollY) }
+        if (targetLine() !== undefined) setTop(n => Math.max(0, Math.min(Math.max(0, source().length - 1), n + by)))
+        else if (code && !code.isDestroyed && (preview()?.kind === 'code' || preview()?.kind === 'markdown')) { code.scrollY += by; setTop(code.scrollY) }
         else setTop((n) => Math.max(0, Math.min(Math.max(0, table().length - room()), n + by)))
         return
       }
       case 'mention': if (rel) await handToAgent(props.ctx, props.sessionID, mentionText([rel])); return
       case 'open-editor': {
         if (!rel) return
-        const reply = await props.api.open({ rel }) as { refused?: unknown }
+        const reply = await props.api.open({ rel, ...(targetLine() ? { line: targetLine() } : {}) }) as { refused?: unknown }
         if (typeof reply?.refused === 'string' && !stopped) props.ctx.ui.toast.show({ message: reply.refused, variant: 'warning' })
         return
       }
@@ -265,9 +272,9 @@ export function Files(props: {
     const weight = marker && !glow ? 1 : Math.ceil(glow * 8) / 8
     return RGBA.fromValues(fg.r + (accent.r - fg.r) * weight, fg.g + (accent.g - fg.g) * weight, fg.b + (accent.b - fg.b) * weight)
   }
-  return <box flexDirection="column" flexGrow={1} minHeight={1}>
+  return <box flexDirection="column" flexGrow={1} minHeight={0}>
     <Show when={props.header || editing()}>
-      <Show when={editing()} fallback={<text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitPath(isPreview() ? previewRel() || selected() || '' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text>}>
+      <Show when={editing()} fallback={<text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitPath(isPreview() ? previewPath() || '' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text>}>
         <box height={1} flexShrink={0} flexDirection="row"><text fg={theme().text.muted}>{fitEnd(' Filter: ', props.width)}</text><input width={Math.max(1, props.width - 9)} focused={props.focused} value={query()} onInput={setQuery} onSubmit={() => invoke('activate')} /></box>
       </Show>
     </Show>
@@ -276,9 +283,9 @@ export function Files(props: {
         onMouseDown={() => { if (item.row && !('more' in item.row)) { props.dispatch({ type: 'select', view: 'files', id: item.rel }); invoke('activate') } }}>
         <span style={{ fg: color(item.rel, true), dim: props.activity.touched(item.rel) && !props.activity.glow(item.rel, props.now) }}>{props.activity.touched(item.rel) ? '•' : ' '}</span><span style={{ fg: filtering() && filesError() ? theme().text.feedback.error.base : color(item.rel) }}>{rowText(item)}</span><span style={{ fg: statusColor(item) }}>{statusSuffix(item)}</span>
       </text>}</For>}>
-        <Show when={preview()?.kind === 'code' || preview()?.kind === 'markdown'} fallback={<For each={notice() ? [notice()] : table().slice(top(), top() + room())}>{(line) => <text height={1} flexShrink={0} fg={preview()?.kind === 'error' ? theme().text.feedback.error.base : theme().text.muted}>{' ' + fitEnd(line, inner())}</text>}</For>}>
+        <Show when={targetLine() !== undefined && preview()?.text !== undefined} fallback={<Show when={preview()?.kind === 'code' || preview()?.kind === 'markdown'} fallback={<For each={notice() ? [notice()] : table().slice(top(), top() + room())}>{(line) => <text height={1} flexShrink={0} fg={preview()?.kind === 'error' ? theme().text.feedback.error.base : theme().text.muted}>{' ' + fitEnd(line, inner())}</text>}</For>}>
           <code id="files-code" ref={(el) => { code = el; el.scrollY = top() }} width={inner()} height={room()} marginLeft={1} content={preview()?.text ?? ''} filetype={preview()?.language ?? (preview()?.kind === 'markdown' ? 'markdown' : undefined)} syntaxStyle={syntax()} wrapMode="char" fg={theme().text.base} conceal={false} />
-        </Show>
+        </Show>}><box flexDirection="row" height={room()} overflow="hidden"><text width={2} fg={theme().text.action.primary.base}>{source().slice(top(), top() + room()).map((_, i) => top() + i + 1 === markedLine() ? '> ' : '  ').join('\n')}</text><code id="files-target-code" width={Math.max(0, inner() - 1)} height={room()} content={source().slice(top(), top() + room()).join('\n')} filetype={preview()?.language} syntaxStyle={syntax()} wrapMode="none" fg={theme().text.base} conceal={false} /></box></Show>
       </Show>
     </box>
   </box>

@@ -29,6 +29,8 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/decisions/0018-safe-sync-review-recovery.md` | Root-bound prompt-only recovery for Claude Sync's missing auto-mode review. |
 | `docs/decisions/0019-search-streams-and-safe-replace.md` | Search process exceptions, bounded first-occurrence fallback, replacement safety and preview origins. |
 | `docs/decisions/0020-native-search-paths-and-zero-width-fallback.md` | Platform-aware Search filenames, conservative POSIX backslash refusal and zero-width fallback verification. |
+| `docs/decisions/0021-native-search-symbol-controls-and-path-evidence.md` | Compact native controls, fresh LSP checks, marked source previews and canonical path evidence. |
+| `docs/decisions/0022-opencode-search-symbols-and-review-state.md` | Session-scoped OpenCode streams, reviewed replacement RPC and native source targets. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
 
 ## Keeping docs current

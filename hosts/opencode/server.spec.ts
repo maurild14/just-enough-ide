@@ -16,6 +16,7 @@ type Handlers = { [K in keyof typeof JeiRpc.methods]: (
 type State = { cwd: string; options: Options; git: WireGitSnapshot; activity: ReturnType<ActivityLog['toJSON']> }
 type ToolEvent = { sessionID?: string; id?: string; tool: string; input: unknown; status: 'completed' | 'error' }
 const disposers: Plugin.Cleanup[] = []
+const query = { text: 'load', caseSensitive: false, regex: false, wholeWord: false, include: [], exclude: [] }
 let gitEnv: Record<string, string | undefined> = {}
 
 beforeEach(() => {
@@ -99,6 +100,98 @@ async function start(directory: string, options: Record<string, unknown> = {}) {
     get resources() { return { rpcDisposed, hookDisposed, aborted: eventSignal?.aborted, streamClosed } },
   }
 }
+
+test('replacement ownership and the complete subset are checked before writing; changed files are skipped', async () => {
+  const repo = await makeRepo({ 'a.ts': 'export const load = 1\n', 'b.ts': 'load()\n' })
+  const server = await start(repo.dir)
+  const call = (name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>
+  const plan = await call('replacePlan', { sessionID: 'session-a', query, replacement: 'save' })
+  expect(plan.files.map((f: any) => f.rel).sort()).toEqual(['a.ts', 'b.ts'])
+  await expect(call('replaceApply', { sessionID: 'session-a', planId: plan.planId, rels: ['a.ts', 'other.ts'] })).rejects.toThrow()
+  await expect(call('replaceApply', { sessionID: 'session-b', planId: plan.planId, rels: ['a.ts'] })).rejects.toThrow()
+  expect(readFileSync(join(repo.dir, 'a.ts'), 'utf8')).toContain('load')
+  repo.write('b.ts', 'changed\n')
+  expect(await call('replaceApply', { sessionID: 'session-a', planId: plan.planId, rels: ['a.ts', 'b.ts'] })).toEqual({ written: ['a.ts'], skipped: [{ rel: 'b.ts', reason: 'changed' }] })
+  expect(readFileSync(join(repo.dir, 'a.ts'), 'utf8')).toContain('save')
+  expect(readFileSync(join(repo.dir, 'b.ts'), 'utf8')).toBe('changed\n')
+})
+
+test('new RPC boundaries reject extra nested fields, invalid names and outside paths', async () => {
+  const repo = await makeRepo({ 'a.ts': 'export function load() {}\n' }); const server = await start(repo.dir)
+  const call = (name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>
+  await expect(call('searchStart', { sessionID: 'a', id: '1', query: { ...query, surprise: true } })).rejects.toThrow('Invalid RPC input')
+  await expect(call('references', { name: 'load\nother' })).rejects.toThrow('Invalid RPC input')
+  await expect(call('findSymbol', { name: 'x'.repeat(201) })).rejects.toThrow('Invalid RPC input')
+  await expect(call('outgoing', { rel: 'a.ts', line: 0 })).rejects.toThrow('Invalid RPC input')
+  expect(await call('outline', { rel: '../x' })).toMatchObject({ type: 'outside_root' })
+  await expect(call('outline', { rel: 'a.ts', extra: true })).rejects.toThrow('Invalid RPC input')
+  expect(await call('outline', { rel: '' })).toEqual({ nodes: null, file: false })
+  expect(await call('outline', { rel: 'a.ts' })).toMatchObject({ file: true, nodes: [{ name: 'load' }] })
+  repo.write('notes.txt', 'plain text'); expect(await call('outline', { rel: 'notes.txt' })).toEqual({ nodes: null, file: true })
+  repo.write('bad.ts', '\0binary'); await expect(call('outline', { rel: 'bad.ts' })).rejects.toThrow("Can't read this file.")
+})
+
+test('search batches stream before completion, cancel per session and stop on cleanup', async () => {
+  const repo = await makeRepo({ 'a.ts': 'load\n' })
+  const sources: { push(line: string): void; end(): void; canceled: boolean }[] = []
+  const nodeHost = hostModule.nodeHost
+  const mock = spyOn(hostModule, 'nodeHost').mockImplementation(generate => ({ ...nodeHost(generate), stream() {
+    const queue: string[] = []; let ended = false, wake: (() => void) | undefined, finish!: (v: { exitCode: number; stderr: string }) => void
+    const done = new Promise<{ exitCode: number; stderr: string }>(resolve => { finish = resolve })
+    const source = { canceled: false, push(line: string) { queue.push(line); wake?.() }, end() { ended = true; wake?.(); finish({ exitCode: 0, stderr: '' }) } }; sources.push(source)
+    return { done, cancel() { source.canceled = true; source.end() }, lines: (async function* () { while (!ended || queue.length) { const line = queue.shift(); if (line !== undefined) yield line; else await new Promise<void>(resolve => { wake = resolve }) } })() }
+  } }))
+  const wait = async (predicate: () => boolean) => { for (let i = 0; i < 400 && !predicate(); i++) await new Promise(resolve => setTimeout(resolve, 5)); expect(predicate()).toBe(true) }
+  const row = (line: number) => JSON.stringify({ type: 'match', data: { path: { text: 'a.ts' }, lines: { text: 'load\n' }, line_number: line, submatches: [{ start: 0, end: 4, match: { text: 'load' } }] } })
+  try {
+    const server = await start(repo.dir), call = (name: string, input: unknown) => server.call(name as keyof Handlers, input)
+    await call('searchStart', { sessionID: 'a', id: 'first', query }); await wait(() => sources.length === 1)
+    for (let i = 1; i <= 201; i++) sources[0]!.push(row(i))
+    await wait(() => server.emitted.filter(e => e.name === 'searchMatches').length === 2)
+    expect(server.emitted.filter(e => e.name === 'searchMatches').map(e => (e.data as any).matches.length)).toEqual([200, 1])
+    expect(server.emitted.some(e => e.name === 'searchDone')).toBe(false)
+    await call('searchStart', { sessionID: 'b', id: 'other', query }); await wait(() => sources.length === 2)
+    await call('searchStart', { sessionID: 'a', id: 'second', query }); await wait(() => sources.length === 3)
+    expect(sources[0]!.canceled).toBe(true); expect(sources[1]!.canceled).toBe(false)
+    await call('searchCancel', { sessionID: 'a', id: 'first' }); expect(sources[2]!.canceled).toBe(false)
+    await call('searchCancel', { sessionID: 'a', id: 'second' }); sources[2]!.push(row(1)); sources[2]!.end()
+    sources[1]!.push(row(1)); sources[1]!.end()
+    await wait(() => server.emitted.some(e => e.name === 'searchDone' && (e.data as any).sessionID === 'b'))
+    expect(server.emitted.filter(e => (e.data as any).id === 'second')).toEqual([])
+    await call('searchStart', { sessionID: 'a', id: 'cleanup', query }); await wait(() => sources.length === 4)
+    await server.dispose(); expect(sources[3]!.canceled).toBe(true)
+  } finally { mock.mockRestore() }
+})
+
+test('later write errors return known partial results, retain remaining plans and refresh', async () => {
+  const repo = await makeRepo({ 'a.ts': 'load\n', 'b.ts': 'load\n' }), nodeHost = hostModule.nodeHost
+  const mock = spyOn(hostModule, 'nodeHost').mockImplementation(generate => {
+    const host = nodeHost(generate)
+    return { ...host, async writeText(path, text) { if (path.endsWith('/b.ts')) { await host.writeText(path, 'partial'); throw new Error('Disk write failed.\nDetails') }; await host.writeText(path, text) } }
+  })
+  try {
+    const server = await start(repo.dir), call = (name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>
+    const plan = await call('replacePlan', { sessionID: 'a', query, replacement: 'save' })
+    expect(await call('replaceApply', { sessionID: 'a', planId: plan.planId, rels: ['a.ts', 'b.ts'] })).toEqual({ written: ['a.ts'], skipped: [], error: 'Disk write failed.' })
+    expect(readFileSync(join(repo.dir, 'b.ts'), 'utf8')).toBe('partial')
+    expect(server.emitted.some(e => e.name === 'changed')).toBe(true)
+    expect(await call('replaceApply', { sessionID: 'a', planId: plan.planId, rels: ['b.ts'] })).toEqual({ written: [], skipped: [{ rel: 'b.ts', reason: 'changed' }] })
+  } finally { mock.mockRestore() }
+})
+
+test('reused preview/open boundaries preserve native colon names and reject unsupported aliases', async () => {
+  const nodeHost = hostModule.nodeHost, opened: readonly string[][] = []; let reads = 0
+  const mock = spyOn(hostModule, 'nodeHost').mockImplementation(generate => ({ ...nodeHost(generate), platform: 'linux', async stat(path) { return path === '/acme-app' ? { kind: 'dir', size: 0, realPath: path } : path === '/acme-app/a:b.ts' ? { kind: 'file', size: 5, realPath: path } : null }, async readHead() { reads++; return new TextEncoder().encode('load\n') }, async run(argv) { (opened as string[][]).push([...argv]); return { exitCode: 0, stdout: '', stderr: '' } } }))
+  try {
+    const server = await start('/acme-app', { editorCommand: 'fixture-editor {path}:{line}' })
+    expect(await server.call('preview', { rel: 'a:b.ts' })).toMatchObject({ kind: 'code', text: 'load\n' })
+    expect(await server.call('open', { rel: 'a:b.ts', line: 2 })).toEqual({})
+    expect(opened.at(-1)).toEqual(['fixture-editor', '/acme-app/a:b.ts:2'])
+    expect(await server.call('preview', { rel: 'a\\b.ts' })).toMatchObject({ type: 'outside_root' })
+    expect(await server.call('open', { rel: '../outside.ts' })).toMatchObject({ type: 'outside_root' })
+    expect(reads).toBe(1); expect(opened).toHaveLength(1)
+  } finally { mock.mockRestore() }
+})
 
 test('web opener ignores returned nonzero exits and surfaces spawn errors without opening a browser', async () => {
   const repo = await makeRepo({ 'a.txt': 'before\n' })

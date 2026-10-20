@@ -12,7 +12,7 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] OpenCode: the checkout is listed as a local plugin in `opencode.json`; after a restart the panel opens once on session start (`startOpen: on`) and not again in the same session.
 - [ ] `/jei` toggles the pane; `/jei files`, `/jei search`, `/jei symbols`, `/jei git` open on that tab; `/jei <path>` opens Files revealing the path.
 - [ ] Keys `1` to `4` switch tabs while the pane is focused; clicking a tab works where the host has a mouse.
-- [ ] Claude Code: Search, Quick Open and Symbols open their native views; OpenCode 0.3 integration remains pending.
+- [ ] Both hosts: Search, Quick Open and Symbols open their native views.
 - [ ] OpenCode: `q`, visible Back and `Esc` go back one level from a nested view; host `Ctrl-N` / `Ctrl-P` still work; clicking the panel focuses it.
 - [ ] Claude Code: `Esc` stays the host's (back to the prompt); nested views use `q` or visible Back without losing tab access at five rows (ADRs 0009 and 0017).
 - [ ] Claude Code: arrow keys either scroll the pane or walk the focus ring when the tree fits; both paths move the selection sensibly.
@@ -66,6 +66,27 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] When preparing the release PR, fold the temporary `Unreleased — 0.2` notes into the generated release notes and remove that temporary heading.
 - [ ] Take the README screenshots, one per host, from `acme-app`, with no personal paths or names in the title bar or prompt.
 
+## Search (both hosts, 0.3)
+
+- [ ] Search a large disposable repository and observe results arriving before completion. Change the query while it streams; stale rows and completion must not replace the new results. Check case/regex/word and include/exclude globs, invalid regex and the 2,000-result truncation notice.
+- [ ] Unicode before/inside matches (accented letters, emoji and CJK) keeps correct highlights and source-line previews. Hide rg from the isolated fixture PATH: repository fallback identifies Git grep's first-occurrence limit; a non-repository shows installation help.
+- [ ] One/all hand-off has exact locations and bounded omission copy. OpenCode's editable dialog cancels or sends only confirmed text; Claude inserts without sending.
+
+## Quick Open (both hosts, 0.3)
+
+- [ ] Touched files rank before recent previews, then other fuzzy matches. File events refresh the cache. A `:42` target clamps at EOF and marks the actual source row through Back and resize, including wrapped preceding lines and Markdown/CSV/TSV.
+
+## Replace (both hosts, 0.3)
+
+- [ ] Inspect/collapse/scroll reviewed diffs, apply one/all only after confirmation, cancel without writes and change a file after preview: it is listed as changed and preserved. Binary, invalid UTF-8 and other skip reasons remain explicit.
+- [ ] A later write failure reports only known successful replacements, preserves remaining review state and refreshes Files/Search. Repeated activation during confirmation/apply cannot duplicate writes. An invalid selected subset cannot authorize any write.
+
+## Symbols (both hosts, 0.3)
+
+- [ ] Outline, workspace find, direct/multiple definitions, grouped references, lazy Callers/Calls and selected-child Send use the actual selected symbol. Unknown languages show the unsupported notice; a selected directory falls back to the latest touched file.
+- [ ] Claude Code: configured LSP ask keeps approximate data without a surprise dialog, deliberate Use LSP continues the requested node, allow performs freshly checked operations, and deny/error/unknown formats fall back. Record real output separately from synthetic fixtures. OpenCode: every list/call section says approximate; no LSP setup is required.
+- [ ] At 24/40/80/120 columns and five rows, retain the active editor, focused result, source marker/header and fitted hints. Type letters/digits/q, Submit and Cancel, navigate compact controls, preview/Back and resize without losing selection. Cancel pending work or leave/close/reopen; late replies cannot navigate and new actions remain usable. Repeat in light/dark themes and another OS.
+
 ## 7. Graph and Branches (both hosts, 0.2)
 
 - [ ] At 24/40/80/120 columns and five rows, paint linear/fork/merge lanes, expand a commit and resize while retaining focus.
@@ -82,3 +103,5 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] Repeat clipboard/focus/native dialogs in light/dark themes, real terminal resize and another OS.
 
 Task 4 smoke completed on Windows with OpenCode 2.0.32: the checkout loaded in an isolated private session, Graph painted a real commit, and b opened main/feature Branches. No model prompt was sent. This fixed 80-column PTY smoke does not mark the broader checklist complete.
+
+The 0.3 Task 4 final-source smoke also passed at 80 x 24 in a disposable 3,001-file repository using cached OpenCode 2.0.32: native Search frames showed matching rows and Searching before completion, targeted preview marked the first source line, Back retained results without a restart, and Symbols showed both approximate functions. The session sent no model/provider request; Ctrl-C restored modes and the isolated process exited. Live resize, themes, actual provider hand-off, other operating systems and positive Claude LSP output remain unchecked above.

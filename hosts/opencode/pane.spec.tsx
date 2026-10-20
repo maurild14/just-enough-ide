@@ -17,16 +17,18 @@ type Claim = Extract<Parameters<Context['ui']['slot']>[0], { append: 'session.pa
 const renderers: Awaited<ReturnType<typeof testRender>>[] = []
 afterEach(() => { for (const r of renderers.splice(0)) r.renderer.destroy() })
 
-for (const width of [24, 40, 80, 120]) test(`non-Git tabs retain the ten-row hint threshold at ${width} columns`, async () => {
+for (const width of [24, 40, 80, 120]) test(`Files keeps its old hint threshold and Search/Symbols retain five-row hints at ${width} columns`, async () => {
   const f = fixture(); const r = await f.mount(width, 5)
   for (const [key, view] of [['1', 'files'], ['2', 'search'], ['3', 'symbols']] as const) {
-    f.key(key); await r.flush()
+    f.key('esc'); f.key(key); await r.flush()
     const hint = hintLine(view, width)
-    expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).not.toBe(hint)
+    if (view === 'files') expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).not.toBe(hint)
+    else expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).toBe(hint)
     r.resize(width, 10); await r.flush()
     expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).toBe(hint)
     r.resize(width, 5); await r.flush()
-    expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).not.toBe(hint)
+    if (view === 'files') expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).not.toBe(hint)
+    else expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).toBe(hint)
   }
 })
 
@@ -127,10 +129,10 @@ test('the panel renders shared tabs and focused digit bindings switch views', as
   expect(active?.attributes! & 1).toBe(1)
   f.key('2')
   await r.flush()
-  expect(r.captureCharFrame()).toContain('Coming in a later version.')
-  f.key('3')
+  expect(r.captureCharFrame()).toContain('Type to search the project.')
+  f.key('esc'); f.key('3')
   await r.flush()
-  expect(r.captureCharFrame()).toContain('Coming in a later version.')
+  expect(r.captureCharFrame()).toContain('approximate')
 })
 
 test('/jei opens the requested tab or path and toggles without losing selection', async () => {
@@ -165,7 +167,7 @@ test('bindings follow focus and the current view, including Esc at short heights
   const layer = f.layers.map((l) => l()).find((l) => l.commands?.some((c) => c.bind === 'esc'))!
   expect(layer.commands?.map((c) => c.bind)).toEqual(['1', '2', '3', '4', 'up', 'down', 'enter', 'a', 's', 'c', 'x', 'w', 'i', 'p', 'q', 'esc'])
   expect(f.layers.flatMap((l) => l().commands ?? []).some((c) => c.bind === 'ctrl+n' || c.bind === 'ctrl+p')).toBe(false)
-  expect(r.captureCharFrame()).not.toContain('esc')
+  expect(r.captureCharFrame()).toContain('esc')
 })
 
 test('Esc dispatches core back from a nested view and keeps the selected path', async () => {
