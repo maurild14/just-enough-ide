@@ -56,12 +56,28 @@ test('Quick Open reuses its project cache through preview Back and relists only 
   expect(f.calls.filter(c => c.method === 'quickOpenFiles')).toHaveLength(2); expect(r.captureCharFrame()).toContain('src/new.ts'); expect(r.captureCharFrame()).not.toContain('src/app.ts')
 })
 
+test('Quick Open refreshes once after panel close and reopen, including changes missed while closed', async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); f.key('esc'); f.key('q'); await r.flush()
+  expect(r.captureCharFrame()).toContain('src/app.ts'); expect(f.calls.filter(c => c.method === 'quickOpenFiles')).toHaveLength(1)
+  r.renderer.destroy(); f.handlers.quickOpenFiles = async () => ({ files: ['src/new.ts'] }); f.changed()
+  const reopened = await f.mount()
+  expect(f.calls.filter(c => c.method === 'quickOpenFiles')).toHaveLength(2); expect(reopened.captureCharFrame()).toContain('src/new.ts'); expect(reopened.captureCharFrame()).not.toContain('src/app.ts')
+})
+
 test('Quick Open reports a failed refresh even while cached files remain visible', async () => {
   const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); f.key('esc'); f.key('q'); await r.flush()
   expect(r.captureCharFrame()).toContain('src/app.ts')
   f.handlers.quickOpenFiles = async () => { throw new Error('File listing failed.\nInternal details.') }; f.changed(); await r.flush()
   expect(r.captureCharFrame()).toContain('src/app.ts')
   expect(f.notices.at(-1)).toEqual({ message: 'File listing failed. Showing cached files.', variant: 'error' })
+})
+
+test('Search preserves client error objects first-line messages and unknown-error fallback', async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); f.key('esc'); f.key('q'); await r.flush()
+  f.handlers.quickOpenFiles = async () => { throw { type: 'internal', message: 'File listing failed.\nInternal details.', data: {} } }; f.changed(); await r.flush()
+  expect(f.notices.at(-1)).toEqual({ message: 'File listing failed. Showing cached files.', variant: 'error' })
+  f.handlers.quickOpenFiles = async () => { throw { type: 'internal', message: 42 } }; f.changed(); await r.flush()
+  expect(f.notices.at(-1)).toEqual({ message: 'Unable to complete Search. Showing cached files.', variant: 'error' })
 })
 
 for (const width of [24, 40, 80, 120]) test(`Search streams, previews a marked line and retains Back at ${width}x5`, async () => {

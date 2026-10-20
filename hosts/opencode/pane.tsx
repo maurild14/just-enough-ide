@@ -57,6 +57,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   const [now, setNow] = createSignal(Date.now())
   const [error, setError] = createSignal('')
   const [revision, setRevision] = createSignal(0)
+  const quickCacheScopes = new Set<string>()
   let filesAction: (action: string) => void = () => {}
   let gitAction: (action: string) => void = () => {}
   let searchAction: (action: string) => void = () => {}
@@ -173,7 +174,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
           focused={props.input.focused} bind={(run, isEditing) => { gitAction = run; setEditingAction(() => isEditing) }} />
       }>
       <Show when={state().tab === 'search'} fallback={<Symbols ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} state={state()} dispatch={dispatch} activity={activity()} revision={revision()} width={width()} height={bodyHeight()} header={height() >= 6} focused={props.input.focused} bind={(run, isEditing) => { symbolsAction = run; setEditingAction(() => isEditing) }} />}>
-        <Search ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} state={state()} dispatch={dispatch} activity={activity()} revision={revision()} refresh={refreshAfterChange} width={width()} height={bodyHeight()} header={height() >= 6} focused={props.input.focused} bind={(run, isEditing) => { searchAction = run; setEditingAction(() => isEditing) }} />
+        <Search ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} state={state()} dispatch={dispatch} activity={activity()} revision={revision()} quickCacheScopes={quickCacheScopes} refresh={refreshAfterChange} width={width()} height={bodyHeight()} header={height() >= 6} focused={props.input.focused} bind={(run, isEditing) => { searchAction = run; setEditingAction(() => isEditing) }} />
       </Show>
       </Show>
     </Show>}</Show>

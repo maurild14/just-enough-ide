@@ -48,7 +48,7 @@ export function Symbols(props: {
   const active = (stamp: number) => !stopped && generation === stamp && ['symbols', 'symbols.results'].includes(view())
   function stop() { generation++; pending?.abort(); update(d => { d.busy = false }); setEditing(false) }
   function select(id: string) { props.dispatch({ type: 'select', view: view(), id }); if (!id.startsWith('command:') && id !== 'notice') update(d => { d.subjects[view()] = id }) }
-  const errorText = (error: unknown) => error instanceof Error ? error.message.split(/\r?\n/)[0]! : 'Unable to complete Symbols.'
+  const errorText = (error: unknown) => error && typeof error === 'object' && !Array.isArray(error) && 'message' in error && typeof error.message === 'string' ? error.message.split(/\r?\n/)[0]! : 'Unable to complete Symbols.'
   async function outline(path: string, signal: AbortSignal) {
     const raw = record(await props.api.outline({ rel: path }, { signal }))
     if (typeof raw.file !== 'boolean') throw new Error('Invalid Symbols reply.')

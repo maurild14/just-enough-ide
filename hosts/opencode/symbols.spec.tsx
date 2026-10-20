@@ -60,3 +60,14 @@ test('directory selection falls back to the latest touched file, unsupported fil
   update(d => { d.panes['session-a']!.selected.files = 'notes.txt' }); await r.flush(); expect(r.captureCharFrame()).toContain('No outline for this file type.')
   f.handlers.outline = async () => { throw new Error("Can't read this file.") }; f.changed(); await r.flush(); expect(r.captureCharFrame()).toContain("Can't read this file.")
 })
+
+test('Symbols preserves client error objects first-line messages and unknown-error fallback', async () => {
+  const f = fixture(); f.handlers.outline = async () => { throw { type: 'internal', message: "Can't read this file.\nInternal details." } }
+  const r = await f.mount(); f.emit('activity', { rel: 'src/app.ts', kind: 'read' }); f.key('3'); await r.flush()
+  expect(r.captureCharFrame()).toContain("Can't read this file."); expect(r.captureCharFrame()).not.toContain('Internal details.')
+  f.handlers.outline = async () => ({ file: true, nodes: [load] }); f.changed(); await r.flush()
+  f.handlers.references = async () => { throw { type: 'refused', message: 'Reference lookup failed.\nInternal details.', data: {} } }; f.key('r'); await r.flush()
+  expect(f.notices.at(-1)).toEqual({ message: 'Reference lookup failed.', variant: 'error' })
+  f.handlers.references = async () => { throw { type: 'internal' } }; f.key('r'); await r.flush()
+  expect(f.notices.at(-1)).toEqual({ message: 'Unable to complete Symbols.', variant: 'error' })
+})

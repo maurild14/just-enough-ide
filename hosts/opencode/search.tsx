@@ -36,10 +36,15 @@ function skips(v: unknown): Skipped[] {
 
 export function Search(props: {
   ctx: Plugin.Context; api: RpcClient<typeof JeiRpc>; sessionID: string; cwd: string; state: PaneState; dispatch: (a: PaneAction) => void
-  activity: ActivityLog; revision: number; refresh: () => Promise<void>; width: number; height: number; header: boolean; focused: boolean
+  activity: ActivityLog; revision: number; quickCacheScopes: Set<string>; refresh: () => Promise<void>; width: number; height: number; header: boolean; focused: boolean
   bind: (run: (action: string) => void, editing: () => boolean) => void
 }) {
   const [s, update] = props.ctx.storage.memory<SearchState>(`jei.search.${props.sessionID}\0${props.cwd}`, { initial: initial() })
+  const scope = `${props.sessionID}\0${props.cwd}`
+  if (!props.quickCacheScopes.has(scope)) {
+    update(d => { delete d.quickRevision })
+    props.quickCacheScopes.add(scope)
+  }
   const [editing, setEditing] = createSignal<'query' | 'globs' | 'replacement' | null>(s.text ? null : 'query')
   const [quickError, setQuickError] = createSignal('')
   const [quickLoading, setQuickLoading] = createSignal(false)
@@ -80,7 +85,7 @@ export function Search(props: {
       void props.api.searchStart({ sessionID: props.sessionID, id, query: query() }).catch(error => { if (!stopped && generation === epoch) { runId = ''; update(d => { d.busy = false; d.summary = reason(error) }) } })
     }, 150)
   }
-  const reason = (error: unknown) => error instanceof Error ? error.message.split(/\r?\n/)[0]! : 'Unable to complete Search.'
+  const reason = (error: unknown) => error && typeof error === 'object' && !Array.isArray(error) && 'message' in error && typeof error.message === 'string' ? error.message.split(/\r?\n/)[0]! : 'Unable to complete Search.'
   function fail(error: unknown) { if (!stopped) props.ctx.ui.toast.show({ message: fitEnd(reason(error), Math.max(1, props.width)), variant: 'error' }) }
   const offMatches = props.api.events.on('searchMatches', event => {
     if (event.location.directory !== props.cwd) return
