@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { insideRel, isInside, joinPath, parentDirs, platformOf, projectRel, relativeTo, toPosix } from './paths.ts'
+import { insideRel, isInside, joinPath, nativePath, parentDirs, platformOf, projectRel, relativeTo, toPosix } from './paths.ts'
 
 test('toPosix', () => expect(toPosix('a\\b\\c')).toBe('a/b/c'))
 
@@ -91,4 +91,10 @@ test('platformOf reads the path shape', () => {
   expect(platformOf('/Users/ana/acme-app')).toBe('darwin')
   expect(platformOf('/home/ana/acme-app')).toBe('linux')
   expect(platformOf('')).toBe('linux')
+})
+
+test('nativePath uses backslashes on Windows only', () => {
+  expect(nativePath('win32', 'C:/work/acme-app/a b.ts')).toBe('C:' + String.fromCharCode(92) + 'work' + String.fromCharCode(92) + 'acme-app' + String.fromCharCode(92) + 'a b.ts')
+  expect(nativePath('linux', '/work/acme-app/a.ts')).toBe('/work/acme-app/a.ts')
+  expect(nativePath('darwin', '/Users/ana/acme-app/a.ts')).toBe('/Users/ana/acme-app/a.ts')
 })

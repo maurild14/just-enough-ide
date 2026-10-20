@@ -1,6 +1,7 @@
 // Display-width helpers shared by both hosts so no row ever overflows its pane.
 // Widths are in terminal cells: East Asian wide/fullwidth and emoji take 2,
-// combining marks and joiners take 0, everything else takes 1. The tables are
+// combining marks and joiners take 0, everything else takes 1 (a control character too: the
+// fitting helpers draw it through `printable`). The tables are
 // deliberately compact, not a full wcwidth.
 
 type Range = readonly [number, number]
@@ -43,10 +44,20 @@ function inRanges(cp: number, table: readonly Range[]): boolean {
 }
 
 function cpWidth(cp: number): number {
-  if (cp < 0x20 || (cp >= 0x7f && cp < 0xa0)) return 0
+  // A control character draws as one cell: a tab as a space, the rest as U+FFFD (see `printable`).
   if (cp < 0x300) return 1
   if (inRanges(cp, ZERO)) return 0
   return inRanges(cp, WIDE) ? 2 : 1
+}
+
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g
+
+/**
+ * `s` as one row draws it: a tab becomes a space and any other control character U+FFFD, so the
+ * width `cellWidth` counts is the width drawn and no escape reaches the terminal. Length is kept.
+ */
+export function printable(s: string): string {
+  return s.replace(CONTROL, (c) => (c === '\t' ? ' ' : '\uFFFD'))
 }
 
 /** Display width in terminal cells. */
@@ -70,14 +81,16 @@ function takeStart(s: string, width: number): string {
 }
 
 /** Pad with spaces to `width` cells. Never truncates: a wider string comes back unchanged. */
-export function padEnd(s: string, width: number): string {
+export function padEnd(raw: string, width: number): string {
+  const s = printable(raw)
   const gap = width - cellWidth(s)
   return gap > 0 ? s + ' '.repeat(gap) : s
 }
 
 /** End ellipsis. The result is at most `width` cells; the ellipsis follows the active glyph set. */
-export function fitEnd(s: string, width: number, ellipsis = '…'): string {
+export function fitEnd(raw: string, width: number, ellipsis = '…'): string {
   if (width <= 0) return ''
+  const s = printable(raw)
   if (cellWidth(s) <= width) return s
   const ew = cellWidth(ellipsis)
   if (width < ew) return takeStart(ellipsis, width)
@@ -89,8 +102,9 @@ export function fitEnd(s: string, width: number, ellipsis = '…'): string {
  * When the name alone does not fit, the name gets an end ellipsis that keeps
  * the extension where possible (`very-long-na….ts`). At most `width` cells.
  */
-export function fitPath(rel: string, width: number, ellipsis = '…'): string {
+export function fitPath(raw: string, width: number, ellipsis = '…'): string {
   if (width <= 0) return ''
+  const rel = printable(raw)
   if (cellWidth(rel) <= width) return rel
   const cut = rel.lastIndexOf('/')
   const name = rel.slice(cut + 1)

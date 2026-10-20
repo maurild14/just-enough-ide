@@ -82,3 +82,24 @@ describe('padEnd', () => {
     expect(padEnd('abcdef', 3)).toBe('abcdef')
   })
 })
+
+describe('tabs and control characters', () => {
+  test('a tab is one cell drawn as a space; other controls draw as one replacement cell', () => {
+    expect(cellWidth('a\tb')).toBe(3)
+    expect(cellWidth('a\u0007b')).toBe(3)
+    expect(fitEnd('a\tb', 10)).toBe('a b')
+    expect(fitEnd('a\u001b[31mb', 10)).toBe('a\uFFFD[31mb')
+    expect(padEnd('\t', 3)).toBe('   ')
+    expect(fitPath('src/\tx.ts', 40)).toBe('src/ x.ts')
+  })
+  test('a fitted cell full of tabs never draws wider than its width', () => {
+    for (const s of ['\t\t\t\t\t\t\t\t', 'name\tvalue\tmore', '\u0000\u0001\u0002']) {
+      for (let w = 0; w <= 12; w++) {
+        const out = fitEnd(s, w)
+        expect(out).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/)
+        expect(cellWidth(out)).toBeLessThanOrEqual(w)
+        expect(out.length).toBeLessThanOrEqual(Math.max(s.length, w))
+      }
+    }
+  })
+})

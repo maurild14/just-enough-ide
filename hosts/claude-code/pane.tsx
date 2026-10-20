@@ -87,7 +87,8 @@ export function hintItems(view: View, width: number, actions: readonly FilesActi
   if (!bareOnly) {
     forms.push(join(as(nav, 'label', SEP), as(keys, 'label', SEP)))
     forms.push(join(as(nav, 'bare', ' '), as(keys, 'label', SEP)))
-    for (let k = keys.length; k >= 0; k--) forms.push(join(as(keys.slice(0, k), 'label', SEP), as(keys.slice(k), 'chip', ' ')))
+    // k = 0 would be every key as a chip: the keycaps form pushed next.
+    for (let k = keys.length; k >= 1; k--) forms.push(join(as(keys.slice(0, k), 'label', SEP), as(keys.slice(k), 'chip', ' ')))
   }
   forms.push(as(keys, 'chip', ' '), as(keys, 'chip', ''))
   const last = keys.length > 0 ? as(keys, 'strip', '') : as(nav, 'bare', ' ')

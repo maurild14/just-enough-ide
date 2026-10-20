@@ -111,7 +111,7 @@ test('the package entry registers the contract and stages a file visible in a fr
   expect(after.git.root !== null && after.git.staged).toEqual({ 'a.txt': { added: 1, removed: 1 } })
 })
 
-test('file RPCs return their contract envelopes and open an argv-only editor', async () => {
+test('file RPCs return their contract envelopes and open an argv-only editor with a native path', async () => {
   const repo = await makeRepo({ 'src/a.ts': 'export const a = 1\n' })
   const editor = makeTemp('editor')
   const output = join(editor, 'args.json')
@@ -121,9 +121,9 @@ test('file RPCs return their contract envelopes and open an argv-only editor', a
   expect(await server.call('preview', { rel: join(repo.dir, 'src/a.ts') })).toEqual({ kind: 'code', text: 'export const a = 1\n', language: 'typescript' })
   expect(await server.call('allFiles')).toEqual({ files: ['src/a.ts'] })
   expect(await server.call('open', { rel: 'src/a.ts', line: 3 })).toEqual({})
-  expect(JSON.parse(readFileSync(output, 'utf8'))).toEqual([toPosix(join(repo.dir, 'src/a.ts')), '3'])
+  expect(JSON.parse(readFileSync(output, 'utf8'))).toEqual([join(repo.dir, 'src', 'a.ts'), '3'])
   expect(await server.call('open', { rel: 'src/a.ts' })).toEqual({})
-  expect(JSON.parse(readFileSync(output, 'utf8'))).toEqual([toPosix(join(repo.dir, 'src/a.ts'))])
+  expect(JSON.parse(readFileSync(output, 'utf8'))).toEqual([join(repo.dir, 'src', 'a.ts')])
 })
 
 test('every path RPC rejects escapes before touching any member of a batch', async () => {
@@ -375,4 +375,26 @@ test('cleanup disposes RPC even if the hook disposal fails', async () => {
   expect(disposed).toBe(true)
   expect(signal?.aborted).toBe(true)
   await dispose()
+})
+
+test('open refuses a runnable file when no editor command is set, and runs nothing', async () => {
+  const repo = await makeRepo({ 'setup.bat': 'echo fictional\n', 'run.SH': 'echo fictional\n' })
+  const server = await start(repo.dir)
+  for (const rel of ['setup.bat', 'run.SH']) expect(await server.call('open', { rel })).toEqual({ refused: 'Set editorCommand to open this file type.' })
+})
+
+test('commit refuses while a merge conflict is unresolved, and commits nothing', async () => {
+  const repo = await makeRepo({ 'a.txt': 'base\n' })
+  await repo.git('checkout', '-b', 'other')
+  repo.write('a.txt', 'theirs\n')
+  await repo.git('commit', '-am', 'feat: theirs')
+  await repo.git('checkout', 'main')
+  repo.write('a.txt', 'ours\n')
+  await repo.git('commit', '-am', 'feat: ours')
+  expect((await repo.host.run(['git', '-C', repo.dir, 'merge', 'other'])).exitCode).not.toBe(0)
+  const server = await start(repo.dir)
+  expect(await server.call('commitPlan', { message: 'm', mode: 'commit' })).toEqual({ steps: [], sensitive: [], viaAgentShell: false, refusal: 'Resolve conflicts first.' })
+  await expect(server.call('commit', { message: 'm', mode: 'commit', approvedSensitive: [] })).rejects.toThrow('Resolve conflicts first.')
+  expect(await repo.git('log', '-1', '--format=%s')).toBe('feat: ours')
+  expect(await repo.git('diff', '--name-only', '--diff-filter=U')).toBe('a.txt')
 })

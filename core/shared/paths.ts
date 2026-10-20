@@ -2,6 +2,11 @@ export function toPosix(path: string): string {
   return path.replaceAll('\\', '/')
 }
 
+/** A posix-shaped absolute path in the platform's own form: backslashes on Windows, unchanged elsewhere. */
+export function nativePath(platform: 'win32' | 'darwin' | 'linux', path: string): string {
+  return platform === 'win32' ? path.replaceAll('/', '\\') : path
+}
+
 export function joinPath(dir: string, name: string): string {
   const d = toPosix(dir)
   const n = toPosix(name).replace(/^\/+/, '')

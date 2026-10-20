@@ -6,7 +6,7 @@ import { mentionText } from '../../core/files/mention.ts'
 import { allFiles, listDir, loadPreview, openFile } from '../../core/files/service.ts'
 import { filterRows, treeRows, type TreeRow } from '../../core/files/tree.ts'
 import { folderStatus, type FileStatus, type StatusEntry } from '../../core/git/status.ts'
-import type { DirEntry, Host, Platform } from '../../core/host.ts'
+import type { DirEntry, Host } from '../../core/host.ts'
 import { latest } from '../../core/latest.ts'
 import type { Options } from '../../core/options.ts'
 import { currentView, reducePane } from '../../core/pane.ts'
@@ -63,7 +63,6 @@ export const firstLine = (err: unknown) =>
     .replace(/\.+$/, '')
 const baseName = (rel: string) => rel.slice(rel.lastIndexOf('/') + 1)
 const absOf = (root: string, rel: string) => (rel === '' ? toPosix(root) : joinPath(toPosix(root), rel))
-const nativePath = (platform: Platform, abs: string) => (platform === 'win32' ? abs.replaceAll('/', '\\') : abs)
 
 export function hostFor($: EngineInterface, root: string): Host {
   return claudeHost($, platformOf(root))
@@ -238,7 +237,7 @@ async function mention($: EngineInterface, rel: string | undefined): Promise<voi
   if (!r.isFilled) $.ui.toast("The prompt can't take a mention right now.")
 }
 
-/** Opens a file in the editor (`editorCommand` or the OS opener); a failure toasts. */
+/** Opens a file in the editor (`editorCommand` or the OS opener); a refusal or a failure toasts. */
 export async function openRel($: EngineInterface, options: Options, root: string, rel: string | undefined): Promise<void> {
   if (rel === undefined) {
     $.ui.toast('Select a file or folder first.')
@@ -246,7 +245,8 @@ export async function openRel($: EngineInterface, options: Options, root: string
   }
   const host = hostFor($, root)
   try {
-    await openFile(host, options, nativePath(host.platform, absOf(root, rel)))
+    const refused = await openFile(host, options, absOf(root, rel))
+    if (refused !== null) $.ui.toast(refused)
   } catch (err) {
     $.ui.toast(`Can't open ${baseName(rel) || rel}: ${firstLine(err)}.`)
   }
@@ -290,7 +290,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   const els = $.ui.resolve(e)
   const { Box, Text, Button, Code, Markdown } = els
   // Mobile draws no Input: the filter then shows as text.
-  const Input = 'Input' in els ? els.Input : undefined
+  const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : undefined
   const root = await readCwd($)
   const pane = await readPane($)
   const view = currentView(pane)
@@ -332,8 +332,10 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
       const top = Math.max(0, Math.min(state.top, all.length - 1))
       return { top, text: all.slice(top, top + rows).join('\n') }
     }
+    // One window row is one drawn row: Code cuts a long line at the edge instead of wrapping it, and the
+    // box clips what Markdown wraps, so the hint line (the letter keys) never leaves a docked pane.
     const pad = (child: RenderElement) => (
-      <Box key="preview" paddingLeft={1} paddingRight={1}>
+      <Box key="preview" paddingLeft={1} paddingRight={1} height={rows} overflow="hidden">
         {child}
       </Box>
     )
@@ -342,15 +344,15 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
         const s = sliced(pv.text ?? '')
         const code =
           pv.language !== undefined ? (
-            <Code source={s.text} language={pv.language} startLine={inner >= 40 ? s.top + 1 : undefined} />
+            <Code source={s.text} language={pv.language} startLine={inner >= 40 ? s.top + 1 : undefined} wrap="truncate-end" />
           ) : (
-            <Code source={s.text} path={baseName(rel)} startLine={inner >= 40 ? s.top + 1 : undefined} />
+            <Code source={s.text} path={baseName(rel)} startLine={inner >= 40 ? s.top + 1 : undefined} wrap="truncate-end" />
           )
         return { header, body: [pad(code)], actions }
       }
       case 'markdown': {
         const s = sliced(pv.text ?? '')
-        const body = state.source ? <Code source={s.text} language="markdown" /> : <Markdown key="markdown" text={s.text} />
+        const body = state.source ? <Code source={s.text} language="markdown" wrap="truncate-end" /> : <Markdown key="markdown" text={s.text} />
         return { header, body: [pad(body)], actions }
       }
       case 'csv':

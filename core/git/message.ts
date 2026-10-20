@@ -16,9 +16,9 @@ export function commitPrompt(diff: string, maxChars: number): string {
 }
 
 /**
- * Strips a leading "Commit message:", unwraps a fence only when the text starts with one
- * (an unterminated fence runs to the end; fences later in a body are kept), then strips
- * surrounding quotes or backticks.
+ * Strips a leading "Commit message:", unwraps a fence only when the text starts with one (it closes at
+ * the last fence, so a code block in the body stays whole; an unterminated fence runs to the end; fences
+ * later in an unfenced body are kept), then strips surrounding quotes or backticks.
  */
 export function cleanMessage(raw: string): string {
   let s = raw.trim().replace(/^commit message:\s*/i, '')
@@ -27,7 +27,7 @@ export function cleanMessage(raw: string): string {
   const open = /^```[^\n]*\n/.exec(s)
   if (open) {
     const rest = s.slice(open[0].length)
-    const close = rest.indexOf('\n```')
+    const close = rest.lastIndexOf('\n```')
     s = (close === -1 ? rest.replace(/\n?```\s*$/, '') : rest.slice(0, close)).trim()
   }
   const q = s[0]

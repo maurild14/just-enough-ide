@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { capDiff, diffWindow, parseNumstat, parseUnifiedDiff, reviewText, toUnifiedText, untrackedDiffArgs, workingDiffArgs } from './diff.ts'
+import { capDiff, diffWindow, omitSensitive, parseNumstat, parseUnifiedDiff, reviewText, toUnifiedText, untrackedDiffArgs, workingDiffArgs } from './diff.ts'
 
 const raw = (name: string) => readFileSync(new URL(`../../test/fixtures/diff/${name}`, import.meta.url), 'utf8')
 const fx = (name: string) => parseUnifiedDiff(raw(name))
@@ -209,4 +209,29 @@ test('reviewText caps at max characters', () => {
   expect(t).toContain('[diff truncated]')
   const small = reviewText('a.ts', '@@ -1 +1 @@\n-a\n+b\n', 8000)
   expect(small).toBe('Review this diff of a.ts:\n\n```diff\n@@ -1 +1 @@\n-a\n+b\n```\n')
+})
+
+test('toUnifiedText marks deleted and new only from the file headers, never from the hunk counts', () => {
+  const emptied = parseUnifiedDiff('diff --git a/g b/g\nindex 1..2 100644\n--- a/g\n+++ b/g\n@@ -1,2 +0,0 @@\n-one\n-two\n')[0]!
+  expect(emptied.change).toBeUndefined()
+  expect(toUnifiedText(emptied).startsWith('--- a/g\n+++ b/g\n')).toBe(true)
+  const filled = parseUnifiedDiff('diff --git a/h b/h\nindex 1..2 100644\n--- a/h\n+++ b/h\n@@ -0,0 +1 @@\n+one\n')[0]!
+  expect(toUnifiedText(filled).startsWith('--- a/h\n+++ b/h\n')).toBe(true)
+  const gone = parseUnifiedDiff('diff --git a/g b/g\ndeleted file mode 100644\nindex 1..0\n--- a/g\n+++ /dev/null\n@@ -1 +0,0 @@\n-bye\n')[0]!
+  expect(gone.change).toBe('deleted')
+  expect(toUnifiedText(gone).startsWith('--- a/g\n+++ /dev/null\n')).toBe(true)
+  expect(parseUnifiedDiff(raw('new-file.diff'))[0]!.change).toBe('new')
+})
+
+test('omitSensitive drops sensitive files on either side of a rename and names them first', () => {
+  const d = [
+    'diff --git a/a.ts b/a.ts', '--- a/a.ts', '+++ b/a.ts', '@@ -1 +1 @@', '-x', '+y',
+    'diff --git a/.env b/config.txt', 'similarity index 90%', 'rename from .env', 'rename to config.txt', '@@ -1 +1 @@', '-MODE=one', '+MODE=two',
+    'diff --git a/certs/site.pem b/certs/site.pem', '--- a/certs/site.pem', '+++ b/certs/site.pem', '@@ -1 +1 @@', '-AAA', '+BBB', '',
+  ].join('\n')
+  const out = omitSensitive(d)
+  expect(out.startsWith('config.txt: sensitive file, contents omitted\ncerts/site.pem: sensitive file, contents omitted\ndiff --git a/a.ts b/a.ts\n')).toBe(true)
+  for (const secret of ['MODE=', 'AAA', 'BBB']) expect(out).not.toContain(secret)
+  expect(out).toContain('+y')
+  expect(omitSensitive('diff --git a/a.ts b/a.ts\n+x\n')).toBe('diff --git a/a.ts b/a.ts\n+x\n')
 })

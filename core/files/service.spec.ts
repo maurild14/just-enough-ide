@@ -103,3 +103,13 @@ test('allFiles drops tracked files deleted from the worktree', async () => {
   rmSync(join(r.dir, 'b.txt'))
   expect(await allFiles(r.host, r.dir)).toEqual(['a.txt'])
 })
+
+test('openFile refuses runnable types with no editor command, and passes a native path on Windows', async () => {
+  const calls: string[][] = []
+  const host = (platform: string) => ({ platform, run: async (argv: readonly string[]) => (calls.push([...argv]), { exitCode: 0, stdout: '', stderr: '' }) }) as unknown as FakeHost
+  expect(await openFile(host('win32'), parseOptions({}), 'C:/work/acme-app/setup.BAT')).toBe('Set editorCommand to open this file type.')
+  expect(calls).toEqual([])
+  expect(await openFile(host('win32'), parseOptions({}), 'C:/work/acme-app/src/user.ts')).toBeNull()
+  expect(await openFile(host('win32'), parseOptions({ editorCommand: 'code' }), 'C:/work/acme-app/setup.bat')).toBeNull()
+  expect(calls).toEqual([['explorer.exe', 'C:\\work\\acme-app\\src\\user.ts'], ['code', 'C:\\work\\acme-app\\setup.bat']])
+})

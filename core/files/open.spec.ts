@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { openArgv } from './open.ts'
+import { openArgv, openRefusal } from './open.ts'
 
 const path = 'C:\\x\\a b.ts'
 
@@ -27,5 +27,20 @@ describe('openArgv', () => {
   })
   test('quoted words stay whole; $ in a path is literal', () => {
     expect(openArgv({ editorCommand: '"my editor" --open {path}', path: '/$&/a', platform: 'linux' })).toEqual(['my editor', '--open', '/$&/a'])
+  })
+})
+
+describe('openRefusal', () => {
+  const runnable = ['exe', 'bat', 'cmd', 'com', 'ps1', 'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh', 'msi', 'msc', 'scr', 'lnk', 'reg', 'hta', 'cpl', 'jar', 'sh', 'command', 'app', 'desktop', 'appimage']
+  test('the OS opener refuses runnable types, any case', () => {
+    for (const ext of runnable) {
+      expect(openRefusal({ editorCommand: '', path: `/w/acme-app/run.${ext}` })).toBe('Set editorCommand to open this file type.')
+      expect(openRefusal({ editorCommand: ' ', path: `C:\\w\\RUN.${ext.toUpperCase()}` })).toBe('Set editorCommand to open this file type.')
+    }
+    expect(openRefusal({ editorCommand: '', path: '/w/setup.bat. ' })).toBe('Set editorCommand to open this file type.')
+  })
+  test('documents, folders and a set editor command pass', () => {
+    for (const p of ['/w/a.ts', '/w/README.md', '/w/src', '/w/.env', '/w/archive.tar.gz', '/w/js', '/w/bat.txt']) expect(openRefusal({ editorCommand: '', path: p })).toBeNull()
+    expect(openRefusal({ editorCommand: 'code -g {path}', path: '/w/run.sh' })).toBeNull()
   })
 })

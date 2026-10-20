@@ -2,9 +2,9 @@ import type { DirEntry, Host } from '../host.ts'
 import { GIT_ENV, gitArgv } from '../git/run.ts'
 import { isRepo } from '../git/status.ts'
 import type { Options } from '../options.ts'
-import { isInside, joinPath } from '../shared/paths.ts'
+import { isInside, joinPath, nativePath } from '../shared/paths.ts'
 import { parseDelimited } from './csv.ts'
-import { openArgv } from './open.ts'
+import { openArgv, openRefusal } from './open.ts'
 import { PREVIEW_MAX_BYTES, languageOf, previewKind } from './preview.ts'
 import type { PreviewKind } from './preview.ts'
 import { IGNORED_ARGS } from './tree.ts'
@@ -96,13 +96,21 @@ export async function allFiles(host: Host, root: string): Promise<string[]> {
   return files
 }
 
-/** Opens a file in the configured editor or the OS opener. The exit code is ignored (some openers exit 1 on success). */
-export async function openFile(host: Host, options: Options, absPath: string, line?: number): Promise<void> {
+/**
+ * Opens a file in the editor (`editorCommand`) or the OS opener, with the path in the platform's own form
+ * (backslashes on Windows). Returns the refusal for a runnable type with no editor command, and runs nothing
+ * then. The exit code is ignored (some openers exit 1 on success).
+ */
+export async function openFile(host: Host, options: Options, absPath: string, line?: number): Promise<string | null> {
+  const path = nativePath(host.platform, absPath)
+  const refused = openRefusal({ editorCommand: options.editorCommand, path })
+  if (refused !== null) return refused
   const argv = openArgv({
     editorCommand: options.editorCommand,
-    path: absPath,
+    path,
     ...(line === undefined ? {} : { line }),
     platform: host.platform,
   })
   await host.run(argv)
+  return null
 }

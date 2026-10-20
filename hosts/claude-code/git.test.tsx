@@ -26,10 +26,18 @@ type Repo = {
   pushFails: string | null
   /** Lines in the working diff of src/api/user.ts. */
   diffLines: number
+  /** Characters in each line of that diff when it is set (a long-line diff); 0 keeps the short lines. */
+  lineWidth: number
   /** The session's shell tool. */
   shell: 'Bash' | 'PowerShell'
   /** The shell tool's answer to a call: done, or moved to the background. */
   background: boolean
+  /** Only this step (`commit`, `push`) is moved to the background or interrupted; null means every step. */
+  slowStep: string | null
+  /** The shell tool reports the call interrupted. */
+  interrupted: boolean
+  /** The repository root (the session's cwd). */
+  root: string
 }
 
 const STAGED_INDEX = `1 M. N... 100644 100644 100644 ${H} ${H} src/index.ts`
@@ -48,8 +56,12 @@ function repo(over: Partial<Repo> = {}): Repo {
     diverged: false,
     pushFails: null,
     diffLines: 0,
+    lineWidth: 0,
     shell: 'Bash',
     background: false,
+    slowStep: null,
+    interrupted: false,
+    root: ROOT,
     ...over,
   }
 }
@@ -64,7 +76,7 @@ function userDiff(r: Repo): string {
   const body = ['diff --git a/src/api/user.ts b/src/api/user.ts', '--- a/src/api/user.ts', '+++ b/src/api/user.ts']
   if (r.diffLines > 0) {
     body.push(`@@ -1,${r.diffLines} +1,${r.diffLines} @@`)
-    for (let i = 0; i < r.diffLines; i++) body.push(` line ${i + 1}`)
+    for (let i = 0; i < r.diffLines; i++) body.push(` line ${i + 1}`.padEnd(r.lineWidth + 1, `${i}`))
     return body.join('\n') + '\n'
   }
   body.push('@@ -1,3 +1,3 @@', ' export async function getUser(id: string) {', '-  return { id }', '+  return { id, name: "Ana Rivera" }', ' }')
@@ -82,8 +94,8 @@ async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd:
     const argv = [...e.argv]
     calls.runs.push(argv)
     const has = (...words: string[]) => words.every((w) => argv.includes(w))
-    if (has('--show-toplevel')) return r.isRepo ? res(0, `${ROOT}\n`) : res(128, '', 'fatal: not a git repository (or any of the parent directories): .git')
-    if (has('--absolute-git-dir')) return res(0, `${ROOT}/.git\n`)
+    if (has('--show-toplevel')) return r.isRepo ? res(0, `${r.root}\n`) : res(128, '', 'fatal: not a git repository (or any of the parent directories): .git')
+    if (has('--absolute-git-dir')) return res(0, `${r.root}/.git\n`)
     if (has('--git-path')) return res(0, '.git/hooks\n')
     if (has('config', 'core.hooksPath')) return r.hooks ? res(0, '.githooks\n') : res(1, '')
     if (has('config', '--get')) return res(1, '')
@@ -97,7 +109,7 @@ async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd:
     if (has('check-ignore')) return res(1, '')
     return res(0, '')
   })
-  on('fs.list', (_$, e) => (posix(e.path) === ROOT ? { value: [] } : { deny: `ENOENT: ${posix(e.path)}` }))
+  on('fs.list', (_$, e) => (posix(e.path) === r.root ? { value: [] } : { deny: `ENOENT: ${posix(e.path)}` }))
   on('fs.stat', (_$, e) => ({ deny: `ENOENT: ${posix(e.path)}` }))
   on('fs.read', (_$, e) => ({ deny: `ENOENT: ${posix(e.path)}` }))
   on('model.complete', (_$, e) => {
@@ -115,7 +127,9 @@ async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd:
   })
   on('tool.call', (_$, e) => {
     calls.tools.push({ ...e })
-    if (r.background) {
+    const slow = r.slowStep === null || String((e as { command?: unknown }).command ?? '').includes(` ${r.slowStep}`)
+    if (r.interrupted && slow) return { result: { stdout: '', stderr: '', interrupted: true } as never, text: 'interrupted' }
+    if (r.background && slow) {
       return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b1', timedOutAfterMs: 600000 } as never, text: 'moved to the background' }
     }
     return { result: { stdout: '[main 1234567] feat\n', stderr: '', interrupted: false } as never, text: 'ok' }
@@ -130,7 +144,7 @@ async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd:
   })
   on('ui.focus', () => ({}))
   on('classic.CwdChanged', () => ({}))
-  await $.classic.CwdChanged({ old_cwd: '/work', new_cwd: ROOT })
+  await $.classic.CwdChanged({ old_cwd: '/work', new_cwd: r.root })
   return calls
 }
 
@@ -583,7 +597,8 @@ test('the Git hint: labels while they fit, then keycaps, never a dangling key', 
   }
 })
 
-test('the hint keeps every key and never drops one as the pane widens', async ($, on) => {
+// 107 panes in one test: the kit's 5 s default is too short on a loaded machine.
+test('the hint keeps every key and never drops one as the pane widens', { timeoutMs: 60_000 }, async ($, on) => {
   await world($, on, repo())
   let last = 0
   for (let width = 24; width <= 130; width++) {
@@ -607,5 +622,158 @@ test('short panes keep the selected change in view and the bare hint', async ($,
     expect(await ui.find({ key: 'change-src/api/user.ts' })).toBeDefined()
     expect(await ui.find({ key: 'key-s' })).toBeDefined()
     await ui.unmount()
+  }
+})
+
+const CONFLICT = `u UU N... 100644 100644 100644 100644 ${H} ${H} ${H} src/app.ts`
+
+test('a merge conflict stops the commit with a toast and runs nothing', async ($, on) => {
+  const calls = await world($, on, repo({ records: [CONFLICT, CHANGED_USER] }))
+  for (const mode of ['commit', 'commit-push', 'amend'] as const) {
+    const ui = await gitPane($, 'terminal')
+    await ui.select({ key: 'commit-mode', value: mode })
+    await ui.input({ key: 'message', text: 'fix: merge', kind: 'submit' })
+    expect(calls.toasts.at(-1)).toBe('Resolve conflicts first.')
+    expect((await ui.find({ type: 'Input', key: 'message' }))?.props.value).toBe('fix: merge')
+    await ui.select({ key: 'commit-mode', value: 'commit' })
+    await ui.input({ key: 'message', text: '', kind: 'change' })
+    await ui.unmount()
+  }
+  expect(gitRuns(calls, 'commit')).toHaveLength(0)
+  expect(gitRuns(calls, 'add')).toHaveLength(0)
+})
+
+test('Amend never claims it stages all changes', async ($, on) => {
+  await world($, on, repo({ records: [CHANGED_USER] }))
+  const ui = await gitPane($, 'terminal')
+  expect(await ui.find({ type: 'Text', text: /Commit stages all changes/ })).toBeDefined()
+  await ui.select({ key: 'commit-mode', value: 'amend' })
+  expect(await ui.find({ type: 'Text', text: /Nothing staged/ })).toBeUndefined()
+  await ui.select({ key: 'commit-mode', value: 'commit' })
+  await ui.unmount()
+})
+
+test('Commit & Push with the push left running clears the landed message and says so', async ($, on) => {
+  const calls = await world($, on, repo({ hooks: true, background: true, slowStep: 'push' }))
+  const ui = await gitPane($, 'terminal')
+  await ui.select({ key: 'commit-mode', value: 'commit-push' })
+  await ui.input({ key: 'message', text: 'feat: slow push', kind: 'submit' })
+  expect(calls.toasts.at(-1)).toBe('Committed. Push is still running in the background; check the terminal.')
+  expect((await ui.find({ type: 'Input', key: 'message' }))?.props.value).toBe('')
+  await ui.select({ key: 'commit-mode', value: 'commit' })
+  await ui.unmount()
+})
+
+test('an interrupted step says it was interrupted, not that it still runs', async ($, on) => {
+  const r = repo({ hooks: true, interrupted: true, behind: 0 })
+  const calls = await world($, on, r)
+  const ui = await gitPane($, 'terminal')
+  await ui.input({ key: 'message', text: 'feat: stopped', kind: 'submit' })
+  expect(calls.toasts.at(-1)).toBe('Commit was interrupted.')
+  expect((await ui.find({ type: 'Input', key: 'message' }))?.props.value).toBe('feat: stopped')
+  // Not running any more: the message file is emptied.
+  expect(calls.writes.at(-1)?.text).toBe('')
+  await ui.press({ key: 'key-e' })
+  expect(calls.toasts.at(-1)).toBe('Sync was interrupted.')
+  await ui.input({ key: 'message', text: '', kind: 'change' })
+  await ui.unmount()
+})
+
+test('a root with a space and a quote is quoted for Bash and PowerShell, never left bare', async ($, on) => {
+  const root = "/work/ana's acme app"
+  const r = repo({ hooks: true, root })
+  const calls = await world($, on, r)
+  const expected = {
+    Bash: `git --no-optional-locks -c core.quotepath=off -C '/work/ana'\\''s acme app' commit -F '/work/ana'\\''s acme app/.git/JEI_COMMIT_MSG'`,
+    PowerShell: `git --no-optional-locks -c core.quotepath=off -C '/work/ana''s acme app' commit -F '/work/ana''s acme app/.git/JEI_COMMIT_MSG'`,
+  } as const
+  for (const shell of ['Bash', 'PowerShell'] as const) {
+    r.shell = shell
+    const ui = await gitPane($, 'terminal')
+    await ui.input({ key: 'message', text: 'fix: quoting', kind: 'submit' })
+    const call = calls.tools.at(-1)!
+    expect(call.tool).toBe(shell)
+    expect(call.command).toBe(expected[shell])
+    expect(calls.writes.filter((w) => w.text !== '').at(-1)).toEqual({ path: `${root}/.git/JEI_COMMIT_MSG`, text: 'fix: quoting\n' })
+    await ui.unmount()
+  }
+})
+
+test('the commit row shows the mode chooser where there is one, and names the mode where there is none', async ($, on) => {
+  await world($, on, repo())
+  for (const width of WIDTHS) {
+    const ui = await gitPane($, 'terminal', width)
+    expect(await ui.find({ type: 'Select', key: 'commit-mode' })).toBeDefined()
+    await ui.unmount()
+  }
+  // A surface with no Select (mobile): the Commit Button carries the mode's name.
+  const term = await gitPane($, 'terminal', 40)
+  await term.select({ key: 'commit-mode', value: 'commit-push' })
+  await term.press({ key: 'key-g' })
+  await term.unmount()
+  for (const width of WIDTHS) {
+    const ui = await $.ui.mount({ plugin: 'jei', surface: 'mobile', component: 'Pane', props: paneProps(width), requestId: 'jei' })
+    await ui.press({ key: 'tab-4' })
+    expect(await ui.find({ type: 'Select', key: 'commit-mode' })).toBeUndefined()
+    expect((await ui.find({ type: 'Button', key: 'commit' }))?.props.label).toBe('Commit & Push')
+    // No Input either: the message shows as text.
+    expect((await ui.find({ key: 'message' }))?.text).toContain('feat(')
+    await ui.unmount()
+  }
+  const back = await gitPane($, 'terminal', 40)
+  await back.select({ key: 'commit-mode', value: 'commit' })
+  await back.input({ key: 'message', text: '', kind: 'change' })
+  await back.unmount()
+})
+
+test('a sensitive question that does not fit keeps both Buttons and ends its list in +N more', async ($, on) => {
+  const names = Array.from({ length: 10 }, (_, i) => `config/secrets-${i}/service-account.pem`)
+  await world($, on, repo({ records: names.map((n) => `? ${n}`) }))
+  const ui = await gitPane($, 'terminal', 40)
+  await ui.input({ key: 'message', text: 'feat: keys', kind: 'submit' })
+  await ui.redraw(paneProps(40, 9))
+  expect(await ui.find({ type: 'Button', key: 'sensitive-commit' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', key: 'sensitive-cancel' })).toBeDefined()
+  const shown = (await ui.findAll({ type: 'Text' })).map((t) => t.text).join('\n')
+  expect(shown).toMatch(/\+\d+ more/)
+  expect(shown).toContain('These files look sensitive:')
+  for (const w of lineWidths((await ui.drawn()) as Node)) expect(w).toBeLessThanOrEqual(40)
+  // Rows to spare: the whole list again, no `+N more`.
+  await ui.redraw(paneProps(40, 40))
+  expect((await ui.findAll({ type: 'Text' })).map((t) => t.text).join('\n')).not.toMatch(/\+\d+ more/)
+  await ui.press({ key: 'sensitive-cancel' })
+  await ui.input({ key: 'message', text: '', kind: 'change' })
+  await ui.unmount()
+})
+
+test('the discard question keeps its Buttons on a pane with one or two body rows', async ($, on) => {
+  await world($, on, repo())
+  for (const rows of [3, 4, 5]) {
+    const ui = await gitPane($, 'terminal', 40, rows)
+    await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'change-src/api/user.ts', origin: { kind: 'person' } } as never)
+    await ui.press({ key: 'key-d' })
+    expect(await ui.find({ type: 'Button', key: 'confirm-discard' })).toBeDefined()
+    await ui.press({ key: 'confirm-cancel' })
+    await ui.unmount()
+  }
+})
+
+test('a diff with long lines cuts them at the edge, so its letter keys stay drawn', { timeoutMs: 60_000 }, async ($, on) => {
+  await world($, on, repo({ diffLines: 40, lineWidth: 200 }))
+  for (const width of WIDTHS) {
+    for (const rows of [30, 12, 6]) {
+      const ui = await gitPane($, 'terminal', width, rows)
+      await ui.press({ key: 'change-src/api/user.ts' })
+      const code = await ui.find({ type: 'Code' })
+      expect(code?.props.wrap).toBe('truncate-end')
+      const box = findKey((await ui.drawn()) as Node, 'diff')
+      expect(box !== undefined && typeof box !== 'string' ? box.props?.overflow : undefined).toBe('hidden')
+      for (const k of ['n', 'p', 'j', 'k', 'a', 'o']) expect(await ui.find({ key: `key-${k}` })).toBeDefined()
+      const hint = await hintOf(ui)
+      expect(hint.length).toBeLessThanOrEqual(width - 1)
+      for (const w of lineWidths((await ui.drawn()) as Node)) expect(w).toBeLessThanOrEqual(width)
+      await ui.press({ key: 'back' })
+      await ui.unmount()
+    }
   }
 })

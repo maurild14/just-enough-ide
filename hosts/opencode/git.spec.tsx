@@ -455,3 +455,35 @@ for (const retry of [false, true]) test(`a server refusal after the last TUI pla
   expect(f.calls.filter((c) => c.method === 'commit').map((c) => c.input.approvedSensitive)).toEqual(retry ? [['.env'], ['.env', 'id_rsa']] : [['.env']])
   expect(input.value).toBe(retry ? '' : 'feat: update app')
 })
+
+test('a merge conflict refuses the commit with a toast, asks nothing and keeps the message', async () => {
+  const f = fixture(); const r = await f.mount()
+  f.handlers.commitPlan = async () => ({ steps: [], sensitive: [], viaAgentShell: false, refusal: 'Resolve conflicts first.' })
+  f.key('g'); await r.flush()
+  const input = r.renderer.root.findDescendantById('git-message') as InputRenderable
+  input.submit(); await r.flush()
+  expect(f.notices.at(-1)).toEqual({ message: 'Resolve conflicts first.', variant: 'warning' })
+  expect(f.confirms).toHaveLength(0)
+  expect(f.calls.some((c) => c.method === 'commit')).toBe(false)
+  expect(input.value).toBe('feat: update app')
+})
+
+test('discarding one untracked file says it will be deleted', async () => {
+  const f = fixture(); const r = await f.mount()
+  for (let i = 0; i < 3; i++) f.key('down')
+  await r.flush()
+  f.key('d'); await r.flush()
+  expect(f.confirms.at(-1).message).toBe('Delete the untracked file new.ts?')
+  f.key('down'); await r.flush(); f.key('d'); await r.flush()
+  expect(f.confirms.at(-1).message).toBe('Discard changes to src/app.ts?')
+})
+
+test('o in a diff shows the server refusal for a runnable file as a toast', async () => {
+  const f = fixture(); f.setGit(repo([entry('setup.bat')]))
+  f.handlers.open = async () => ({ refused: 'Set editorCommand to open this file type.' })
+  const r = await f.mount(120, 10)
+  f.key('down'); f.key('enter'); await r.flush()
+  f.key('o'); await r.flush()
+  expect(f.calls.at(-1)).toEqual({ method: 'open', input: { rel: 'setup.bat' } })
+  expect(f.notices.at(-1)).toEqual({ message: 'Set editorCommand to open this file type.', variant: 'warning' })
+})

@@ -1,10 +1,12 @@
 import { expect, mock, test, type Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { lineWidths, type Node } from './measure.ts'
+import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
 
 const SURFACES = ['terminal', 'desktop'] as const
 const WIDTHS = [24, 40, 80, 120] as const
 const ROOT = '/work/acme-app'
+/** A source file whose lines are far wider than any pane. */
+const WIDE_TS = Array.from({ length: 40 }, (_, i) => `export const value${i} = '${'x'.repeat(200)}'`).join('\n') + '\n'
 const USER_TS = 'export async function getUser(id: string) {\n  return { id }\n}\n'
 
 type Entry = { name: string; kind: 'file' | 'dir' | 'other'; size: number }
@@ -15,12 +17,14 @@ const file = (name: string, size = 10): Entry => ({ name, kind: 'file', size })
 const TREE: Record<string, Entry[]> = {
   [ROOT]: [file('README.md', 20), file('.env'), dir('src'), file('people.csv', 40), file('logo.bin', 64), dir('docs'), file('big.log', 5 * 1024 * 1024), file('empty.txt', 0)],
   [`${ROOT}/src`]: [dir('api'), file('index.ts')],
-  [`${ROOT}/src/api`]: [file('user.ts', USER_TS.length)],
+  [`${ROOT}/src/api`]: [file('user.ts', USER_TS.length), file('run.sh', 20), file('wide.ts', WIDE_TS.length)],
   [`${ROOT}/docs`]: [],
 }
 const CONTENT: Record<string, string> = {
   [`${ROOT}/README.md`]: '# acme-app\n\nThe sample app.\n',
   [`${ROOT}/src/api/user.ts`]: USER_TS,
+  [`${ROOT}/src/api/wide.ts`]: WIDE_TS,
+  [`${ROOT}/src/api/run.sh`]: '#!/bin/sh\necho hi\n',
   [`${ROOT}/people.csv`]: 'name,email\nAna Rivera,ana@example.com\nLeo Park,leo@example.com\n',
   [`${ROOT}/logo.bin`]: 'PNG\u0000\u0001\u0002',
 }
@@ -442,4 +446,74 @@ test('session start asks to watch the git index and HEAD', async ($, on) => {
   await world($, on)
   const r = await $.classic.SessionStart({ source: 'startup', cwd: ROOT } as never)
   expect(r.watchPaths).toEqual([`${ROOT}/.git/index`, `${ROOT}/.git/HEAD`])
+})
+
+// Final review fixes --------------------------------------------------------------
+
+const hintLineOf = async (ui: { drawn: () => Promise<unknown> }) => {
+  const box = findKey((await ui.drawn()) as Node, 'hint')
+  return box ? drawnLine(box) : ''
+}
+
+test('o refuses a runnable file when no editor command is set, and runs nothing', async ($, on) => {
+  const seen = await world($, on)
+  await $.command.run(jei(`${ROOT}/src/api/run.sh`))
+  const ui = await mountAt($)
+  await ui.press({ key: 'key-o' })
+  expect(seen.toasts).toEqual(['Set editorCommand to open this file type.'])
+  expect(seen.runs.filter((a) => a[0] === 'xdg-open' || a[0] === 'open' || a[0] === 'explorer.exe')).toEqual([])
+  await ui.unmount()
+})
+
+test('a preview of long lines cuts them at the edge, so the hint keys stay drawn', { timeoutMs: 60_000 }, async ($, on) => {
+  await world($, on)
+  await $.command.run(jei(`${ROOT}/src/api/wide.ts`))
+  for (const width of WIDTHS) {
+    for (const rows of [24, 12, 6]) {
+      const ui = await mountAt($, width, rows)
+      await ui.press({ key: 'row-src/api/wide.ts' })
+      expect((await ui.find({ type: 'Code' }))?.props.wrap).toBe('truncate-end')
+      const box = findKey((await ui.drawn()) as Node, 'preview')
+      expect(box !== undefined && typeof box !== 'string' ? box.props?.overflow : undefined).toBe('hidden')
+      for (const k of ['a', 'o', 'm']) expect(await ui.find({ key: `key-${k}` })).toBeDefined()
+      await ui.press({ key: 'back' })
+      await ui.unmount()
+    }
+  }
+  // Rendered Markdown wraps on its own: its box clips it to the window.
+  await $.command.run(jei(`${ROOT}/README.md`))
+  const md = await mountAt($, 40, 8)
+  await md.press({ key: 'row-README.md' })
+  const box = findKey((await md.drawn()) as Node, 'preview')
+  expect(box !== undefined && typeof box !== 'string' ? box.props?.overflow : undefined).toBe('hidden')
+  await md.press({ key: 'back' })
+  await md.unmount()
+})
+
+test('the Files and preview hints keep every key within 24, 40, 80 and 120 columns', { timeoutMs: 60_000 }, async ($, on) => {
+  await world($, on)
+  await $.command.run(jei(`${ROOT}/src/api/user.ts`))
+  for (const width of WIDTHS) {
+    for (const rows of [24, 6]) {
+      const ui = await mountAt($, width, rows)
+      const tree = await hintLineOf(ui)
+      expect(tree.length).toBeLessThanOrEqual(width - 1)
+      for (const k of ['a', 'o', 'f', 'h']) expect(await ui.find({ key: `key-${k}` })).toBeDefined()
+      await ui.press({ key: 'row-src/api/user.ts' })
+      const preview = await hintLineOf(ui)
+      expect(preview.length).toBeLessThanOrEqual(width - 1)
+      for (const k of ['a', 'o', 'm']) expect(await ui.find({ key: `key-${k}` })).toBeDefined()
+      await ui.press({ key: 'back' })
+      await ui.unmount()
+    }
+  }
+})
+
+test('on mobile, which draws no Input, the filter shows as text', async ($, on) => {
+  await world($, on)
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'mobile', component: 'Pane', props: paneProps(40), requestId: 'jei' })
+  await ui.press({ key: 'key-f' })
+  expect((await ui.find({ key: 'header' }))?.text).toContain('Filter:')
+  await ui.press({ key: 'key-f' })
+  await ui.unmount()
 })

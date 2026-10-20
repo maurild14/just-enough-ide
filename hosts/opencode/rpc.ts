@@ -72,7 +72,7 @@ const activity = {
 } as const
 const diffFile = {
   type: 'object', properties: {
-    path: text, origPath: text, binary: flag, added: { type: 'integer', minimum: 0 }, removed: { type: 'integer', minimum: 0 },
+    path: text, origPath: text, binary: flag, added: { type: 'integer', minimum: 0 }, removed: { type: 'integer', minimum: 0 }, change: { enum: ['new', 'deleted'] },
     hunks: {
       type: 'array', items: {
         type: 'object', properties: {
@@ -131,7 +131,8 @@ export const JeiRpc = Rpc.define({
     allFiles: { input: empty, output: { type: 'object', properties: { files: strings }, required: ['files'], additionalProperties: false } },
     open: {
       input: { type: 'object', properties: { rel: text, line: { type: 'integer', minimum: 1 } }, required: ['rel'], additionalProperties: false },
-      output: empty, errors: pathErrors,
+      // `refused`: why the OS opener was not run (a runnable type with no editorCommand).
+      output: { type: 'object', properties: { refused: text }, additionalProperties: false }, errors: pathErrors,
     },
     stage: { input: paths, output: empty, errors: pathErrors },
     unstage: { input: paths, output: empty, errors: pathErrors },
@@ -147,7 +148,7 @@ export const JeiRpc = Rpc.define({
     commitPlan: {
       input: { type: 'object', properties: { message: text, mode }, required: ['message', 'mode'], additionalProperties: false },
       output: {
-        type: 'object', properties: { steps: { type: 'array', items: strings }, sensitive: strings, viaAgentShell: flag },
+        type: 'object', properties: { steps: { type: 'array', items: strings }, sensitive: strings, viaAgentShell: flag, refusal: text },
         required: ['steps', 'sensitive', 'viaAgentShell'], additionalProperties: false,
       },
     },

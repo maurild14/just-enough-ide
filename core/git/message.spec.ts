@@ -33,3 +33,7 @@ test('cleanMessage', () => {
   expect(cleanMessage("feat: it's fine")).toBe("feat: it's fine")
   expect(cleanMessage('```feat: x```')).toBe('feat: x')
 })
+
+test('cleanMessage keeps a code block inside a fenced reply whole', () => {
+  expect(cleanMessage('```text\nfeat: add parser\n\nUse:\n```js\nparse()\n```\n```')).toBe('feat: add parser\n\nUse:\n```js\nparse()\n```')
+})

@@ -110,7 +110,8 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 
 **Hard rules.**
 - No list or chrome row ever wraps, and no line is wider than the pane.
-- The only text that wraps is preview and diff content. It soft-wraps at the pane width, and continuation lines show a `muted` `│` in the line-number gutter, or a space where there is no gutter.
+- The only text that wraps is preview and diff content. On OpenCode it soft-wraps at the pane width, and continuation lines show a `muted` `│` in the line-number gutter, or a space where there is no gutter. On Claude Code a preview or diff window counts rows, so `Code` cuts each line at the edge (`wrap="truncate-end"`) instead, and the window's box (`height` = its rows, `overflow="hidden"`) clips rendered Markdown: the hint line, whose Buttons are the letter keys, never leaves the pane.
+- Text fitted to a row draws a tab as one space and any other control character as U+FFFD, and counts each as one cell (`printable` in `core/shared/fit.ts`).
 
 ## 6. Height rules
 
@@ -156,7 +157,7 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 | Git | No upstream | `No upstream branch.` (`warning`) |
 | Git | Failure | `Push failed: <first git line>.` (`error`) |
 | Git | Discard (confirm) | `Discard changes to user.ts?` / `Discard all changes (3 files, 1 untracked will be deleted)?` (`warning`) with `Discard` and `Cancel` |
-| Git | Sensitive files | `These files look sensitive: .env` (`warning`), the whole list wrapped over rows, with `Commit anyway` and `Cancel` |
+| Git | Sensitive files | `These files look sensitive: .env` (`warning`), the whole list wrapped over rows, with `Commit anyway` and `Cancel`. On a short pane the rule goes first, then the list is cut and ends in `+N more`; the Buttons always stay (the same for Discard) |
 | Git | Diverged | `Your branch and its upstream have diverged.` (`warning`) with `Merge`, `Rebase`, `Ask Claude` and `Cancel` |
 | Git | Busy | `Committing…`, `Syncing…`, `Generating…` in the repository row (`muted`); Commit is drawn dim and cannot be pressed while the message is empty |
 | Git | Left running | `Commit is still running in the background; check the terminal.` (toast; the message is kept) |

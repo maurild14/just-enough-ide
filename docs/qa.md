@@ -35,6 +35,9 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] `g` ✦ Generate against a configured model (`commitModel` empty and set); the subject can be edited and the generated body is kept in the commit (OpenCode edits the subject only).
 - [ ] Commit, Commit & Push and Amend; smart commit with nothing staged stages everything first.
 - [ ] A sensitive file (`.env`, `id_rsa`) in a smart commit is listed and needs "Commit anyway"; adding another sensitive path after approving asks again for the exact new list.
+- [ ] During a merge with a conflict, Commit shows `Resolve conflicts first.` and commits nothing; Generate with a changed `.env` lists it as `sensitive file, contents omitted` and never sends its values.
+- [ ] With `editorCommand` empty, `o` on a `.bat`/`.sh` file toasts `Set editorCommand to open this file type.`; on a `.ts` file the OS opener shows it (on Windows, with a backslash path).
+- [ ] On Claude Code, a preview or diff with lines wider than the pane cuts them at the edge and the hint line stays at the bottom of the docked pane.
 - [ ] A repo with a real `pre-commit` hook: on Claude Code the commit goes through the agent's shell tool (permission asked first; the message file is written into `.git` via `$.fs.write`); on OpenCode the hook runs. A failing hook shows its message.
 - [ ] Claude Code: a failing shell-tool step shows a readable toast line.
 

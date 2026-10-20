@@ -114,7 +114,7 @@ export function Git(props: {
     if (!paths.length) return
     if (method === 'discard') {
       const deleted = rows.filter((r) => r.status === 'untracked').length
-      const message = rows.length === 1 ? `Discard changes to ${paths[0]}?` : `Discard all changes (${paths.length} files${deleted ? `, ${deleted} untracked will be deleted` : ''})?`
+      const message = rows.length === 1 ? `${deleted ? 'Delete the untracked file' : 'Discard changes to'} ${paths[0]}?` : `Discard all changes (${paths.length} files${deleted ? `, ${deleted} untracked will be deleted` : ''})?`
       if (!await props.ctx.ui.dialog.confirm({ title: 'Discard changes', message, label: { confirm: 'Discard', cancel: 'Cancel' } })) return
     }
     if (!stopped) try { await props.api[method]({ paths }) } finally { await props.refresh() }
@@ -128,6 +128,10 @@ export function Git(props: {
         let approved: readonly string[] = []
         while (!stopped) {
           const plan = record(await props.api.commitPlan({ message: text, mode: selectedMode }))
+          if (typeof plan.refusal === 'string') {
+            if (!stopped) props.ctx.ui.toast.show({ message: plan.refusal, variant: 'warning' })
+            return undefined
+          }
           if (!Array.isArray(plan.sensitive) || !plan.sensitive.every((p): p is string => typeof p === 'string')) throw new Error('Invalid Git reply.')
           if (stopped) return undefined
           if (plan.sensitive.every((p) => approved.includes(p))) return approved

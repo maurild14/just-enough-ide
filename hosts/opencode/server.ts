@@ -82,8 +82,8 @@ export default Plugin.define({
         if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
         const line = record(input).line
         if (line !== undefined && (typeof line !== 'number' || !Number.isInteger(line) || line < 1)) throw new Error('Invalid RPC input')
-        await openFile(host, options, joinPath(root, rel), line)
-        return {}
+        const refused = await openFile(host, options, joinPath(root, rel), line)
+        return refused === null ? {} : { refused }
       },
       async stage(input, context) {
         const root = ctx.location.directory
@@ -130,6 +130,7 @@ export default Plugin.define({
         const approvedSensitive = paths(input, 'approvedSensitive')
         const snap = await repoSnapshot()
         const plan = commitPlan(snap, { ...params, smartCommit: options.smartCommit })
+        if (plan.refusal !== undefined) throw new Error(plan.refusal)
         if (!plan.sensitive.every((path) => approvedSensitive.includes(path))) throw new Error('Sensitive files require confirmation.')
         await runSteps(host, snap.root, plan.steps)
         return {}

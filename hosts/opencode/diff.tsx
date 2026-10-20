@@ -20,7 +20,7 @@ function readDiff(raw: unknown): { file: DiffFile | null; truncated: boolean } {
   if (typeof data.truncated !== 'boolean') throw new Error('Invalid diff reply.')
   if (data.file === null) return { file: null, truncated: data.truncated }
   const f = record(data.file)
-  if (typeof f.path !== 'string' || f.origPath !== undefined && typeof f.origPath !== 'string' || typeof f.binary !== 'boolean' || !natural(f.added) || !natural(f.removed) || !Array.isArray(f.hunks)) throw new Error('Invalid diff reply.')
+  if (typeof f.path !== 'string' || f.origPath !== undefined && typeof f.origPath !== 'string' || f.change !== undefined && f.change !== 'new' && f.change !== 'deleted' || typeof f.binary !== 'boolean' || !natural(f.added) || !natural(f.removed) || !Array.isArray(f.hunks)) throw new Error('Invalid diff reply.')
   const hunks = f.hunks.map((raw) => {
     const h = record(raw)
     if (typeof h.header !== 'string' || !Array.isArray(h.lines)) throw new Error('Invalid diff reply.')
@@ -31,7 +31,8 @@ function readDiff(raw: unknown): { file: DiffFile | null; truncated: boolean } {
       return { kind: l.kind as DiffLine['kind'], text: l.text, oldNo: l.oldNo as number | undefined, newNo: l.newNo as number | undefined }
     }) }
   })
-  return { file: { path: f.path, origPath: f.origPath as string | undefined, binary: f.binary, added: f.added, removed: f.removed, hunks }, truncated: data.truncated }
+  const change = f.change as DiffFile['change']
+  return { file: { path: f.path, origPath: f.origPath as string | undefined, binary: f.binary, added: f.added, removed: f.removed, hunks, ...(change ? { change } : {}) }, truncated: data.truncated }
 }
 
 export function Diff(props: {
@@ -109,7 +110,10 @@ export function Diff(props: {
     else if (action === 'next-hunk' || action === 'prev-hunk') {
       const next = action === 'next-hunk' ? layout().starts.find((n) => n > top()) : [...layout().starts].reverse().find((n) => n < top())
       if (next !== undefined) setTop(next)
-    } else if (action === 'open-editor') await props.api.open({ rel: props.target.path })
+    } else if (action === 'open-editor') {
+      const reply = await props.api.open({ rel: props.target.path }) as { refused?: unknown }
+      if (typeof reply?.refused === 'string' && !stopped) props.ctx.ui.toast.show({ message: reply.refused, variant: 'warning' })
+    }
     else if (action === 'ask-review' && loaded()?.file?.hunks.length && !reviewBusy) {
       reviewBusy = true
       try { await handToAgent(props.ctx, props.sessionID, reviewText(props.target.path, toUnifiedText(loaded()!.file!), 8000)) } finally { reviewBusy = false }

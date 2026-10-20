@@ -218,12 +218,18 @@ export function Files(props: {
         return
       }
       case 'mention': if (rel) await handToAgent(props.ctx, props.sessionID, mentionText([rel])); return
-      case 'open-editor': if (rel) await props.api.open({ rel }); return
+      case 'open-editor': {
+        if (!rel) return
+        const reply = await props.api.open({ rel }) as { refused?: unknown }
+        if (typeof reply?.refused === 'string' && !stopped) props.ctx.ui.toast.show({ message: reply.refused, variant: 'warning' })
+        return
+      }
       // OpenCode always displays Markdown source, so the shared source action is already satisfied.
       case 'toggle-markdown-source': return
     }
   }
-  props.bind((action) => { void run(action).catch(() => props.ctx.ui.toast.show({ message: 'Unable to complete Files action.', variant: 'error' })) }, editing)
+  const invoke = (action: string) => { void run(action).catch(() => props.ctx.ui.toast.show({ message: 'Unable to complete Files action.', variant: 'error' })) }
+  props.bind(invoke, editing)
   const table = createMemo(() => fitTable(preview()?.rows ?? [], inner()))
   const notice = () => {
     switch (preview()?.kind) {
@@ -262,12 +268,12 @@ export function Files(props: {
   return <box flexDirection="column" flexGrow={1} minHeight={1}>
     <Show when={props.header || editing()}>
       <Show when={editing()} fallback={<text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitPath(isPreview() ? previewRel() || selected() || '' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text>}>
-        <box height={1} flexShrink={0} flexDirection="row"><text fg={theme().text.muted}>{fitEnd(' Filter: ', props.width)}</text><input width={Math.max(1, props.width - 9)} focused={props.focused} value={query()} onInput={setQuery} onSubmit={() => { void run('activate') }} /></box>
+        <box height={1} flexShrink={0} flexDirection="row"><text fg={theme().text.muted}>{fitEnd(' Filter: ', props.width)}</text><input width={Math.max(1, props.width - 9)} focused={props.focused} value={query()} onInput={setQuery} onSubmit={() => invoke('activate')} /></box>
       </Show>
     </Show>
     <box flexGrow={1} minHeight={1} overflow="hidden" flexDirection="column">
       <Show when={isPreview()} fallback={<For each={window()}>{(item) => <text height={1} flexShrink={0} width={props.width} bg={item.rel === selected() ? theme().background?.action.primary.base : undefined}
-        onMouseDown={() => { if (item.row && !('more' in item.row)) { props.dispatch({ type: 'select', view: 'files', id: item.rel }); void run('activate') } }}>
+        onMouseDown={() => { if (item.row && !('more' in item.row)) { props.dispatch({ type: 'select', view: 'files', id: item.rel }); invoke('activate') } }}>
         <span style={{ fg: color(item.rel, true), dim: props.activity.touched(item.rel) && !props.activity.glow(item.rel, props.now) }}>{props.activity.touched(item.rel) ? '•' : ' '}</span><span style={{ fg: filtering() && filesError() ? theme().text.feedback.error.base : color(item.rel) }}>{rowText(item)}</span><span style={{ fg: statusColor(item) }}>{statusSuffix(item)}</span>
       </text>}</For>}>
         <Show when={preview()?.kind === 'code' || preview()?.kind === 'markdown'} fallback={<For each={notice() ? [notice()] : table().slice(top(), top() + room())}>{(line) => <text height={1} flexShrink={0} fg={preview()?.kind === 'error' ? theme().text.feedback.error.base : theme().text.muted}>{' ' + fitEnd(line, inner())}</text>}</For>}>

@@ -269,3 +269,41 @@ test('sync runs its steps through a caller runner when given one', async () => {
   expect(res).toEqual({ ok: true })
   expect(seen).toEqual([['push']])
 })
+
+test('commitPlan refuses while a merge conflict is unresolved, and nothing gets committed', async () => {
+  const r = await makeRepo({ 'a.txt': 'base\n' })
+  await r.git('checkout', '-b', 'other')
+  r.write('a.txt', 'theirs\n')
+  await r.git('commit', '-am', 'feat: theirs')
+  await r.git('checkout', 'main')
+  r.write('a.txt', 'ours\n')
+  await r.git('commit', '-am', 'feat: ours')
+  const merge = await r.host.run(['git', '-C', r.dir, 'merge', 'other'])
+  expect(merge.exitCode).not.toBe(0)
+  const s = await snap(r)
+  expect(s.status.entries.some((e) => e.index === 'conflicted')).toBe(true)
+  for (const mode of ['commit', 'commit-push', 'amend'] as const) {
+    for (const smartCommit of [true, false]) {
+      expect(commitPlan(s, { message: 'm', mode, smartCommit })).toEqual({ steps: [], sensitive: [], viaAgentShell: false, refusal: 'Resolve conflicts first.' })
+    }
+  }
+  expect(await r.git('log', '-1', '--format=%s')).toBe('feat: ours')
+})
+
+test('generateMessage never sends the contents of a sensitive file', async () => {
+  const r = await makeRepo({ '.env': 'MODE=old\n', 'a.txt': 'x\n', 'keys/deploy.pem': 'OLDPEM\n' })
+  r.write('.env', 'MODE=envsentinel\n')
+  r.write('keys/deploy.pem', 'NEWPEM-fictional\n')
+  r.write('a.txt', 'VISIBLECHANGE\n')
+  r.host.completeReply = 'chore: x'
+  await generateMessage(r.host, r.dir, '', 0)
+  await r.git('add', '-A')
+  await generateMessage(r.host, r.dir, '', 3)
+  for (const { prompt } of r.host.prompts) {
+    expect(prompt).not.toContain('envsentinel')
+    expect(prompt).not.toContain('PEM')
+    expect(prompt).toContain('VISIBLECHANGE')
+    expect(prompt).toContain('.env: sensitive file, contents omitted')
+    expect(prompt).toContain('keys/deploy.pem: sensitive file, contents omitted')
+  }
+})

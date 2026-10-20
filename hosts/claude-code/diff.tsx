@@ -182,8 +182,9 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
   lastRows = rows
   lastStarts = w.hunkStarts
   body.push(
-    <Box key="diff" paddingLeft={1} paddingRight={1}>
-      <Code source={w.text} format="diff" path={d.path} />
+    // One window row is one drawn row: a long line is cut at the edge, so the hint line stays in the pane.
+    <Box key="diff" paddingLeft={1} paddingRight={1} height={rows} overflow="hidden">
+      <Code source={w.text} format="diff" path={d.path} wrap="truncate-end" />
     </Box>,
   )
   return { header, body, actions }

@@ -42,6 +42,7 @@ function fixture(options: Record<string, unknown> = {}) {
   }
   let listing = async (rel: string): Promise<unknown> => ({ entries: tree[rel] ?? [], ignored: ['dist'] })
   let preview = async (rel: string): Promise<unknown> => previews[rel] ?? { kind: 'empty' }
+  let opener = async (_input: unknown): Promise<unknown> => ({})
   let allFiles = async (): Promise<unknown> => ({ files: ['src/usage.ts', 'README.md', 'src/api/user.ts', '.env'] })
   let git: unknown = { root: '/acme-app', status: { entries: [{ path: 'src/api/user.ts', index: null, worktree: 'modified' }] } }
   const api = {
@@ -49,7 +50,7 @@ function fixture(options: Record<string, unknown> = {}) {
     async listDir(input: { rel: string }) { calls.push({ method: 'listDir', input }); return listing(input.rel) },
     async preview(input: { rel: string }) { calls.push({ method: 'preview', input }); return preview(input.rel) },
     async allFiles() { calls.push({ method: 'allFiles', input: {} }); return allFiles() },
-    async open(input: unknown) { calls.push({ method: 'open', input }); return {} },
+    async open(input: unknown) { calls.push({ method: 'open', input }); return opener(input) },
     events: { on(name: string, fn: (event: { data: unknown }) => void) {
       const handlers = listeners.get(name) ?? new Set(); listeners.set(name, handlers); handlers.add(fn)
       return () => { handlers.delete(fn) }
@@ -78,6 +79,7 @@ function fixture(options: Record<string, unknown> = {}) {
     setEdited(value: string | undefined) { edited = value }, setListing(fn: typeof listing) { listing = fn }, setPreview(fn: typeof preview) { preview = fn },
     setGit(value: unknown) { git = value },
     setAllFiles(fn: typeof allFiles) { allFiles = fn },
+    setOpen(fn: typeof opener) { opener = fn },
     emit(name: string, data: unknown = {}) { for (const fn of listeners.get(name) ?? []) fn({ data }) },
   }
 }
@@ -323,4 +325,13 @@ test('filter-list failures show a distinct error and recover on changed events a
   f.key('esc'); await r.flush(); f.setAllFiles(async () => ({ files: ['src/api/user.ts'] }))
   f.key('f'); await r.flush(); await r.mockInput.typeText('usr'); await r.flush()
   expect(r.captureCharFrame()).toContain('src/api/user.ts'); expect(r.captureCharFrame()).not.toContain("Can't list project files.")
+})
+
+test('o shows the server refusal for a runnable file as a toast', async () => {
+  const f = fixture(); const r = await f.mount()
+  f.setOpen(async () => ({ refused: 'Set editorCommand to open this file type.' }))
+  f.select('src/api/user.ts'); await r.flush(); f.key('o'); await r.flush()
+  expect(f.notices.at(-1)).toEqual({ message: 'Set editorCommand to open this file type.', variant: 'warning' })
+  f.setOpen(async () => ({}))
+  f.key('o'); await r.flush(); expect(f.notices).toHaveLength(1)
 })

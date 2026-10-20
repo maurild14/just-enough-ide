@@ -1,7 +1,7 @@
 import type { Host } from '../host.ts'
 import { commitSteps, discardArgs, discardPlan, stageArgs, unstageArgs } from './commands.ts'
 import type { CommitMode } from './commands.ts'
-import { capDiff, parseNumstat, parseUnifiedDiff, untrackedDiffArgs, workingDiffArgs } from './diff.ts'
+import { capDiff, omitSensitive, parseNumstat, parseUnifiedDiff, untrackedDiffArgs, workingDiffArgs } from './diff.ts'
 import type { DiffFile } from './diff.ts'
 import { readHookSignals, usesHooks } from './hooks.ts'
 import { cleanMessage, commitPrompt } from './message.ts'
@@ -80,10 +80,13 @@ export async function fileDiff(
   return capDiff(file, DIFF_MAX_LINES)
 }
 
-/** Asks the model for a commit message for the staged diff, or for the working diff when nothing is staged. */
+/**
+ * Asks the model for a commit message for the staged diff, or for the working diff when nothing is staged.
+ * Files that look sensitive (`sensitive.ts`) go by name only: their contents never reach the model.
+ */
 export async function generateMessage(host: Host, root: string, model: string, stagedCount: number): Promise<string> {
   const args = ['diff', '--no-color', '--no-ext-diff', ...(stagedCount > 0 ? ['--cached'] : [])]
-  let diff = (await git(host, root, args)).stdout
+  let diff = omitSensitive((await git(host, root, args)).stdout)
   if (stagedCount === 0) {
     // Untracked files are not in `git diff`; list them so a new-files-only change is not empty.
     const fresh = (await git(host, root, ['ls-files', '--others', '--exclude-standard', '-z'])).stdout.split('\0').filter((p) => p !== '')
@@ -92,16 +95,24 @@ export async function generateMessage(host: Host, root: string, model: string, s
   return cleanMessage(await host.complete(commitPrompt(diff, PROMPT_MAX_CHARS), model))
 }
 
+export const CONFLICTS_REFUSAL = 'Resolve conflicts first.'
+
+export type CommitPlan = { steps: string[][]; sensitive: string[]; viaAgentShell: boolean; refusal?: string }
+
 /**
  * Steps for a commit plus the sensitive paths the commit would include: everything when the smart commit
  * will `add -A`, else the staged paths. `viaAgentShell` tells Claude Code to route hook-firing steps through
- * the agent's shell; OpenCode ignores it.
+ * the agent's shell; OpenCode ignores it. While any entry is unmerged the plan has no steps and a `refusal`
+ * the host shows instead (a smart commit's `add -A` would mark conflict markers as resolved).
  */
 export function commitPlan(
   snap: Extract<GitSnapshot, { root: string }>,
   input: { message: string; mode: CommitMode; smartCommit: boolean },
-): { steps: string[][]; sensitive: string[]; viaAgentShell: boolean } {
+): CommitPlan {
   const { entries, branch } = snap.status
+  if (entries.some((e) => e.index === 'conflicted' || e.worktree === 'conflicted')) {
+    return { steps: [], sensitive: [], viaAgentShell: snap.hooks, refusal: CONFLICTS_REFUSAL }
+  }
   const staged = entries.filter((e) => e.index !== null && e.index !== 'conflicted')
   const publish = input.mode === 'commit-push' && branch.upstream === null && branch.head !== null ? branch.head : undefined
   const steps = commitSteps({ ...input, stagedCount: staged.length, ...(publish === undefined ? {} : { publish }) })

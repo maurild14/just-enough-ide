@@ -91,13 +91,18 @@ function shellError(text: string): string {
     .join('\n')
 }
 
-/** A step the agent's shell left running (moved to the background, timed out or interrupted). */
+/**
+ * A step the agent's shell did not finish: left running (moved to the background or timed out), or
+ * `interrupted` (stopped, so it is not running any more).
+ */
 export class StillRunning extends Error {
   readonly step: string
-  constructor(step: string) {
-    super(`git ${step} is still running`)
+  readonly interrupted: boolean
+  constructor(step: string, interrupted = false) {
+    super(interrupted ? `git ${step} was interrupted` : `git ${step} is still running`)
     this.name = 'StillRunning'
     this.step = step
+    this.interrupted = interrupted
   }
 }
 
@@ -167,10 +172,11 @@ export async function runHookAware($: EngineInterface, root: string, steps: read
       if (r.deny !== undefined) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: r.deny })
       if (r.isError === true) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: shellError(r.text ?? '') })
       const ran = r.result as { interrupted?: boolean; backgroundTaskId?: string; timedOutAfterMs?: number; backgroundedByUser?: boolean } | undefined
-      if (ran?.interrupted === true || ran?.backgroundTaskId !== undefined || ran?.timedOutAfterMs !== undefined || ran?.backgroundedByUser === true) {
+      if (ran?.backgroundTaskId !== undefined || ran?.timedOutAfterMs !== undefined || ran?.backgroundedByUser === true) {
         leftRunning = true
         throw new StillRunning(step[0] ?? 'git')
       }
+      if (ran?.interrupted === true) throw new StillRunning(step[0] ?? 'git', true)
     } finally {
       // A commit still running may yet read its message file: keep it then.
       if (file !== null && !leftRunning) await $.fs.write(file, '').catch(() => undefined)
@@ -268,8 +274,8 @@ function failure(err: unknown): string {
 
 const RUNNING_WHAT: Readonly<Record<string, string>> = { commit: 'Commit', push: 'Push', pull: 'Pull' }
 
-function stillRunning(what: string): string {
-  return `${what} is still running in the background; check the terminal.`
+function stillRunning(what: string, err: StillRunning): string {
+  return err.interrupted ? `${what} was interrupted.` : `${what} is still running in the background; check the terminal.`
 }
 
 /**
@@ -305,6 +311,11 @@ async function commitNow($: EngineInterface, options: Options, confirmed: readon
       return
     }
     const plan = commitPlan(fresh, { message, mode: ui.mode, smartCommit: options.smartCommit })
+    if (plan.refusal !== undefined) {
+      await setAsk($, null)
+      $.ui.toast(plan.refusal)
+      return
+    }
     const covered = confirmed !== null && plan.sensitive.every((p) => confirmed.includes(p))
     if (plan.sensitive.length > 0 && !covered) {
       await setAsk($, { kind: 'sensitive', paths: plan.sensitive })
@@ -317,7 +328,13 @@ async function commitNow($: EngineInterface, options: Options, confirmed: readon
       $.ui.toast(ui.mode === 'commit-push' ? 'Committed and pushed.' : 'Committed.')
     } catch (err) {
       if (err instanceof StillRunning) {
-        $.ui.toast(stillRunning(RUNNING_WHAT[err.step] ?? 'Commit'))
+        if (err.step === 'commit') {
+          $.ui.toast(stillRunning('Commit', err))
+          return
+        }
+        // The commit landed; only its push is unfinished. The message is spent.
+        await updateGitUi($, (u) => ({ ...u, message: '' }))
+        $.ui.toast(`Committed. ${stillRunning(RUNNING_WHAT[err.step] ?? 'Push', err)}`)
         return
       }
       const pushed = err instanceof GitError && err.argv.includes('push')
@@ -338,7 +355,7 @@ async function syncNow($: EngineInterface, choice?: 'merge' | 'rebase'): Promise
       else if ('divergence' in r) await setAsk($, { kind: 'divergence' })
       else $.ui.toast(`Sync failed: ${trimDot(r.error)}.`)
     } catch (err) {
-      if (err instanceof StillRunning) $.ui.toast(stillRunning('Sync'))
+      if (err instanceof StillRunning) $.ui.toast(stillRunning('Sync', err))
       else $.ui.toast(`Sync failed: ${trimDot(failure(err))}.`)
     }
   })
@@ -497,8 +514,10 @@ function plural(n: number, word: string): string {
 export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesFrame, options: Options): Promise<FilesView> {
   const els = $.ui.resolve(e)
   const { Box, Text, Button } = els
-  const Input = 'Input' in els ? els.Input : undefined
-  const Select = 'Select' in els ? els.Select : undefined
+  // Mobile draws no Input and no Select (its element table has neither, though the resolved table may
+  // still carry them): the message then shows as text and Commit names the mode.
+  const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : undefined
+  const Select = e.surface !== 'mobile' && 'Select' in els ? els.Select : undefined
   const root = await readCwd($)
   const g = await readGit($)
   const ui = await readGitUi($)
@@ -605,12 +624,14 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     </Box>
   )
 
-  // The open question, pinned above the list: a muted rule, one line, its Buttons.
-  const asked: RenderElement[] = []
+  // The open question, pinned above the list: a muted rule, its text, its Buttons. On a short pane the
+  // rule goes first, then text rows; the Buttons always stay (docs/design.md section 6).
+  let askText: string[] = []
+  let fitAskText = (rows: number): string[] => askText.slice(0, Math.max(0, rows))
+  let askButtons: RenderElement[] = []
   const ask = ui.ask
   if (ask !== null) {
     const cancel = { key: 'confirm-cancel', label: 'Cancel', run: act($, () => setAsk($, null)) }
-    asked.push(line('─'.repeat(Math.max(0, inner)), { dim: true }, 'ask-rule'))
     if (ask.kind === 'discard') {
       const one = ask.paths[0] ?? ''
       const untracked = !ask.all && g.status.entries.some((x) => x.path === one && x.worktree === 'untracked')
@@ -618,29 +639,34 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
       const q = ask.all
         ? `Discard all changes (${plural(ask.paths.length, 'file')}${deleted > 0 ? `, ${deleted} untracked will be deleted` : ''})?`
         : `${untracked ? 'Delete the untracked file' : 'Discard changes to'} ${fitPath(baseName(one), Math.max(1, inner - 28))}?`
-      asked.push(line(q, { color: color('warning') }, 'ask-text')) // destructive: the question carries the emphasis
-      asked.push(...buttons('ask-buttons', [{ key: 'confirm-discard', label: 'Discard', run: act($, () => discardNow($, ask.paths)) }, cancel]))
+      askText = [q] // destructive: the question carries the emphasis
+      askButtons = buttons('ask-buttons', [{ key: 'confirm-discard', label: 'Discard', run: act($, () => discardNow($, ask.paths)) }, cancel])
     } else if (ask.kind === 'sensitive') {
-      // The whole list, never cut: names flow onto as many rows as they need.
-      wrapWords([...'These files look sensitive:'.split(' '), ...ask.paths.map((p, i) => (i < ask.paths.length - 1 ? `${p},` : p))], inner).forEach((text, i) =>
-        asked.push(line(text, { color: color('warning') }, `ask-text-${i}`)),
-      )
-      asked.push(
-        ...buttons('ask-buttons', [
-          { key: 'sensitive-commit', label: 'Commit anyway', run: act($, () => commitNow($, options, ask.paths)) },
-          { ...cancel, key: 'sensitive-cancel' },
-        ]),
-      )
+      // Names flow onto as many rows as they need; with too few rows the list ends in `+N more`.
+      const shown = (k: number) => {
+        const list = [...ask.paths.slice(0, k), ...(k < ask.paths.length ? [`+${ask.paths.length - k} more`] : [])]
+        return wrapWords([...'These files look sensitive:'.split(' '), ...list.map((p, i) => (i < list.length - 1 ? `${p},` : p))], inner)
+      }
+      askText = shown(ask.paths.length)
+      fitAskText = (rows) => {
+        for (let k = ask.paths.length; k >= 0; k--) {
+          const text = shown(k)
+          if (text.length <= rows) return text
+        }
+        return []
+      }
+      askButtons = buttons('ask-buttons', [
+        { key: 'sensitive-commit', label: 'Commit anyway', run: act($, () => commitNow($, options, ask.paths)) },
+        { ...cancel, key: 'sensitive-cancel' },
+      ])
     } else {
-      asked.push(line('Your branch and its upstream have diverged.', { color: color('warning') }, 'ask-text'))
-      asked.push(
-        ...buttons('ask-buttons', [
+      askText = ['Your branch and its upstream have diverged.']
+      askButtons = buttons('ask-buttons', [
           { key: 'diverge-merge', label: 'Merge', run: act($, () => syncNow($, 'merge')) },
           { key: 'diverge-rebase', label: 'Rebase', run: act($, () => syncNow($, 'rebase')) },
           { key: 'diverge-ask', label: 'Ask Claude', run: act($, () => askClaude($)) },
           { ...cancel, key: 'diverge-cancel' },
-        ]),
-      )
+      ])
     }
   }
 
@@ -741,7 +767,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     flush(n)
   }
   if (groups.staged.length === 0 && groups.changes.length === 0) items.push({ id: 'clean', isRow: false, el: line('No changes.', { dim: true }, 'notice') })
-  else if (groups.staged.length === 0) {
+  else if (groups.staged.length === 0 && ui.mode !== 'amend') {
     items.push({ id: 'unstaged', isRow: false, el: line(options.smartCommit ? 'Nothing staged. Commit stages all changes.' : 'Nothing staged.', { dim: true }, 'notice') })
   }
 
@@ -862,8 +888,15 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
   ]
 
   const bodyRows = Math.max(1, frame.bodyRows)
-  // A short pane keeps the question whole and drops its rule first.
-  const pinned = asked.length > bodyRows - 1 ? asked.slice(1) : asked
+  // A short pane drops the question's rule first, then cuts its text; its Buttons always stay.
+  const pinned: RenderElement[] = []
+  if (ask !== null) {
+    const withRule = 1 + askText.length + askButtons.length <= bodyRows - 1
+    const text = askText.length + askButtons.length <= bodyRows ? askText : fitAskText(bodyRows - askButtons.length)
+    if (withRule) pinned.push(line('─'.repeat(Math.max(0, inner)), { dim: true }, 'ask-rule'))
+    text.forEach((t, i) => pinned.push(line(t, { color: color('warning') }, ask.kind === 'sensitive' ? `ask-text-${i}` : 'ask-text')))
+    pinned.push(...askButtons.slice(0, Math.max(1, bodyRows - text.length)))
+  }
   const room = bodyRows - pinned.length
   if (room <= 0) return { header, body: pinned.slice(0, bodyRows), actions }
   const ids = items.map((i) => i.id)

@@ -1,8 +1,10 @@
 import type { Platform } from '../host.ts'
+import { sensitivePaths } from './sensitive.ts'
 
 export type DiffLine = { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string; oldNo?: number; newNo?: number }
 export type Hunk = { header: string; lines: DiffLine[] }
-export type DiffFile = { path: string; origPath?: string; binary: boolean; added: number; removed: number; hunks: Hunk[] }
+/** `change` is read from the file headers (`new file mode`, `deleted file mode`, a `/dev/null` side), never from hunk counts. */
+export type DiffFile = { path: string; origPath?: string; binary: boolean; added: number; removed: number; hunks: Hunk[]; change?: 'new' | 'deleted' }
 
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 
@@ -120,12 +122,19 @@ export function parseUnifiedDiff(text: string): DiffFile[] {
     } else if (line.startsWith('rename to ')) {
       file.path = pathToken(line.slice(10))
       renamed = true
+    } else if (!hunk && line.startsWith('new file mode ')) {
+      file.change = 'new'
+    } else if (!hunk && line.startsWith('deleted file mode ')) {
+      file.change = 'deleted'
+    } else if (!hunk && (line === '--- /dev/null' || line === '--- NUL')) {
+      file.change = 'new'
     } else if (line.startsWith('Binary files ') || line.startsWith('GIT binary patch')) {
       file.binary = true
     } else if (!renamed && !hunk && line.startsWith('+++ ')) {
       // Names with spaces make the `diff --git` line ambiguous; the +++ side is exact.
       const p = pathToken(line.slice(4))
       if (p !== '/dev/null' && p !== 'NUL') file.path = stripSide(p)
+      else file.change = 'deleted'
     }
   }
   return files
@@ -197,12 +206,12 @@ const PREFIX = { add: '+', del: '-', ctx: ' ', meta: '' } as const
 
 /**
  * Re-serializes one file as unified text (`---`/`+++` header, then hunks) for a `diff` code block.
- * New and deleted files are detected from the first hunk header (`-0,0` / `+0,0`). CRLF is not preserved.
+ * New and deleted files come from `file.change` (the file headers), so an emptied file stays a
+ * modification. CRLF is not preserved.
  */
 export function toUnifiedText(file: DiffFile): string {
-  const first = file.hunks[0]?.header ?? ''
-  const isNew = /^@@ -0,0 /.test(first)
-  const isDeleted = / \+0,0 @@/.test(first)
+  const isNew = file.change === 'new'
+  const isDeleted = file.change === 'deleted'
   const out = [
     isNew ? '--- /dev/null' : `--- a/${file.origPath ?? file.path}`,
     isDeleted ? '+++ /dev/null' : `+++ b/${file.path}`,
@@ -276,4 +285,23 @@ export function reviewText(path: string, unified: string, max: number): string {
   const last = body.charCodeAt(cut - 1)
   if (last >= 0xd800 && last <= 0xdbff) cut -= 1 // never split a surrogate pair
   return `${head}${body.slice(0, cut)}\n${note}${tail}`
+}
+
+/**
+ * A multi-file `git diff` with every file that looks sensitive (`sensitive.ts`, on either side of a rename)
+ * cut out and named first instead, so a cut prompt still lists them: `<path>: sensitive file, contents omitted`.
+ * A hunk line always starts with ` `, `+`, `-` or `\`, so a `diff --git ` line only ever opens a file.
+ */
+export function omitSensitive(diff: string): string {
+  const parts = diff.split(/^(?=diff --git )/m)
+  const kept: string[] = []
+  const omitted: string[] = []
+  for (const part of parts) {
+    const file = part.startsWith('diff --git ') ? parseUnifiedDiff(part)[0] : undefined
+    const names = file === undefined ? [] : [file.path, ...(file.origPath === undefined ? [] : [file.origPath])]
+    if (file !== undefined && sensitivePaths(names).length > 0) omitted.push(file.path)
+    else kept.push(part)
+  }
+  if (omitted.length === 0) return diff
+  return omitted.map((p) => `${p}: sensitive file, contents omitted\n`).join('') + kept.join('')
 }
