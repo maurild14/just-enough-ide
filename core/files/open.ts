@@ -3,6 +3,10 @@ import { splitCommand } from '../shared/argv.ts'
 
 const OS_OPENER: Readonly<Record<Platform, string>> = { win32: 'explorer.exe', darwin: 'open', linux: 'xdg-open' }
 
+export function openUrlArgv(url: string, platform: Platform): string[] | null {
+  return /^https:\/\/[^\s/@?#\\]+(?:\/[^\s\\]*)?$/.test(url) ? [OS_OPENER[platform], url] : null
+}
+
 const sub = (word: string, token: string, value: string): string => word.split(token).join(value)
 
 export const OPEN_REFUSED = 'Set editorCommand to open this file type.'

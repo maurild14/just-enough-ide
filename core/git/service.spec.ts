@@ -2,11 +2,185 @@ import { afterEach, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { FakeHost, cleanup, configure, gitIn, makeRepo, makeTemp } from '../../test/fake-host.ts'
-import { git } from './run.ts'
-import { commitPlan, discard, fileDiff, generateMessage, initRepo, runSteps, snapshot, stage, sync, unstage } from './service.ts'
+import { GitError, git } from './run.ts'
+import { REVERT_MERGE_REFUSAL, branches, checkout, commitPlan, compare, compareDiff, createBranch, discard, fetchAll, fileDiff, generateMessage, initRepo, revert, runSteps, snapshot, stage, switchBranch, sync, unstage, validBranchName, webUrl } from './service.ts'
 import type { GitSnapshot } from './service.ts'
 
 afterEach(cleanup)
+
+test('branches reads real local/remote/gone metadata and origin default base', async () => {
+  const { r } = await remotePair()
+  await r.git('branch', 'feature')
+  await r.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
+  expect((await branches(r.host, r.dir)).base).toBe('origin/main')
+  expect((await branches(r.host, r.dir)).branches.map((branch) => branch.name)).toEqual(['main', 'feature', 'origin/main'])
+  await r.git('update-ref', '-d', 'refs/remotes/origin/main')
+  expect((await branches(r.host, r.dir)).branches[0]).toMatchObject({ name: 'main', upstream: null, gone: true })
+})
+
+test('branch name validation refuses shorthand, invalid and option-like names literally', async () => {
+  const r = await makeRepo()
+  await r.git('branch', 'other'); await r.git('switch', 'other')
+  for (const name of ['a..b', '-x', 'has space', '@', '@{-1}', 'HEAD', '', 'refs/heads/../x']) expect(await validBranchName(r.host, r.dir, name)).toBe(false)
+  expect(await validBranchName(r.host, r.dir, 'feat/ñ')).toBe(true)
+})
+
+test('compare resolves exact branches rather than colliding tags, retaining rename counts/diffs', async () => {
+  const r = await makeRepo({ 'old.txt': 'one\ntwo\nthree\nfour\n' })
+  await r.git('tag', 'feature')
+  await r.git('switch', '-c', 'feature')
+  await r.git('mv', 'old.txt', 'new.txt')
+  r.write('new.txt', 'one\ntwo\nthree\nfour\nfive\n')
+  await r.git('add', '-A'); await r.git('commit', '-m', 'feat: rename')
+  expect(await compare(r.host, r.dir, 'main', 'feature')).toEqual([{ path: 'new.txt', from: 'old.txt', status: 'R', added: 1, removed: 0 }])
+  expect((await compareDiff(r.host, r.dir, 'refs/heads/main', 'feature', 'new.txt')).file).toMatchObject({ path: 'new.txt', origPath: 'old.txt', added: 1, removed: 0 })
+  const hash = await r.git('rev-parse', 'refs/heads/feature')
+  expect(await compare(r.host, r.dir, 'main', hash)).toHaveLength(1)
+  for (const invalid of ['@{-1}', 'HEAD~1', '-x', 'missing']) await expect(compare(r.host, r.dir, 'main', invalid)).rejects.toThrow('Invalid branch.')
+})
+
+test('switch confirms freshly dirty/detached state and preserves conflicting dirty files', async () => {
+  const r = await makeRepo({ 'a.txt': 'base\n' })
+  await r.git('switch', '-c', 'feature')
+  r.write('a.txt', 'feature\n'); await r.git('commit', '-am', 'feat: change')
+  await r.git('switch', 'main')
+  r.write('a.txt', 'local\n')
+  expect(await switchBranch(r.host, r.dir, 'feature')).toEqual({ ok: false, confirm: 'You have uncommitted changes. Switch and carry them over?' })
+  const error = await switchBranch(r.host, r.dir, 'feature', true).catch((error) => error)
+  expect(error).toBeInstanceOf(GitError)
+  expect(error.firstLine).toContain('Your local changes to the following files would be overwritten by checkout:')
+  expect(readFileSync(join(r.dir, 'a.txt'), 'utf8')).toBe('local\n')
+  await r.git('restore', 'a.txt'); await r.git('switch', '--detach', 'HEAD')
+  expect(await switchBranch(r.host, r.dir, 'feature')).toEqual({ ok: false, confirm: 'You are leaving detached HEAD. Switch to a branch?' })
+  expect(await switchBranch(r.host, r.dir, 'feature', true)).toEqual({ ok: true })
+})
+
+test('switch disambiguates branch/tag names and rejects missing, ambiguous and unsafe targets', async () => {
+  const r = await makeRepo()
+  await r.git('tag', 'feature'); await r.git('branch', 'feature')
+  expect(await switchBranch(r.host, r.dir, 'feature')).toEqual({ ok: true })
+  expect(await r.git('symbolic-ref', 'HEAD')).toBe('refs/heads/feature')
+  await r.git('branch', 'refs/heads/feature', await r.git('rev-parse', 'refs/heads/feature'))
+  expect(await switchBranch(r.host, r.dir, 'refs/heads/feature')).toEqual({ ok: true })
+  expect(await r.git('symbolic-ref', 'HEAD')).toBe('refs/heads/feature')
+  await r.git('update-ref', 'refs/remotes/origin/feature', 'HEAD')
+  await r.git('branch', 'origin/feature', await r.git('rev-parse', 'refs/heads/feature'))
+  for (const name of ['@{-1}', '-x', 'missing', 'origin/feature']) await expect(switchBranch(r.host, r.dir, name, true)).rejects.toBeInstanceOf(GitError)
+})
+
+test('remote switches preserve branch paths and respect configured fetch mapping', async () => {
+  const { r } = await remotePair()
+  await r.git('branch', 'topic/nested'); await r.git('push', 'origin', 'topic/nested')
+  await r.git('branch', '-D', 'topic/nested')
+  expect(await switchBranch(r.host, r.dir, 'refs/remotes/origin/topic/nested')).toEqual({ ok: true })
+  expect((await snap(r)).status.branch).toMatchObject({ head: 'topic/nested', upstream: 'origin/topic/nested' })
+  await r.git('switch', 'main')
+  expect(await switchBranch(r.host, r.dir, 'origin/topic/nested')).toEqual({ ok: true })
+  await r.git('switch', 'main'); await r.git('branch', '-D', 'topic/nested')
+  await r.git('config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/team/origin/*')
+  await r.git('fetch', 'origin')
+  expect(await switchBranch(r.host, r.dir, 'refs/remotes/team/origin/topic/nested')).toEqual({ ok: true })
+  expect((await snap(r)).status.branch.head).toBe('topic/nested')
+})
+
+test('full-ref-looking local names switch literally but the single @ shorthand is refused', async () => {
+  const r = await makeRepo()
+  const hash = await r.git('rev-parse', 'HEAD')
+  for (const name of ['refs/heads/main']) {
+    await r.git('branch', name, hash)
+    expect(await switchBranch(r.host, r.dir, `refs/heads/${name}`)).toEqual({ ok: true })
+    expect(await r.git('symbolic-ref', 'HEAD')).toBe(`refs/heads/${name}`)
+    await r.git('switch', 'main')
+  }
+  await r.git('branch', '@', hash)
+  const seen: string[][] = []
+  await expect(switchBranch(r.host, r.dir, 'refs/heads/@', true, async (steps) => { seen.push(...steps) })).rejects.toThrow('Invalid branch.')
+  await expect(createBranch(r.host, r.dir, '@', null, true)).rejects.toThrow('Invalid branch.')
+  expect(seen).toEqual([])
+})
+
+test('create checks fresh state and names before running, and supports selected commits/unborn HEAD', async () => {
+  const r = await makeRepo()
+  const hash = await r.git('rev-parse', 'HEAD')
+  r.write('new.txt', 'local\n')
+  expect((await createBranch(r.host, r.dir, 'feat/ñ', hash)).ok).toBe(false)
+  expect(await createBranch(r.host, r.dir, 'feat/ñ', hash, true)).toEqual({ ok: true })
+  expect((await snap(r)).status.branch.head).toBe('feat/ñ')
+  expect(readFileSync(join(r.dir, 'new.txt'), 'utf8')).toBe('local\n')
+  for (const name of ['@{-1}', '-x', 'a..b', 'feat/ñ']) await expect(createBranch(r.host, r.dir, name, null, true)).rejects.toBeInstanceOf(GitError)
+  await expect(createBranch(r.host, r.dir, 'other', 'HEAD', true)).rejects.toThrow('Invalid commit hash.')
+  await r.git('switch', '--detach', 'HEAD')
+  expect((await createBranch(r.host, r.dir, 'detached', null)).ok).toBe(false)
+  const empty = await makeRepo({}, 0)
+  expect(await createBranch(empty.host, empty.dir, 'first', null)).toEqual({ ok: true })
+  expect((await snap(empty)).status.branch.head).toBe('first')
+})
+
+test('checkout and revert require confirmation, validate commit objects, and use optional runners', async () => {
+  const r = await makeRepo({ 'a.txt': 'base\n' })
+  const first = await r.git('rev-parse', 'HEAD')
+  r.write('a.txt', 'changed\n'); await r.git('commit', '-am', 'feat: change')
+  const hash = await r.git('rev-parse', 'HEAD')
+  expect(await checkout(r.host, r.dir, first)).toEqual({ ok: false, confirm: `Check out ${first.slice(0, 7)} (detached HEAD)?` })
+  expect(await revert(r.host, r.dir, hash)).toEqual({ ok: false, confirm: `Revert ${hash.slice(0, 7)} "feat: change"?` })
+  const seen: string[][] = []
+  const runner = async (steps: string[][]) => { seen.push(...steps) }
+  expect(await checkout(r.host, r.dir, first, true, runner)).toEqual({ ok: true })
+  expect(await revert(r.host, r.dir, hash, true, runner)).toEqual({ ok: true })
+  expect(seen).toEqual([['switch', '--detach', '--end-of-options', first], ['revert', '--no-edit', '--end-of-options', hash]])
+  expect(await revert(r.host, r.dir, hash, true)).toEqual({ ok: true })
+  expect(readFileSync(join(r.dir, 'a.txt'), 'utf8')).toBe('base\n')
+  expect(await r.git('rev-parse', 'HEAD')).not.toBe(hash)
+  expect(await checkout(r.host, r.dir, first, true)).toEqual({ ok: true })
+  expect((await snap(r)).status.branch.head).toBeNull()
+  for (const invalid of ['HEAD', '-x', 'A'.repeat(40), 'a'.repeat(64)]) await expect(checkout(r.host, r.dir, invalid, true)).rejects.toThrow('Invalid commit hash.')
+  const blob = await r.git('rev-parse', `${first}:a.txt`)
+  await expect(checkout(r.host, r.dir, blob, true)).rejects.toThrow()
+})
+
+test('revert independently refuses a real merge even when confirmed', async () => {
+  const r = await makeRepo()
+  await r.git('switch', '-c', 'other'); await r.git('commit', '--allow-empty', '-m', 'feat: other')
+  await r.git('switch', 'main'); await r.git('merge', '--no-ff', 'other', '-m', 'feat: merge')
+  const hash = await r.git('rev-parse', 'HEAD')
+  const seen: string[][] = []
+  await expect(revert(r.host, r.dir, hash, true, async (steps) => { seen.push(...steps) })).rejects.toThrow(REVERT_MERGE_REFUSAL)
+  expect(seen).toEqual([])
+  expect(await r.git('rev-parse', 'HEAD')).toBe(hash)
+})
+
+test('switch/create route only validated confirmed steps through the optional runner', async () => {
+  const r = await makeRepo()
+  await r.git('branch', 'feature')
+  const seen: string[][] = []
+  const runner = async (steps: string[][]) => { seen.push(...steps) }
+  expect(await switchBranch(r.host, r.dir, 'feature', false, runner)).toEqual({ ok: true })
+  expect(await createBranch(r.host, r.dir, 'new', null, false, runner)).toEqual({ ok: true })
+  expect(seen.map((step) => step[0])).toEqual(['switch', 'switch'])
+  r.write('new.txt', 'local\n')
+  expect((await switchBranch(r.host, r.dir, 'feature', false, runner)).ok).toBe(false)
+  expect((await createBranch(r.host, r.dir, 'new', null, false, runner)).ok).toBe(false)
+  expect(seen).toHaveLength(2)
+})
+
+test('fetch is exactly default-remote fetch --prune and web URLs prefer the HEAD upstream remote', async () => {
+  const { r, leo } = await remotePair()
+  await gitIn(r.host, leo, 'commit', '--allow-empty', '-m', 'feat: remote'); await gitIn(r.host, leo, 'push')
+  await fetchAll(r.host, r.dir)
+  expect(r.host.calls.at(-1)?.slice(4)).toEqual(['fetch', '--prune'])
+  expect((await snap(r)).status.branch.behind).toBe(1)
+  const hash = await r.git('rev-parse', 'HEAD')
+  await r.git('remote', 'set-url', 'origin', 'https://ana:tok@github.com/acme/acme-app.git')
+  expect(await webUrl(r.host, r.dir, hash)).toBe(`https://github.com/acme/acme-app/commit/${hash}`)
+  await r.git('remote', 'add', 'team', 'git@gitlab.com:acme/acme-app.git')
+  await r.git('update-ref', 'refs/remotes/team/main', hash)
+  await r.git('branch', '--set-upstream-to=team/main')
+  expect(await webUrl(r.host, r.dir, hash)).toBe(`https://gitlab.com/acme/acme-app/-/commit/${hash}`)
+  await r.git('switch', '--detach', hash)
+  expect(await webUrl(r.host, r.dir, hash)).toBe(`https://github.com/acme/acme-app/commit/${hash}`)
+  await r.git('remote', 'remove', 'origin')
+  expect(await webUrl(r.host, r.dir, hash)).toBeNull()
+})
 
 type RepoSnap = Extract<GitSnapshot, { root: string }>
 async function snap(r: Awaited<ReturnType<typeof makeRepo>>): Promise<RepoSnap> {

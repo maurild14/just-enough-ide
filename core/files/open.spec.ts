@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { openArgv, openRefusal } from './open.ts'
+import { openArgv, openRefusal, openUrlArgv } from './open.ts'
 
 const path = 'C:\\x\\a b.ts'
+
+test('URL opening only accepts HTTPS and reuses the platform opener', () => {
+  const url = 'https://github.com/acme/acme-app'
+  expect(openUrlArgv(url, 'win32')).toEqual(['explorer.exe', url])
+  expect(openUrlArgv(url, 'darwin')).toEqual(['open', url])
+  expect(openUrlArgv(url, 'linux')).toEqual(['xdg-open', url])
+  for (const value of ['file:///x', 'http://github.com/acme/acme-app', '-x', 'https://', 'https://ana:tok@github.com/acme/acme-app', 'https://github.com/\nfile']) expect(openUrlArgv(value, 'win32')).toBeNull()
+})
 
 describe('openArgv', () => {
   test('empty command uses the OS opener', () => {

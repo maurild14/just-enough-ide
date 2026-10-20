@@ -14,14 +14,19 @@ export class GitError extends Error {
   readonly firstLine: string
 
   constructor(argv: readonly string[], result: RunResult) {
-    const firstLine = firstNonEmptyLine(result.stderr) ?? firstNonEmptyLine(result.stdout) ?? `git exited with ${result.exitCode}`
+    const stderr = redactUrlCredentials(result.stderr)
+    const firstLine = firstNonEmptyLine(stderr) ?? firstNonEmptyLine(redactUrlCredentials(result.stdout)) ?? `git exited with ${result.exitCode}`
     super(firstLine)
     this.name = 'GitError'
-    this.argv = argv
+    this.argv = argv.map(redactUrlCredentials)
     this.exitCode = result.exitCode
-    this.stderr = result.stderr
+    this.stderr = stderr
     this.firstLine = firstLine
   }
+}
+
+function redactUrlCredentials(text: string): string {
+  return text.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/]*@/gi, '$1')
 }
 
 function firstNonEmptyLine(text: string): string | null {

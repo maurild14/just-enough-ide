@@ -1,6 +1,7 @@
 import type { Host } from '../host.ts'
 import { creationAction, parseReflog, type Candidate, type ReflogBoundary } from './agent.ts'
-import { assertCommitHash, commitDiffArgs, commitFilesArgs, parseCommitFiles, type CommitFile } from './commit.ts'
+import { assertCommitHash, checkoutArgs, commitDiffArgs, commitFilesArgs, commitWebUrl, parseCommitFiles, revertArgs, type CommitFile } from './commit.ts'
+import { branchesArgs, compareArgs, compareDiffArgs, createPlan, defaultBase, parseBranches, switchPlan, type Branch, type SwitchPlan } from './branches.ts'
 import { commitSteps, discardArgs, discardPlan, stageArgs, unstageArgs } from './commands.ts'
 import type { CommitMode } from './commands.ts'
 import { capDiff, omitSensitive, parseNumstat, parseUnifiedDiff, untrackedDiffArgs, workingDiffArgs } from './diff.ts'
@@ -13,20 +14,171 @@ import { STATUS_ARGS, isRepo, parseStatus } from './status.ts'
 import type { BranchInfo, RepoStatus, StatusEntry } from './status.ts'
 import { isDivergence, resolveDivergence, syncSteps } from './sync.ts'
 import type { PullConfig } from './sync.ts'
-import { logArgs, parseLog, type GraphFilter, type LogCommit } from './log.ts'
+import { isMerge, logArgs, parseLog, type GraphFilter, type LogCommit } from './log.ts'
 
 export const DIFF_MAX_LINES = 5000
 const PROMPT_MAX_CHARS = 12_000
+
+function refusal(root: string, args: string[], message: string): GitError {
+  return new GitError(gitArgv(root, args), { exitCode: 1, stdout: '', stderr: message })
+}
+
+async function readBranches(host: Host, root: string): Promise<Branch[]> {
+  return parseBranches((await git(host, root, branchesArgs())).stdout)
+}
+
+export async function branches(host: Host, root: string): Promise<{ branches: Branch[]; base: string | null }> {
+  const rows = await readBranches(host, root)
+  let originHead: string | null = null
+  try { originHead = (await git(host, root, ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'])).stdout.trim() }
+  catch (error) { if (!(error instanceof GitError) || error.exitCode !== 1) throw error }
+  return { branches: rows, base: defaultBase(rows, originHead) }
+}
+
+export async function validBranchName(host: Host, root: string, name: string): Promise<boolean> {
+  if (!name || name.startsWith('-') || name === '@') return false
+  try { return (await git(host, root, ['check-ref-format', '--branch', name])).stdout.trim() === name }
+  catch (error) { if (error instanceof GitError) return false; throw error }
+}
+
+function branchTarget(root: string, rows: readonly Branch[], name: string): Branch {
+  const full = name.startsWith('refs/heads/') || name.startsWith('refs/remotes/')
+  const matches = rows.filter((branch) => name === (full ? `refs/${branch.remote ? 'remotes' : 'heads'}/${branch.name}` : branch.name))
+  if (name.startsWith('-') || matches.length !== 1) throw refusal(root, [], 'Invalid branch.')
+  return matches[0]!
+}
+
+async function readCommit(host: Host, root: string, hash: string): Promise<LogCommit> {
+  assertCommitHash(hash)
+  const commit = parseLog((await git(host, root, logArgs({ branch: hash }, 0))).stdout)[0]
+  if (commit?.hash !== hash) throw refusal(root, [], 'Invalid commit.')
+  return commit
+}
+
+async function resolveRevision(host: Host, root: string, name: string): Promise<string> {
+  if (/^[0-9a-f]{40}$/.test(name)) return (await readCommit(host, root, name)).hash
+  return resolveBranch(host, root, name)
+}
+
+async function resolveBranch(host: Host, root: string, name: string): Promise<string> {
+  const target = branchTarget(root, await readBranches(host, root), name)
+  const ref = `refs/${target.remote ? 'remotes' : 'heads'}/${target.name}`
+  const hash = (await git(host, root, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`])).stdout.trim()
+  assertCommitHash(hash)
+  return hash
+}
+
+export async function compare(host: Host, root: string, base: string, head: string): Promise<CommitFile[]> {
+  const [from, to] = await Promise.all([resolveRevision(host, root, base), resolveRevision(host, root, head)])
+  const args = compareArgs(from, to)
+  const [names, counts] = await Promise.all([git(host, root, args), git(host, root, args.map((word) => word === '--name-status' ? '--numstat' : word))])
+  return parseCommitFiles(names.stdout, counts.stdout)
+}
+
+export async function compareDiff(host: Host, root: string, base: string, head: string, path: string): Promise<{ file: DiffFile | null; truncated: boolean }> {
+  const [from, to] = await Promise.all([resolveRevision(host, root, base), resolveRevision(host, root, head)])
+  const args = compareDiffArgs(from, to, path)
+  const original = (await compare(host, root, from, to)).find((file) => file.path === path)?.from
+  if (original !== undefined) args.push(original)
+  const file = parseUnifiedDiff((await git(host, root, args)).stdout).find((file) => file.path === path)
+  return file === undefined ? { file: null, truncated: false } : capDiff(file, DIFF_MAX_LINES)
+}
+
+export async function fetchAll(host: Host, root: string): Promise<void> {
+  await git(host, root, ['fetch', '--prune'])
+}
+
+export async function webUrl(host: Host, root: string, hash: string): Promise<string | null> {
+  assertCommitHash(hash)
+  let remote = 'origin'
+  try {
+    const upstream = (await git(host, root, ['for-each-ref', '--format=%(HEAD)%00%(upstream:remotename)', 'refs/heads/'])).stdout.split(/\r?\n/).find((line) => line.startsWith('*\0'))?.slice(2)
+    if (upstream) remote = upstream
+    const url = (await git(host, root, ['remote', 'get-url', '--', remote])).stdout.trim()
+    return commitWebUrl(url, hash)
+  } catch (error) { if (error instanceof GitError) return null; throw error }
+}
+
+export type ActionResult = { ok: true } | { ok: false; confirm: string }
+type StepsRunner = (steps: string[][]) => Promise<void>
+
+async function readStatus(host: Host, root: string): Promise<RepoStatus> {
+  return parseStatus((await git(host, root, [...STATUS_ARGS])).stdout)
+}
+
+function switchConfirmation(plan: SwitchPlan, status: RepoStatus): string | null {
+  return status.branch.head === null
+    ? `You are leaving detached HEAD. ${plan.confirm ?? 'Switch to a branch?'}` : plan.confirm
+}
+
+async function remoteLocalName(host: Host, root: string, target: Branch): Promise<string> {
+  const ref = `refs/remotes/${target.name}`
+  const mappings = (await git(host, root, ['config', '--get-regexp', '^remote\\..*\\.fetch$'])).stdout.split(/\r?\n/)
+  const names = new Set<string>()
+  for (const mapping of mappings) {
+    const spec = mapping.slice(mapping.indexOf(' ') + 1).replace(/^\+/, '')
+    const [source, destination] = spec.split(':')
+    if (!source?.startsWith('refs/heads/') || !destination) continue
+    const [prefix, suffix] = destination.split('*')
+    if (suffix !== undefined && ref.startsWith(prefix!) && ref.endsWith(suffix)) names.add(source.replace('*', ref.slice(prefix!.length, suffix ? -suffix.length : undefined)).slice(11))
+    else if (ref === destination) names.add(source.slice(11))
+  }
+  if (names.size !== 1) throw refusal(root, [], 'Invalid remote branch mapping.')
+  return [...names][0]!
+}
+
+export async function switchBranch(host: Host, root: string, name: string, confirmed = false, run: StepsRunner = (steps) => runSteps(host, root, steps)): Promise<ActionResult> {
+  const rows = await readBranches(host, root)
+  const target = branchTarget(root, rows, name)
+  const localName = target.remote ? await remoteLocalName(host, root, target) : target.name
+  if (!await validBranchName(host, root, localName)) throw refusal(root, [], 'Invalid branch.')
+  const status = await readStatus(host, root)
+  const plan = switchPlan({ ...target, name: localName, remote: false }, status.entries.length > 0, rows)
+  const confirm = switchConfirmation(plan, status)
+  if (confirm !== null && !confirmed) return { ok: false, confirm }
+  const steps = target.remote && !rows.some((branch) => !branch.remote && branch.name === localName)
+    ? [['switch', '-c', localName, '--track', '--end-of-options', `refs/remotes/${target.name}`]]
+    : [['switch', '--end-of-options', localName]]
+  await run(steps)
+  return { ok: true }
+}
+
+export async function createBranch(host: Host, root: string, name: string, start: string | null, confirmed = false, run: StepsRunner = (steps) => runSteps(host, root, steps)): Promise<ActionResult> {
+  if (start !== null) await readCommit(host, root, start)
+  if (!await validBranchName(host, root, name) || (await readBranches(host, root)).some((branch) => !branch.remote && branch.name === name)) throw refusal(root, [], 'Invalid branch.')
+  const status = await readStatus(host, root)
+  const plan = createPlan(name, start, status.entries.length > 0)
+  const confirm = switchConfirmation(plan, status)
+  if (confirm !== null && !confirmed) return { ok: false, confirm }
+  plan.steps[0]!.splice(3, 0, '--end-of-options')
+  await run(plan.steps)
+  return { ok: true }
+}
+
+export const REVERT_MERGE_REFUSAL = 'Reverting a merge commit is not supported.'
+
+export async function checkout(host: Host, root: string, hash: string, confirmed = false, run: StepsRunner = (steps) => runSteps(host, root, steps)): Promise<ActionResult> {
+  await readCommit(host, root, hash)
+  await readStatus(host, root)
+  if (!confirmed) return { ok: false, confirm: `Check out ${hash.slice(0, 7)} (detached HEAD)?` }
+  await run([checkoutArgs(hash)])
+  return { ok: true }
+}
+
+export async function revert(host: Host, root: string, hash: string, confirmed = false, run: StepsRunner = (steps) => runSteps(host, root, steps)): Promise<ActionResult> {
+  const commit = await readCommit(host, root, hash)
+  if (isMerge(commit)) throw refusal(root, revertArgs(hash), REVERT_MERGE_REFUSAL)
+  await readStatus(host, root)
+  if (!confirmed) return { ok: false, confirm: `Revert ${hash.slice(0, 7)} "${commit.subject}"?` }
+  await run([revertArgs(hash)])
+  return { ok: true }
+}
 
 export async function graph(host: Host, root: string, filter: GraphFilter, count: number): Promise<{ commits: LogCommit[]; more: boolean }> {
   if (!Number.isSafeInteger(count) || count < 1 || !Number.isSafeInteger(count + 1)) throw new Error('Invalid graph count.')
   let branch = filter.branch
   if (branch !== undefined && branch !== 'all') {
-    const refs = (await git(host, root, ['for-each-ref', '--format=%(refname)', 'refs/heads/', 'refs/remotes/'])).stdout.trim().split('\n')
-    const matches = refs.filter((ref) => ref === branch || ref === `refs/heads/${branch}` || ref === `refs/remotes/${branch}`)
-    if (matches.length !== 1) throw new Error('Invalid branch.')
-    branch = (await git(host, root, ['rev-parse', '--verify', `${matches[0]}^{commit}`])).stdout.trim()
-    assertCommitHash(branch)
+    branch = await resolveBranch(host, root, branch)
   } else if (branch === undefined) {
     try { await git(host, root, ['rev-parse', '--verify', '--quiet', 'HEAD']) }
     catch (error) {

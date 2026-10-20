@@ -1,6 +1,6 @@
 # Conventions
 
-> Purpose: the code, copy and commit conventions every change follows · Status: current · Last reviewed: 2026-10-19
+> Purpose: the code, copy and commit conventions every change follows · Status: current · Last reviewed: 2026-10-20
 
 The rules that bind everything are summarized in `AGENTS.md`. Behavior is in `PRD.md`; visuals are in `docs/design.md`.
 
@@ -23,9 +23,9 @@ Every relative import names its file with its extension: `./status.ts`, `./pane.
 
 ## Errors
 
-Status: draft — built in milestone 0.1 (plan Task 4).
+Status: current.
 
-- A failed git command raises `GitError` (in `core/git/run.ts`), carrying the argv, exit code and stderr, with `firstLine` for display.
+- A failed git command raises `GitError` (in `core/git/run.ts`), carrying the argv, exit code and stderr, with `firstLine` for display. Its stored argv, stderr and display line strip URL userinfo; the runner still executes the original argv (ADR 0013).
 - Functions that can fail in expected ways (missing file, not a repo) return `null` or a tagged result; they do not throw for control flow.
 - User-facing failures show git's or the OS's first error line, never a stack trace. The copy is in `docs/design.md`.
 

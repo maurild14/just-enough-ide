@@ -21,6 +21,7 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/decisions/0010-exact-sensitive-path-approval.md` | Exact approved sensitive-path lists across the OpenCode commit RPC. |
 | `docs/decisions/0011-git-history-core-contracts.md` | Git history reads, tool attribution, graph cell budgets and contextual branch keys. |
 | `docs/decisions/0012-git-history-evidence-and-state.md` | Stable graph topology, verified empty history and retained working-diff state. |
+| `docs/decisions/0013-safe-branch-and-commit-actions.md` | Fresh branch/action validation and confirmation, comparison counts and credential-free URLs/errors. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
 
 ## Keeping docs current

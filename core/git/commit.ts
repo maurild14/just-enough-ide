@@ -33,3 +33,24 @@ export function commitDiffArgs(hash: string, path: string, isRoot: boolean): str
     ? ['show', '--no-color', '--no-ext-diff', '-M', '--format=', hash, '--', path]
     : ['diff', '--no-color', '--no-ext-diff', '-M', `${hash}^`, hash, '--', path]
 }
+
+export function checkoutArgs(hash: string): string[] {
+  assertCommitHash(hash)
+  return ['switch', '--detach', '--end-of-options', hash]
+}
+
+export function revertArgs(hash: string): string[] {
+  assertCommitHash(hash)
+  return ['revert', '--no-edit', '--end-of-options', hash]
+}
+
+export function commitWebUrl(remoteUrl: string, hash: string): string | null {
+  assertCommitHash(hash)
+  const match = /^(?:git@([^/:]+):|(?:https:\/\/(?:[^\s/@]*@)?|ssh:\/\/git@)([^/:]+)\/)([^\s?#\\]+)$/.exec(remoteUrl)
+  if (!match) return null
+  const host = (match[1] ?? match[2]!).toLowerCase()
+  if (host !== 'github.com' && host !== 'gitlab.com') return null
+  const segments = match[3]!.replace(/\.git$/, '').split('/')
+  if (segments.length < 2 || (host === 'github.com' && segments.length !== 2) || segments.some((segment) => !/^[a-zA-Z0-9_.-]+$/.test(segment) || segment === '.' || segment === '..')) return null
+  return `https://${host}/${segments.join('/')}/${host === 'gitlab.com' ? '-/' : ''}commit/${hash}`
+}

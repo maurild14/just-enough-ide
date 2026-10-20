@@ -46,6 +46,15 @@ test('GitError.firstLine falls back to stdout then the exit code', async () => {
   expect(b.firstLine).toBe('git exited with 3')
 })
 
+test('GitError redacts remote URL credentials without changing the executed argv', async () => {
+  const remote = 'https://ana:fictional-secret@github.com/acme/acme-app.git'
+  const { host, calls } = fakeHost({ exitCode: 128, stdout: '', stderr: `fatal: unable to access '${remote}': refused` })
+  const error = await git(host, '/r', ['fetch', remote]).catch((error) => error)
+  expect(calls[0]!.argv).toContain(remote)
+  expect(error.firstLine).toBe("fatal: unable to access 'https://github.com/acme/acme-app.git': refused")
+  expect(JSON.stringify({ message: error.message, stderr: error.stderr, argv: error.argv })).not.toContain('fictional-secret')
+})
+
 test('isRepo returns the trimmed root, or null on failure', async () => {
   const ok = fakeHost({ exitCode: 0, stdout: '/home/x/acme-app\n', stderr: '' })
   expect(await isRepo(ok.host, '/home/x/acme-app/src')).toBe('/home/x/acme-app')

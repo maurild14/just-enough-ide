@@ -265,7 +265,7 @@ Mirrors VS Code's Source Control panel, top to bottom.
 - **Filter** by message text, author, file path or branch (or all branches).
 - Loads the first 200 commits, more on scroll.
 - **Click/enter on a commit expands it inline**, listing its changed files with status (M/A/D/R) and +/−. Click/enter on a file **replaces the pane content with that file's diff**.
-- **Commit actions:** copy hash, checkout (detached, confirmed), revert (confirmed), open on GitHub/GitLab (when the remote is one), **Ask** (`explain commit a41f9c2`).
+- **Commit actions:** copy hash, checkout (detached, confirmed), revert (confirmed; merge commits are refused), open on GitHub/GitLab (when the remote is one, without credentials), **Ask** (`explain commit a41f9c2`).
 
 **Diff view (replaces the pane content)**
 - Unified, one column, wrapped to the pane width, with hunk headers and line numbers. Claude Code draws it with `Code format="diff"`; OpenCode draws `core`'s parsed hunks with theme colors.
@@ -281,7 +281,7 @@ Mirrors VS Code's Source Control panel, top to bottom.
 **Branches**
 - Local and remote branches, current one marked, ahead/behind per branch.
 - **Switch** to a branch; **create** a branch (from HEAD or from a selected commit) and switch to it; **compare with main** (lists the files the branch changes vs. its merge base and opens their diffs).
-- Switching with uncommitted changes: JEI stops and asks (carry changes over if git allows / cancel). It never stashes on its own.
+- Switching or creating with uncommitted changes or from detached HEAD: JEI stops and asks (carry changes over if git allows / cancel). It never stashes or forces a switch. Core services enforce fresh target/status validation and confirmation; see ADR 0013.
 
 **Keys (Git tab):** `enter` expand/open · `s` stage · `u` unstage · `d` discard · `c` commit · `y` copy hash · `a` Ask · `b` branches · `f` filter · `t` fetch · `n` new branch from the selected graph commit · `g` generate message · `e` sync. **Branches:** `enter` switch · `n` new from HEAD · `c` compare · `f` filter · `esc` back.
 

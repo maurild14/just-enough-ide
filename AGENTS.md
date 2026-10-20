@@ -30,6 +30,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 | Handling files, secrets, the network or releases | `docs/security.md` |
 | Changing sensitive commit approval | `docs/decisions/0010-exact-sensitive-path-approval.md` |
 | Git history, graph cells or tool commit attribution | `docs/decisions/0012-git-history-evidence-and-state.md` |
+| Branches, commit actions or remote URLs/errors | `docs/decisions/0013-safe-branch-and-commit-actions.md` |
 | Checking what is built and known debt | `docs/quality.md` |
 | Preparing a release (manual QA, release pipeline) | `docs/qa.md`, `CONTRIBUTING.md` |
 | Changing a rule or a past decision | `docs/decisions/README.md` |

@@ -1,9 +1,27 @@
 import { afterEach, expect, test } from 'bun:test'
 import { cleanup, makeRepo } from '../../test/fake-host.ts'
-import { commitDiffArgs, commitFilesArgs, parseCommitFiles } from './commit.ts'
+import { checkoutArgs, commitDiffArgs, commitFilesArgs, commitWebUrl, parseCommitFiles, revertArgs } from './commit.ts'
 import { commitDiff, commitFiles } from './service.ts'
 
 afterEach(cleanup)
+
+test('commit action options end before the validated hash', () => {
+  const hash = 'a'.repeat(40)
+  expect(checkoutArgs(hash)).toEqual(['switch', '--detach', '--end-of-options', hash])
+  expect(revertArgs(hash)).toEqual(['revert', '--no-edit', '--end-of-options', hash])
+  expect(() => checkoutArgs('HEAD')).toThrow('Invalid commit hash.')
+  expect(() => revertArgs('-x')).toThrow('Invalid commit hash.')
+})
+
+test('commit web links accept supported remote forms and never carry credentials', () => {
+  const hash = 'a'.repeat(40)
+  for (const remote of ['https://ana:tok@github.com/acme/acme-app.git', 'ssh://git@github.com/acme/acme-app.git', 'git@github.com:acme/acme-app.git']) {
+    expect(commitWebUrl(remote, hash)).toBe(`https://github.com/acme/acme-app/commit/${hash}`)
+  }
+  expect(commitWebUrl('git@gitlab.com:acme/tools/acme-app.git', hash)).toBe(`https://gitlab.com/acme/tools/acme-app/-/commit/${hash}`)
+  for (const remote of ['https://example.com/acme/acme-app', 'https://github.com.evil/acme/acme-app', 'file:///x', 'https://github.com/acme/../acme-app', 'https://github.com/acme/acme-app?token=fictional', 'https://github.com/acme/acme-app\\evil']) expect(commitWebUrl(remote, hash)).toBeNull()
+  expect(() => commitWebUrl('https://github.com/acme/acme-app', 'HEAD')).toThrow('Invalid commit hash.')
+})
 
 test('NUL file records pair rename counts and binary nulls without trimming paths', () => {
   expect(parseCommitFiles('R100\0old name\0new name\0M\0binary\0A\0 leading \0', '0\t0\t\0old name\0new name\0-\t-\tbinary\0' + '1\t0\t leading \0')).toEqual([
