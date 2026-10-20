@@ -2,16 +2,17 @@
 import { setDefaultTimeout } from 'bun:test'
 import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { open, readFile } from 'node:fs/promises'
+import { open, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { DirEntry, FileStat, Host, Platform, RunOptions, RunResult } from '../core/host.ts'
+import type { DirEntry, FileStat, Host, Platform, RunOptions, RunResult, Stream } from '../core/host.ts'
 
 // A real-git spec spawns 20 to 40 git processes. Under load (three OSes in CI, or both test suites at
 // once) that outlasts bun's 5 s default; a timed-out spec then keeps running after `cleanup` deleted its
 // repos and fails the next one with a `.git/FETCH_HEAD` or `git exited with 1` error. Every spec that
 // imports the fake host gets a budget that fits.
 setDefaultTimeout(60_000)
+const STREAM_CAP = 8 * 1024 * 1024
 
 // An empty global config keeps the developer's own git settings out of the specs
 // (the null device path is not accepted by git on Windows).
@@ -41,12 +42,59 @@ export class FakeHost implements Host {
   readonly prompts: { prompt: string; model: string }[] = []
   readonly calls: string[][] = []
 
+  stream(argv: readonly string[], options: RunOptions = {}): Stream {
+    this.calls.push([...argv])
+    const [command, ...args] = argv
+    if (!command) throw new Error('empty argv')
+    if (options.signal?.aborted) throw new Error('aborted')
+    const child = spawn(command, args, { cwd: options.cwd,
+      env: { ...cleanEnv(), GIT_CONFIG_GLOBAL: emptyConfig(), GIT_CONFIG_NOSYSTEM: '1', ...options.env },
+      shell: false, windowsHide: true, signal: options.signal, timeout: options.timeoutMs, stdio: ['pipe', 'pipe', 'pipe'] })
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    let stderr = ''
+    let closed = false
+    let failure: Error | undefined
+    child.stderr.on('data', (text: string) => {
+      if (stderr.length + text.length > STREAM_CAP) { failure ??= new Error('Process stderr exceeds 8 MiB.'); child.kill() }
+      else stderr += text
+    })
+    const done = new Promise<{ exitCode: number; stderr: string }>((resolve, reject) => {
+      child.on('error', reject)
+      child.on('close', (code) => { closed = true; if (failure) reject(failure); else resolve({ exitCode: code ?? 1, stderr }) })
+    })
+    void done.catch(() => {})
+    child.stdin.on('error', () => {})
+    child.stdin.end(options.stdin ?? '')
+    const cancel = () => { if (!closed) child.kill() }
+    const lines = (async function* () {
+      let pending = ''
+      try {
+        for await (const chunk of child.stdout) {
+          const parts = String(chunk).split('\n')
+          for (let i = 0; i < parts.length; i++) {
+            if (pending.length + parts[i]!.length > STREAM_CAP) throw new Error('Process output line exceeds 8 MiB.')
+            pending += parts[i]!
+            if (i < parts.length - 1) { yield pending; pending = '' }
+          }
+        }
+        if (pending) yield pending
+        await done
+      } catch (error) { failure ??= error instanceof Error ? error : new Error(String(error)); cancel(); await done; throw error }
+      finally { cancel() }
+    })()
+    return { lines, done, cancel }
+  }
+
+  async writeText(path: string, text: string): Promise<void> { await writeFile(path, text, 'utf8') }
+
   run(argv: readonly string[], options: RunOptions = {}): Promise<RunResult> {
     this.calls.push([...argv])
     return new Promise((resolve, reject) => {
       const [cmd, ...args] = argv
       if (cmd === undefined) return reject(new Error('empty argv'))
       const child = spawn(cmd, args, {
+        shell: false,
         cwd: options.cwd,
         env: {
           ...cleanEnv(),

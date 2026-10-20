@@ -50,6 +50,10 @@ Unreadable preview coverage: `core/files/service.spec.ts` makes `readHead` retur
 
 ## Width and height matrix
 
+The v0.3 Search foundation has five `core/search/*.spec.ts` seams: rg argv/JSON/byte offsets and strict UTF-8, result ordering/caps/agent text, Unicode/CRLF/regex replacement and diff parsing, Quick Open ranking/line suffixes, and Host-based services over real temp files/processes. `test/fixtures/search/acme-app.jsonl` is real ripgrep 15.2 JSON captured from Unicode and CRLF files; error/binary and impossible-on-Windows newline/colon filename cases are explicitly synthetic inline records. Service specs cover actual cancellation, ENOENT/127 fallback, verified first occurrences, hostile glob magic, ignore rules, result/file-list/buffer bounds, symlink escapes, changed snapshots and invalid UTF-8 beyond the initial head. Host tests check split chunks, final lines, stderr, UTF-8 writes and cancellation; Claude API doubles remain separate from live-host QA. Pane/key specs cover shared preview targets/origins, legacy normalization, recent paths and every new view's width sweep.
+
+Oversized stdout/stderr regressions exercise real Node and fake-host children and Claude's typed spawn seam, asserting explicit rejection and source cleanup. Claude also tests stalled-consumer backpressure and host-clock timeout cancellation. Replacement expansion is measured in UTF-8 bytes and refused above the shared 4 MiB write limit.
+
 Every view is rendered as a snapshot at widths 24, 40, 80 and 120 (200 as a smoke test) and heights 10, 24 and 5, in all three glyph sets, and asserts the checklist in `docs/design.md` §10: no line wider than the pane, exact height, selected row visible, status letters present, right-aligned columns, truncated paths keep the basename, `NO_COLOR` still distinguishes states, no raw color values outside `theme.ts`. A resize sequence (120, 24, 10 rows, 120) must return the same selection and a final output equal to a fresh render. Status: draft — built in milestone 0.1 (plan Tasks 8, 11, 12, 16, 17).
 
 ## Manual QA

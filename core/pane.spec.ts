@@ -32,13 +32,49 @@ test('selection survives tab switches; stack does not', () => {
   expect(s.selected.files).toBe('a.ts')
 })
 
-test('preview and diff from another tab switch to it', () => {
-  const s = reducePane(initialPane('git'), { type: 'preview', rel: 'a.ts' })
-  expect(s.tab).toBe('files')
-  expect(s.stack).toEqual(['files', 'files.preview'])
+test('preview keeps its originating tab and back returns there', () => {
+  for (const tab of ['files', 'search', 'symbols', 'git'] as const) {
+    const s = reducePane(initialPane(tab), { type: 'preview', rel: 'a.ts', line: 42 })
+    expect(s.tab).toBe(tab)
+    expect(s.stack).toEqual([tab, 'files.preview'])
+    expect(s.preview).toEqual({ rel: 'a.ts', line: 42 })
+    const back = reducePane(s, { type: 'back' })
+    expect(currentView(back)).toBe(tab)
+    expect(back.preview).toBeUndefined()
+  }
   const t = reducePane(initialPane('files'), { type: 'open-diff', path: 'a.ts', source: { kind: 'working', staged: false, untracked: true } })
   expect(t.tab).toBe('git')
   expect(t.stack).toEqual(['git', 'git.diff'])
+})
+
+test('recent previews deduplicate and retain the last 50 across navigation', () => {
+  let state = initialPane('search')
+  for (let i = 0; i < 55; i++) state = reducePane(state, { type: 'preview', rel: `${i}.ts` })
+  state = reducePane(state, { type: 'preview', rel: '50.ts' })
+  expect(state.recent).toHaveLength(50)
+  expect(state.recent.slice(0, 3)).toEqual(['50.ts', '54.ts', '53.ts'])
+  expect(new Set(state.recent).size).toBe(50)
+  state = reducePane(state, { type: 'back' })
+  state = reducePane(state, { type: 'tab', tab: 'git' })
+  state = reducePane(state, { type: 'branches' })
+  expect(state.recent[0]).toBe('50.ts')
+  const { recent: _recent, ...retained } = initialPane('files')
+  expect(normalizePane(retained).recent).toEqual([])
+})
+
+test('Search and Symbols subviews retain their origin through preview and Back', () => {
+  for (const [tab, type, view] of [['search', 'quickopen', 'quickopen'], ['search', 'replace', 'search.replace'], ['symbols', 'symbol-results', 'symbols.results']] as const) {
+    let state = reducePane(initialPane(tab), { type: 'preview', rel: 'old.ts' })
+    state = reducePane(state, { type: 'back' })
+    state = reducePane(state, { type })
+    expect(currentView(state)).toBe(view)
+    state = reducePane(state, { type: 'preview', rel: 'next.ts', line: 3 })
+    state = reducePane(state, { type: 'back' })
+    expect(currentView(state)).toBe(view)
+    expect(state.recent).toEqual(['next.ts', 'old.ts'])
+    state = reducePane(state, { type: 'back' })
+    expect(currentView(state)).toBe(tab)
+  }
 })
 
 test('reducer does not mutate', () => {

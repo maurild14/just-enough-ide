@@ -37,11 +37,19 @@ test('required keys per view', () => {
   has('git.diff', ['n', 'p', 'j', 'k', 'a', 'o', 'esc'])
 })
 
-test('every submenu has shared q back alongside the OpenCode escape alias', () => {
+test('q toggles search modes and every other view keeps shared Back', () => {
   for (const view of views) {
-    expect(KEYS[view].find(key => key.key === 'q')?.action).toBe('back')
+    expect(KEYS[view].find(key => key.key === 'q')?.action).toBe(view === 'search' ? 'quickopen' : view === 'quickopen' ? 'search' : 'back')
     expect(KEYS[view].find(key => key.key === 'esc')?.action).toBe('back')
   }
+})
+
+test('Search, Replace, Quick Open and Symbols expose their milestone actions', () => {
+  has('search', ['up', 'down', 'enter', 'a', 's', 'c', 'x', 'w', 'i', 'p', 'q', 'esc'])
+  has('search.replace', ['up', 'down', 'enter', 'y', 'a', 'q', 'esc'])
+  has('quickopen', ['up', 'down', 'enter', 'a', 'q', 'esc'])
+  has('symbols', ['up', 'down', 'enter', 'd', 'r', 'c', 'a', 'f', 'q', 'esc'])
+  has('symbols.results', ['up', 'down', 'enter', 'a', 'q', 'esc'])
 })
 
 test('tab keys', () => {

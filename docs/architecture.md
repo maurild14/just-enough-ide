@@ -16,7 +16,10 @@ Status: current. Defined in `core/host.ts`; the process, file and model half onl
 
 - `platform`: `'win32' | 'darwin' | 'linux'`
 - `run(argv, { cwd, env, stdin, timeoutMs, signal })` returns `{ exitCode, stdout, stderr }`
+- `stream(argv, options?)` returns newline-framed `lines`, a `{ exitCode, stderr }` completion and `cancel()`. Split chunks and final unterminated lines are preserved; stdout is UTF-8 decoded in the host.
+- Streams reject an over-8-MiB decoded-text line or collected stderr and cancel the child. Claude's consumer queue also preserves backpressure.
 - `list(dir)`, `stat(path)`, `readHead(path, maxBytes)`, `readText(path)`
+- `writeText(path, text)` writes the complete UTF-8 file; services own root/encoding/snapshot checks.
 - `complete(prompt, model)`: one-shot model call for the generated commit message
 
 ## Key map and actions
@@ -31,11 +34,15 @@ Status: current. Defined in `core/host.ts`; the process, file and model half onl
 | `git.branches` | `up`: move-up, `down`: move-down, `enter`: switch, `n`: new-branch, `c`: compare, `f`: filter, `q` / `esc`: back |
 | `git.compare` | `up`: move-up, `down`: move-down, `enter`: activate, `q` / `esc`: back |
 | `git.diff` | `up`: scroll-up, `down`: scroll-down, `n`: next-hunk, `p`: prev-hunk, `j`: next-file, `k`: prev-file, `a`: ask-review, `o`: open-editor, `q` / `esc`: back |
-| `search`, `symbols` | `up`: move-up, `down`: move-down, `enter`: activate, `q` / `esc`: back (more keys arrive in 0.3) |
+| `search` | `up`/`down`: move, `enter`: preview, `a`: add, `s`: send all, `c`: case, `x`: regex, `w`: word, `i`: include, `p`: replace, `q`: quick open, `esc`: back |
+| `search.replace` | `up`/`down`: scroll, `enter`: apply file, `y`: apply all, `a`: ask agent, `q`/`esc`: back |
+| `quickopen` | `up`/`down`: move, `enter`: preview, `a`: add, `q`: search, `esc`: back |
+| `symbols` | `up`/`down`: move, `enter`: preview, `d`: definition, `r`: references, `c`: calls, `a`: send, `f`: find symbol, `q`/`esc`: back |
+| `symbols.results` | `up`/`down`: move, `enter`: preview, `a`: send, `q`/`esc`: back |
 
 Action names are stable; rename one only with every consumer in the same change.
 
-Every view also defines `q` as the portable Back binding; Esc remains host-reserved on Claude Code. Pane shells show Back using the same handler as the shortcut. Claude `navigation.ts` prioritizes a visible question/editor/filter before popping the stack; OpenCode delegates both paths to the active view. Letter commands are suppressed while inputs edit, so `q` stays text. `compare` pushes `git.compare`, with up/down, Enter and Back; each selection survives diff → comparison → Branches → Git. No existing stack migration is needed for the added view.
+Views define `q` as portable Back except Search and Quick Open, where it toggles those modes (ADR 0019); Esc remains host-reserved on Claude Code. Pane shells show Back using the same handler as the shortcut. Claude `navigation.ts` prioritizes a visible question/editor/filter before popping the stack; OpenCode delegates both paths to the active view. Letter commands are suppressed while inputs edit, so `q` stays text. `compare` pushes `git.compare`, with up/down, Enter and Back; each selection survives diff → comparison → Branches → Git. Preview pushes `files.preview` on the current tab's stack, retaining an optional `{ rel, line? }` target until it leaves the stack. The last 50 deduplicated preview paths live in `recent`; normalization supplies an empty list to retained older state while preserving the working-diff migration.
 
 The v0.2 keys are defined in core; see `docs/quality.md` for host availability. `n` in Git creates from the selected graph commit, while Branches creates from HEAD. `PaneState.diff` is `{ source: DiffSource; path: string }`, with working `{ kind: 'working'; staged; untracked }`, commit `{ kind: 'commit'; hash }` or compare `{ kind: 'compare'; base; head }` sources. `open-diff` carries the same fields; `branches` pushes `git.branches`. Diff/back preserves the current Git stack and selection. Both hosts consume all three sources.
 
@@ -61,6 +68,8 @@ The OpenCode foundation (Task 13) is `nodeHost(generate)` in `hosts/opencode/hos
 `switchBranch(host, root, target, confirmed?, run?)`, `createBranch(host, root, name, start, confirmed?, run?)`, `checkout(host, root, hash, confirmed?, run?)` and `revert(host, root, hash, confirmed?, run?)` return `ActionResult`: `{ ok: true }` after execution or `{ ok: false, confirm }` before any mutation. `start` is a full commit hash or null for HEAD. An omitted `confirmed` is false; the optional runner takes `string[][]` and defaults to `runSteps`. Targets and status are read fresh on each call. Switch/create ask for dirty or detached state; checkout/revert always ask, and merge revert raises the shared refusal before execution. The hosts own displaying questions and invoking confirmed retries. This core contract is built before its host UI/RPC wiring (ADR 0013).
 
 ## Data flow
+
+The v0.3 `core/search/` services are built ahead of native views/RPC. `rg.ts` contains argv, strict UTF-8/byte-index and tolerant rg/NUL-Git parsers; `results.ts` groups the first 2,000 result lines and caps agent text at 12,000 characters; `replace.ts` plans checked line/range edits, validates regex substrings and emits parseable unified previews; `quickopen.ts` parses numeric line suffixes and ranks touched/recent/basename matches. `service.ts` owns cancellable rg search, verified first-occurrence Git fallback, the 50,000-path file list, shared `buildReplacePlan` and fresh apply checks. No query debounce lives in core: host views must apply the planned 150 ms debounce and latest-wins guard. Search completion carries engine, first error line, elapsed milliseconds and truncation. ADR 0019 records the explicit-directory/files-mode/glob exceptions, 8 MiB fallback buffers and complete 4 MiB write-read limit.
 
 ```
 host events (tool hooks, file changes, cwd) -+

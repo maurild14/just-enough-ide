@@ -1,0 +1,7 @@
+{"type":"begin","data":{"path":{"text":"src\\unicode.ts"}}}
+{"type":"match","data":{"path":{"text":"src\\unicode.ts"},"lines":{"text":"ñandú 😀 漢字 target\n"},"line_number":1,"absolute_offset":0,"submatches":[{"match":{"text":"target"},"start":20,"end":26}]}}
+{"type":"end","data":{"path":{"text":"src\\unicode.ts"},"binary_offset":null,"stats":{"elapsed":{"secs":0,"nanos":58100,"human":"0.000058s"},"searches":1,"searches_with_match":1,"bytes_searched":27,"bytes_printed":267,"matched_lines":1,"matches":1}}}
+{"type":"begin","data":{"path":{"text":"src\\crlf.ts"}}}
+{"type":"match","data":{"path":{"text":"src\\crlf.ts"},"lines":{"text":"const target = 1\r\n"},"line_number":1,"absolute_offset":0,"submatches":[{"match":{"text":"target"},"start":6,"end":12}]}}
+{"type":"end","data":{"path":{"text":"src\\crlf.ts"},"binary_offset":null,"stats":{"elapsed":{"secs":0,"nanos":14400,"human":"0.000014s"},"searches":1,"searches_with_match":1,"bytes_searched":18,"bytes_printed":252,"matched_lines":1,"matches":1}}}
+{"data":{"elapsed_total":{"human":"0.004766s","nanos":4766400,"secs":0},"stats":{"bytes_printed":519,"bytes_searched":45,"elapsed":{"human":"0.000073s","nanos":72500,"secs":0},"matched_lines":2,"matches":2,"searches":2,"searches_with_match":2}},"type":"summary"}

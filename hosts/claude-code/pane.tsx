@@ -28,7 +28,7 @@ function rootName(dir: string): string {
 function headerOf(view: View, root: string): string {
   if (view === 'files' || view === 'files.preview') return rootName(root)
   if (view === 'git' || view === 'git.diff' || view === 'git.branches' || view === 'git.compare') return TAB_NAMES.git
-  return TAB_NAMES[view]
+  return view === 'quickopen' || view.startsWith('search') ? TAB_NAMES.search : TAB_NAMES.symbols
 }
 
 /** Body rows for a view. Files and Git are filled by their own tabs. */

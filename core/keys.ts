@@ -1,5 +1,5 @@
 export type Tab = 'files' | 'search' | 'symbols' | 'git'
-export type View = 'files' | 'files.preview' | 'search' | 'symbols' | 'git' | 'git.diff' | 'git.branches' | 'git.compare'
+export type View = 'files' | 'files.preview' | 'search' | 'search.replace' | 'quickopen' | 'symbols' | 'symbols.results' | 'git' | 'git.diff' | 'git.branches' | 'git.compare'
 export type Key = { key: string; action: string; label: string }
 
 const up: Key = { key: 'up', action: 'move-up', label: 'move' }
@@ -10,7 +10,6 @@ const back: Key = { key: 'q', action: 'back', label: 'back' }
 const escape: Key = { key: 'esc', action: 'back', label: 'back' }
 
 // Order is priority: the hint line drops items from the end first.
-// Search and Symbols only carry navigation until their milestones (0.3, 0.4).
 export const KEYS: Readonly<Record<View, readonly Key[]>> = {
   files: [
     up,
@@ -30,8 +29,20 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     { key: 'm', action: 'toggle-markdown-source', label: 'source' },
     back, escape,
   ],
-  search: [up, down, { key: 'enter', action: 'activate', label: 'open' }, back, escape],
-  symbols: [up, down, { key: 'enter', action: 'activate', label: 'open' }, back, escape],
+  search: [up, down, { key: 'enter', action: 'activate', label: 'preview' },
+    { key: 'a', action: 'mention', label: 'add' }, { key: 's', action: 'send-all', label: 'send all' },
+    { key: 'c', action: 'toggle-case', label: 'case' }, { key: 'x', action: 'toggle-regex', label: 'regex' },
+    { key: 'w', action: 'toggle-word', label: 'word' }, { key: 'i', action: 'include', label: 'include' },
+    { key: 'p', action: 'replace', label: 'replace' }, { key: 'q', action: 'quickopen', label: 'quick open' }, escape],
+  'search.replace': [scrollUp, scrollDown, { key: 'enter', action: 'apply-file', label: 'apply file' },
+    { key: 'y', action: 'apply-all', label: 'apply all' }, { key: 'a', action: 'ask', label: 'ask agent' }, back, escape],
+  quickopen: [up, down, { key: 'enter', action: 'activate', label: 'preview' }, { key: 'a', action: 'mention', label: 'add' },
+    { key: 'q', action: 'search', label: 'search' }, escape],
+  symbols: [up, down, { key: 'enter', action: 'activate', label: 'preview' },
+    { key: 'd', action: 'definition', label: 'definition' }, { key: 'r', action: 'references', label: 'references' },
+    { key: 'c', action: 'calls', label: 'calls' }, { key: 'a', action: 'send', label: 'send' },
+    { key: 'f', action: 'find-symbol', label: 'find symbol' }, back, escape],
+  'symbols.results': [up, down, { key: 'enter', action: 'activate', label: 'preview' }, { key: 'a', action: 'send', label: 'send' }, back, escape],
   git: [
     up,
     down,

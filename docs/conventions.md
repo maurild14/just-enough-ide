@@ -35,6 +35,8 @@ Status: current.
 - **Git invocation.** Every git command is `['git', '--no-optional-locks', '-C', root, ...args]` run with env `GIT_OPTIONAL_LOCKS=0`, `LC_ALL=C`, `GIT_LITERAL_PATHSPECS=1` (paths after `--` are literal, never globs), `GIT_MERGE_AUTOEDIT=no` and `GIT_TERMINAL_PROMPT=0` (no editor or credential prompt), so JEI never contends with the agent's own git and can match git's English stderr (for example divergence detection) in any locale. Callers may pass extra env but must not override these. All git calls go through the one runner in `core/git/run.ts`. Read with porcelain or plumbing formats only (`status --porcelain=v2 -z`, `log --format=...`, `diff --numstat -z`).
 - Paths are handled by `core/shared/paths.ts` (posix-style, case-insensitive on Windows). Every path JEI writes or deletes must resolve inside the project root.
 
+Search exception (ADR 0019): the read-only Git grep fallback uses the existing argv/environment builders with generated `:(glob)`/`:(exclude,glob)` pathspecs and overrides only `GIT_LITERAL_PATHSPECS=0`. Keep every other fixed Git value. Content rg uses `--json --no-config`, explicit `.` and `-e <pattern>`; Quick Open files mode uses `--files --no-config --null` without JSON. Machine-returned paths use `insideRel` so leading/trailing whitespace is literal.
+
 ## UI copy
 
 - English only. Sentences end with a period; no exclamation marks. Labels are short and in sentence case.

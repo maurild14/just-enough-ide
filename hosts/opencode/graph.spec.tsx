@@ -10,7 +10,7 @@ for (const action of ['stage', 'unstage', 'discard'] as const) test(`working sel
   const entry = (path: string, staged = false) => ({ path, index: staged ? 'modified' : null, worktree: staged ? null : 'modified' })
   f.setGit(repo([entry('src/app.ts', action === 'unstage'), entry('other.ts')]))
   f.handlers[action] = async () => { f.setGit(repo(action === 'discard' ? [entry('other.ts')] : [entry('src/app.ts', action === 'stage'), entry('other.ts')])); return {} }
-  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], selected: { git: `${action === 'unstage' ? 'staged' : 'changes'}-src/app.ts` } } })
+  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], recent: [], selected: { git: `${action === 'unstage' ? 'staged' : 'changes'}-src/app.ts` } } })
   const r = await f.mount(24, 5)
   f.confirm(true); f.key(action === 'stage' ? 's' : action === 'unstage' ? 'u' : 'd'); await r.flush()
   expect(f.calls.some(call => call.method === action)).toBe(true)
@@ -123,7 +123,7 @@ test('merge topology preserves fork connectors and side-lane positions through n
 
 test('expanded commit files show a muted nonselectable loading row until the reply arrives', async () => {
   const f = historyFixture(); const [, update] = paneMemory(f.ctx)
-  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], selected: { git: `graph-${hash}` } } })
+  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], recent: [], selected: { git: `graph-${hash}` } } })
   let release!: (value: unknown) => void
   const files = f.handlers.commitFiles!
   f.handlers.commitFiles = () => new Promise(resolve => { release = resolve })
@@ -141,7 +141,7 @@ test('expanded commit files show a muted nonselectable loading row until the rep
 
 for (const width of [24, 40]) test(`working hints omit commit-only keys at ${width} columns`, async () => {
   const f = historyFixture(); const [, update] = paneMemory(f.ctx)
-  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], selected: { git: 'changes-src/app.ts' } } })
+  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], recent: [], selected: { git: 'changes-src/app.ts' } } })
   const r = await f.mount(width, 5)
   const hint = () => r.captureCharFrame().trimEnd().split('\n').at(-1)!
   expect(hint()).toBe(hintLine('git', width, KEYS.git.filter(key => !['copy-hash', 'ask', 'new-branch'].includes(key.action))))
@@ -153,7 +153,7 @@ for (const width of [24, 40]) test(`working hints omit commit-only keys at ${wid
 
 for (const width of [24, 40, 80, 120]) test(`Graph shares selection, expands and navigates commit diffs at ${width} columns and five rows`, async () => {
   const f = historyFixture(); const [, update] = paneMemory(f.ctx)
-  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], selected: { git: `graph-${hash}` } } })
+  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], recent: [], selected: { git: `graph-${hash}` } } })
   const r = await f.mount(width, 5)
   const checkFrame = (selected: string, diff = false) => {
     const frame = r.captureCharFrame(); const hint = frame.trimEnd().split('\n').at(-1)!
@@ -187,7 +187,7 @@ for (const width of [24, 40, 80, 120]) test(`Graph shares selection, expands and
 test('Graph filter, paging, fetch, checkout, revert and contextual create use the RPC boundary', async () => {
   const f = historyFixture(); const [, update] = paneMemory(f.ctx)
   f.handlers.graph = async () => ({ commits: [commit], more: true })
-  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], selected: { git: `graph-${hash}` } } })
+  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], recent: [], selected: { git: `graph-${hash}` } } })
   const r = await f.mount(40, 12)
   f.edit('topic'); f.key('n'); await r.flush(); expect(f.calls.find(c => c.method === 'createBranch')?.input).toEqual({ name: 'topic', start: hash, confirmed: false })
   f.key('t'); await r.flush(); expect(f.calls.some(c => c.method === 'fetch')).toBe(true)
@@ -205,7 +205,7 @@ test('Graph filter, paging, fetch, checkout, revert and contextual create use th
 
 test('Graph retains filters on cancel, handles no matches and errors, and sends confirmed Ask text', async () => {
   const f = historyFixture(); const [, update] = paneMemory(f.ctx)
-  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], selected: { git: `graph-${hash}` } } })
+  update(d => { d.panes['session-a'] = { tab: 'git', stack: ['git'], recent: [], selected: { git: `graph-${hash}` } } })
   const r = await f.mount(24, 10)
   for (const key of ['y', 'a', 'b', 'f', 't', 'n']) expect(r.captureCharFrame().split('\n').at(-2)).toContain(key)
   f.edit('Explain this change.'); f.key('a'); await r.flush()

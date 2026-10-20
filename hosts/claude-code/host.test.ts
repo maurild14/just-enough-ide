@@ -3,13 +3,86 @@ import type { EngineInterface } from 'claude-code'
 import { claudeHost } from './host.ts'
 
 /** Just the nouns claudeHost touches, answering from the test. */
-function fakeEngine(parts: { run?: unknown; stat?: unknown; read?: unknown; complete?: unknown }): EngineInterface {
+function fakeEngine(parts: { run?: unknown; stat?: unknown; read?: unknown; complete?: unknown; spawn?: unknown; write?: unknown; after?: unknown }): EngineInterface {
   return {
-    process: { run: parts.run },
-    fs: { stat: parts.stat, read: parts.read, list: async () => [] },
+    process: { run: parts.run, spawn: parts.spawn },
+    fs: { stat: parts.stat, read: parts.read, list: async () => [], write: parts.write },
     model: { complete: parts.complete },
+    clock: { after: parts.after },
   } as unknown as EngineInterface
 }
+
+test('stream maps the verified spawn request, frames chunks, captures stderr and closes on cancel', async () => {
+  const seen: unknown[] = []
+  let closed = 0
+  const host = claudeHost(fakeEngine({
+    spawn: (request: unknown) => {
+      seen.push(request)
+      return (async function* () {
+        try {
+          yield { stream: 'stdout', text: 'ñ😀\npar' }
+          yield { stream: 'stderr', text: 'notice' }
+          yield { stream: 'stdout', text: 'tial\nlast' }
+          return { code: 0, signal: null }
+        } finally { closed++ }
+      })()
+    },
+    write: async (path: string, text: string) => { seen.push([path, text]) },
+  }), 'linux')
+  const stream = host.stream(['rg', '-e', '-rf'], { cwd: '/work/acme-app', stdin: 'input', env: { A: 'b' } })
+  const lines: string[] = []
+  for await (const line of stream.lines) lines.push(line)
+  expect(lines).toEqual(['ñ😀', 'partial', 'last'])
+  expect(await stream.done).toEqual({ exitCode: 0, stderr: 'notice' })
+  expect(seen[0]).toEqual({ argv: ['rg', '-e', '-rf'], cwd: '/work/acme-app', input: 'input', env: { A: 'b' } })
+  await host.writeText('a.txt', 'ñ\r\n')
+  expect(seen[1]).toEqual(['a.txt', 'ñ\r\n'])
+  expect(closed).toBe(1)
+  const cancelled = host.stream(['rg'])
+  for await (const _line of cancelled.lines) { cancelled.cancel(); break }
+  await cancelled.done
+  expect(closed).toBe(2)
+})
+
+test('a stalled stream keeps backpressure and a host timer cancels its producer', async () => {
+  let produced = 0
+  let closed = false
+  let timeout!: () => void
+  let timerCancelled = false
+  const host = claudeHost(fakeEngine({
+    spawn: () => (async function* () {
+      try {
+        for (let i = 0; i < 2000; i++) { produced++; yield { stream: 'stdout', text: 'line\n' } }
+        return { code: 0, signal: null }
+      } finally { closed = true }
+    })(),
+    after: (ms: number, run: () => void) => { expect(ms).toBe(10); timeout = run; return { cancel() { timerCancelled = true } } },
+  }), 'linux')
+  const stream = host.stream(['rg'], { timeoutMs: 10 })
+  for (let i = 0; i < 300; i++) await Promise.resolve()
+  expect(produced).toBeLessThan(2000)
+  timeout()
+  expect((await stream.done).exitCode).not.toBe(0)
+  expect(closed).toBe(true)
+  expect(timerCancelled).toBe(true)
+})
+
+test('oversized stdout lines and stderr reject and close the spawned source', async () => {
+  for (const pipe of ['stdout', 'stderr']) {
+    let closed = false
+    const host = claudeHost(fakeEngine({ spawn: () => (async function* () {
+      try {
+        yield { stream: pipe, text: 'x'.repeat(8 * 1024 * 1024 + 1) }
+        return { code: 0, signal: null }
+      } finally { closed = true }
+    })() }), 'linux')
+    const stream = host.stream(['rg'])
+    const consume = async () => { for await (const _line of stream.lines) {} }
+    await expect(consume()).rejects.toThrow('8 MiB')
+    await expect(stream.done).rejects.toThrow('8 MiB')
+    expect(closed).toBe(true)
+  }
+})
 
 const result = (over: Record<string, unknown> = {}) => ({
   exitCode: 0,

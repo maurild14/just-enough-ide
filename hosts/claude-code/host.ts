@@ -1,5 +1,7 @@
 import type { EngineInterface } from 'claude-code'
-import type { DirEntry, FileStat, Host, Platform, RunOptions, RunResult } from '../../core/host.ts'
+import type { DirEntry, FileStat, Host, Platform, RunOptions, RunResult, Stream } from '../../core/host.ts'
+
+const STREAM_CAP = 8 * 1024 * 1024
 
 function bytesOf(base64: string, maxBytes: number): Uint8Array {
   const raw = atob(base64)
@@ -13,6 +15,81 @@ function bytesOf(base64: string, maxBytes: number): Uint8Array {
 export function claudeHost($: EngineInterface, platform: Platform): Host {
   return {
     platform,
+
+    stream(argv, options = {}): Stream {
+      if (options.signal?.aborted) throw new Error('aborted')
+      const source = $.process.spawn({ argv, ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.env === undefined ? {} : { env: options.env }), ...(options.stdin === undefined ? {} : { input: options.stdin }) })
+      const queue: string[] = []
+      let queued = 0
+      let wake: (() => void) | undefined
+      let resume: (() => void) | undefined
+      let finished = false
+      let cancelled = false
+      const cancel = () => {
+        if (finished || cancelled) return
+        cancelled = true
+        resume?.(); resume = undefined
+        void source.return({ code: null, signal: 'SIGTERM' }).catch(() => {})
+      }
+      const timer = options.timeoutMs === undefined ? undefined : $.clock.after(options.timeoutMs, cancel)
+      options.signal?.addEventListener('abort', cancel, { once: true })
+      const done = (async () => {
+        let pending = ''
+        let stderr = ''
+        try {
+          while (!cancelled) {
+            const next = await source.next()
+            if (next.done) {
+              if (pending) queue.push(pending)
+              return { exitCode: next.value.code ?? 1, stderr }
+            }
+            if (next.value.stream === 'stderr') {
+              if (stderr.length + next.value.text.length > STREAM_CAP) throw new Error('Process stderr exceeds 8 MiB.')
+              stderr += next.value.text; continue
+            }
+            const parts = next.value.text.split('\n')
+            for (let i = 0; i < parts.length; i++) {
+              if (pending.length + parts[i]!.length > STREAM_CAP) throw new Error('Process output line exceeds 8 MiB.')
+              pending += parts[i]!
+              if (i === parts.length - 1) continue
+              const line = pending
+              queue.push(line); queued += line.length
+              pending = ''
+              wake?.(); wake = undefined
+              if (queued >= 1_048_576 || queue.length >= 64) await new Promise<void>((resolve) => { resume = resolve })
+              if (cancelled) break
+            }
+            wake?.(); wake = undefined
+          }
+          return { exitCode: 1, stderr }
+        } catch (error) { cancel(); throw error }
+        finally {
+          finished = true
+          timer?.cancel()
+          options.signal?.removeEventListener('abort', cancel)
+          wake?.(); wake = undefined
+        }
+      })()
+      void done.catch(() => {})
+      const lines = (async function* () {
+        try {
+          while (!finished || queue.length) {
+            if (queue.length) {
+              const line = queue.shift()!
+              queued -= line.length
+              resume?.(); resume = undefined
+              yield line
+            }
+            else await new Promise<void>((resolve) => { wake = resolve })
+          }
+          await done
+        } finally { cancel() }
+      })()
+      return { lines, done, cancel }
+    },
+
+    async writeText(path, text) { await $.fs.write(path, text) },
 
     async run(argv: readonly string[], options: RunOptions = {}): Promise<RunResult> {
       // $.process.run takes no signal: an aborted call never starts.

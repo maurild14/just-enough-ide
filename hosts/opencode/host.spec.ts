@@ -1,10 +1,38 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import * as childProcess from 'node:child_process'
 import { join } from 'node:path'
-import { cleanup, makeTemp, writeFiles } from '../../test/fake-host.ts'
+import { cleanup, FakeHost, makeTemp, writeFiles } from '../../test/fake-host.ts'
 import { nodeHost } from './host.ts'
 
 afterEach(cleanup)
+
+test('real and fake streams reject oversized stdout lines and stderr before unbounded buffering', async () => {
+  for (const host of [nodeHost(async () => ''), new FakeHost()]) {
+    for (const pipe of ['stdout', 'stderr']) {
+      const stream = host.stream([process.execPath, '-e', `process.${pipe}.write('x'.repeat(8 * 1024 * 1024 + 1))`])
+      const consume = async () => { for await (const _line of stream.lines) {} }
+      await expect(consume()).rejects.toThrow('8 MiB')
+      await expect(stream.done).rejects.toThrow('8 MiB')
+    }
+  }
+})
+
+test('stream frames split UTF-8 chunks and final lines, writes UTF-8 and cancels', async () => {
+  const host = nodeHost(async () => '')
+  const stream = host.stream([process.execPath, '-e', "process.stdout.write('ñ😀\\npart'); setTimeout(() => { process.stdout.write('ial\\nlast'); process.stderr.write('notice') }, 20)"])
+  const lines: string[] = []
+  for await (const line of stream.lines) lines.push(line)
+  expect(lines).toEqual(['ñ😀', 'partial', 'last'])
+  expect(await stream.done).toEqual({ exitCode: 0, stderr: 'notice' })
+  const file = join(makeTemp(), 'write.txt')
+  await host.writeText(file, 'ñ😀\r\n')
+  expect(await host.readText(file)).toBe('ñ😀\r\n')
+  const slow = host.stream([process.execPath, '-e', 'setInterval(() => process.stdout.write("x\\n"), 10)'])
+  for await (const line of slow.lines) { expect(line).toBe('x'); slow.cancel(); break }
+  expect((await slow.done).exitCode).not.toBe(0)
+  const missing = host.stream(['jei-missing-executable'])
+  await expect(missing.done).rejects.toThrow()
+})
 
 test('run executes git without a shell or visible Windows window', async () => {
   const spawn = spyOn(childProcess, 'spawn')

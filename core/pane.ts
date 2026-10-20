@@ -9,18 +9,21 @@ export type PaneState = {
   tab: Tab
   stack: View[]
   selected: Partial<Record<View, string>>
+  recent: string[]
+  preview?: { rel: string; line?: number }
   diff?: { source: DiffSource; path: string }
 }
 
-type LegacyPaneState = Omit<PaneState, 'diff'> & { diff: { path: string; staged: boolean; untracked: boolean } }
+type LegacyPaneState = Omit<PaneState, 'diff' | 'recent'> & { recent?: string[]; diff?: PaneState['diff'] | { path: string; staged: boolean; untracked: boolean } }
 
 /** Session state survives plugin reloads, including v0.1's working-diff shape. */
 export function normalizePane(state: PaneState | LegacyPaneState): PaneState {
   const diff = state.diff
+  const base = state.recent === undefined ? { ...state, recent: [] } : state
   if (diff && !('source' in diff)) {
-    return { ...state, diff: { path: diff.path, source: { kind: 'working', staged: diff.staged, untracked: diff.untracked } } }
+    return { ...base, recent: state.recent ?? [], diff: { path: diff.path, source: { kind: 'working', staged: diff.staged, untracked: diff.untracked } } }
   }
-  return state as PaneState
+  return base as PaneState
 }
 
 export type PaneAction =
@@ -28,12 +31,13 @@ export type PaneAction =
   | { type: 'open-diff'; source: DiffSource; path: string }
   | { type: 'branches' }
   | { type: 'compare' }
-  | { type: 'preview'; rel: string }
+  | { type: 'quickopen' | 'replace' | 'symbol-results' }
+  | { type: 'preview'; rel: string; line?: number }
   | { type: 'back' }
   | { type: 'select'; view: View; id: string }
 
 export function initialPane(tab: Tab): PaneState {
-  return { tab, stack: [tab], selected: {} }
+  return { tab, stack: [tab], selected: {}, recent: [] }
 }
 
 export function currentView(s: PaneState): View {
@@ -50,31 +54,42 @@ function push(s: PaneState, tab: Tab, view: View): View[] {
 export function reducePane(s: PaneState, a: PaneAction): PaneState {
   switch (a.type) {
     case 'tab':
-      return { tab: a.tab, stack: [a.tab], selected: s.selected }
+      return { tab: a.tab, stack: [a.tab], selected: s.selected, recent: s.recent }
     case 'select':
       return { ...s, selected: { ...s.selected, [a.view]: a.id } }
+    case 'quickopen':
+    case 'replace':
+    case 'symbol-results': {
+      const tab = a.type === 'symbol-results' ? 'symbols' : 'search'
+      const view = a.type === 'symbol-results' ? 'symbols.results' : a.type === 'replace' ? 'search.replace' : 'quickopen'
+      return { tab, stack: push(s, tab, view), selected: s.selected, recent: s.recent }
+    }
     case 'preview':
       return {
-        tab: 'files',
-        stack: push(s, 'files', 'files.preview'),
+        ...s,
+        stack: push(s, s.tab, 'files.preview'),
         selected: { ...s.selected, files: a.rel },
+        recent: [a.rel, ...s.recent.filter((rel) => rel !== a.rel)].slice(0, 50),
+        preview: { rel: a.rel, ...(a.line === undefined ? {} : { line: a.line }) },
       }
     case 'open-diff':
       return {
         tab: 'git',
         stack: push(s, 'git', 'git.diff'),
         selected: s.selected,
+        recent: s.recent,
         diff: { path: a.path, source: a.source },
       }
     case 'branches':
-      return { tab: 'git', stack: push(s, 'git', 'git.branches'), selected: s.selected }
+      return { tab: 'git', stack: push(s, 'git', 'git.branches'), selected: s.selected, recent: s.recent }
     case 'compare':
-      return { tab: 'git', stack: push(s, 'git', 'git.compare'), selected: s.selected }
+      return { tab: 'git', stack: push(s, 'git', 'git.compare'), selected: s.selected, recent: s.recent }
     case 'back': {
       if (s.stack.length <= 1) return s
       const stack = s.stack.slice(0, -1)
-      const next: PaneState = { tab: s.tab, stack, selected: s.selected }
+      const next: PaneState = { tab: s.tab, stack, selected: s.selected, recent: s.recent }
       if (s.diff && stack.includes('git.diff')) next.diff = s.diff
+      if (s.preview && stack.includes('files.preview')) next.preview = s.preview
       return next
     }
   }

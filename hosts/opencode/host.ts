@@ -1,12 +1,58 @@
 import { spawn } from 'node:child_process'
-import { open, readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { open, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Host } from '../../core/host.ts'
+
+const STREAM_CAP = 8 * 1024 * 1024
 
 /** Processes and files stay on the server, next to the project. */
 export function nodeHost(generate: (prompt: string, model: string) => Promise<string>): Host {
   return {
     platform: process.platform === 'win32' ? 'win32' : process.platform === 'darwin' ? 'darwin' : 'linux',
+
+    stream(argv, options = {}) {
+      const [command, ...args] = argv
+      if (!command) throw new Error('empty argv')
+      if (options.signal?.aborted) throw new Error('aborted')
+      const child = spawn(command, args, { cwd: options.cwd, env: { ...process.env, ...options.env },
+        shell: false, windowsHide: true, signal: options.signal, timeout: options.timeoutMs, stdio: ['pipe', 'pipe', 'pipe'] })
+      child.stdout.setEncoding('utf8')
+      child.stderr.setEncoding('utf8')
+      let stderr = ''
+      let closed = false
+      let failure: Error | undefined
+      child.stderr.on('data', (text: string) => {
+        if (stderr.length + text.length > STREAM_CAP) { failure ??= new Error('Process stderr exceeds 8 MiB.'); child.kill() }
+        else stderr += text
+      })
+      const done = new Promise<{ exitCode: number; stderr: string }>((resolve, reject) => {
+        child.on('error', reject)
+        child.on('close', (code) => { closed = true; if (failure) reject(failure); else resolve({ exitCode: code ?? 1, stderr }) })
+      })
+      void done.catch(() => {})
+      child.stdin.on('error', () => {})
+      child.stdin.end(options.stdin ?? '')
+      const cancel = () => { if (!closed) child.kill() }
+      const lines = (async function* () {
+        let pending = ''
+        try {
+          for await (const chunk of child.stdout) {
+            const parts = String(chunk).split('\n')
+            for (let i = 0; i < parts.length; i++) {
+              if (pending.length + parts[i]!.length > STREAM_CAP) throw new Error('Process output line exceeds 8 MiB.')
+              pending += parts[i]!
+              if (i < parts.length - 1) { yield pending; pending = '' }
+            }
+          }
+          if (pending) yield pending
+          await done
+        } catch (error) { failure ??= error instanceof Error ? error : new Error(String(error)); cancel(); await done; throw error }
+        finally { cancel() }
+      })()
+      return { lines, done, cancel }
+    },
+
+    async writeText(path, text) { await writeFile(path, text, 'utf8') },
 
     run(argv, options = {}) {
       return new Promise((resolve, reject) => {
