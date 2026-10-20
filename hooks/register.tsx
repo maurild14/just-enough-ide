@@ -9,6 +9,7 @@ import { refreshGit, registerActivity } from '../hosts/claude-code/activity.ts'
 import { scrollDiff } from '../hosts/claude-code/diff.tsx'
 import { focusFiles, scrollFiles } from '../hosts/claude-code/files.tsx'
 import { focusGit, scrollGitList } from '../hosts/claude-code/git.tsx'
+import { focusBranches, scrollBranches } from '../hosts/claude-code/branches.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
 import { initPane, PANE_ID, readCwd, resetGitUi, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
 
@@ -100,12 +101,13 @@ export const register: Register = (on, raw) => {
   on('ui.focus', { requestId: 'jei' }, async ($, e, next) => {
     await focusFiles($, e.element)
     await focusGit($, e.element)
+    await focusBranches($, e.element)
     return next(e)
   }).catch(($, e, next) => next(e))
 
   // Files, Git and the diff draw their own window (pinned header and hint), so they take the scroll.
   on('ui.scroll', { requestId: 'jei' }, async ($, e, next) =>
-    (await scrollFiles($, e.by)) || (await scrollGitList($, e.by)) || (await scrollDiff($, e.by)) ? {} : next(e),
+    (await scrollFiles($, e.by)) || (await scrollGitList($, e.by)) || (await scrollBranches($, e.by)) || (await scrollDiff($, e.by)) ? {} : next(e),
   ).catch(
     ($, e, next) => next(e),
   )

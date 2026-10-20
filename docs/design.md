@@ -2,7 +2,7 @@
 
 > Purpose: how every JEI view looks and behaves at any pane size · Status: current · Last reviewed: 2026-10-20
 
-Status: the Files and Git (repository row, Changes, diff) views are built in milestone 0.1 (plan Tasks 11, 12, 16, 17); the Graph and Branches are draft, built in 0.2; Search is draft, built in 0.3; Symbols is draft, built in 0.4. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
+Status: Files and working Git views are built on both hosts. Graph and Branches are built on Claude Code in milestone 0.2; OpenCode integration remains draft for its next task. Search is draft for 0.3; Symbols is draft for 0.4. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
 
 JEI is drawn in character cells. There are no pixels and no fonts to pick, and the colors come from the host. This guide covers how every view looks and how it behaves at any pane size. If a view breaks one of these rules, treat it as a bug.
 
@@ -92,7 +92,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 | Nerd icons | yes | yes | no | no |
 | Files row | name, roll-up count, status | name, status | name, status | name, status; indent 1 |
 | Git change row | `M` name, folder, `+12 −3` | `M` name, folder, `+12 −3` | `M` name, `+12 −3` | `M` name |
-| Graph row | lanes ✦ subject, refs, author, time, hash | lanes ✦ subject, HEAD ref, time | 1 lane `●` ✦ subject, time | `●` ✦ subject |
+| Graph row | lanes, ✦, hash, refs, subject, author/time | lanes, ✦, hash, refs, subject, author/time | lanes, ✦, hash, subject | lanes, ✦, hash, subject; below 24 hash/subject only |
 | Repository row | repo, branch, ↑↓, `Sync` | branch, ↑↓, `Sync` | branch, ↑↓ | branch (↑↓ when it fits) |
 | Search file row | path, count, timing in header | path, count | path, count | basename, count |
 | Search match row | line no, match text | line no, match text | line no, match text | match text |
@@ -100,7 +100,11 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 | Commit field placeholder | `Message (enter to commit on "main")` | same | `Message` | `Message` |
 | Diff gutter | old and new line numbers | new line number | none | none |
 
-**Drop order.** When a row still does not fit inside its breakpoint, it drops parts in this order: author, then hash, then ref badges other than HEAD, then folder, then time, then +/−, then roll-up counts, then the touched marker. Status letters, the selection and the row's name are never dropped. Instead the name is truncated, down to 1 character plus the ellipsis.
+**Drop order.** Graph drops ref badges first, then author/time, then truncates its subject while retaining its seven-character hash. Other rows drop author, hash, optional refs, folder, time, +/−, roll-up counts and the touched marker. Status letters, selection and names remain. ADR 0014 supersedes the earlier graph anatomy.
+
+Graph uses `fitGraph` with a cell budget of `min(lanes, max(3, floor(inner/4)))`; connector rows contain only the glyph. Claude Code uses plain Unicode graph cells with every current icon setting; ASCII remains the shared core fallback, not a new option. The Graph header is `▾ Graph` / `▸ Graph`, adding `(filtered)` for an active filter. Load more is an explicit selectable final row. Expanded files show status, fitted path and +/−, followed by selectable Checkout, Revert and a supported web link. Branches shows locals then a Remote header, current `*`, fitted name, aligned ahead/behind counts and `gone`. Comparison files appear under `Compared with <base>`.
+
+Claude Code keeps the six working action hints on working rows and substitutes the six graph commit hints `y/a/b/f/t/n` on a selected commit. The Graph header supplies `b/f/t`; expanded action rows are reached with the shared arrows/Enter. This keeps every applicable shortcut Button visible at 24 columns. Branches keeps `n/c/f`. Active history filters and the new-branch editor remain above the list viewport; confirmations replace editors until answered, preserving both answer Buttons at five rows. Historical diff headers identify the commit or comparison, and a path row sits immediately above the hunks. No browser animation or CSS applies to these character-cell views.
 
 **Truncation.**
 - Paths use a middle ellipsis that keeps the whole basename: `src/…/user.ts`. If the basename alone does not fit, it gets an end ellipsis that keeps the extension where possible: `very-long-na….ts`.

@@ -63,6 +63,14 @@ export type JeiAsk =
   | { kind: 'discard'; paths: string[]; all: boolean }
   | { kind: 'sensitive'; paths: string[] }
   | { kind: 'divergence' }
+  | { kind: 'history'; root: string; operation: 'checkout' | 'revert' | 'switch' | 'create'; target: string; start: string | null; confirm: string }
+
+export type JeiHistory = {
+  filter: string; draft: string; filtering: boolean; pages: number; expanded: string | null; agents: string[]
+  newBranch: { start: string | null; name: string } | null
+  branchFilter: string; branchFiltering: boolean
+  compared: { base: string; head: string; label: string } | null
+}
 
 /**
  * The Git tab as the person left it: the commit message and mode, an open
@@ -87,6 +95,7 @@ declare module 'claude-code' {
       git: JeiGit | null
       tree: JeiTree
       gitUi: JeiGitUi
+      history: Record<string, JeiHistory>
       preview: JeiPreview
       /** Bumped by the shimmer clock and by refreshed caches: a redraw. */
       tick: number

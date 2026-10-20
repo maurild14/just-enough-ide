@@ -28,3 +28,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0011 | `0011-git-history-core-contracts.md` | History reads, conservative tool attribution, graph cell budgets and contextual branch keys |
 | 0012 | `0012-git-history-evidence-and-state.md` | Stable graph lanes, verified empty history, creation actions and retained diff migration |
 | 0013 | `0013-safe-branch-and-commit-actions.md` | Fresh action confirmation, exact branch refs, comparison counts and credential-free URLs/errors |
+| 0014 | `0014-native-history-views-and-attribution.md` | Native history paging, contextual action visibility, full-interval attribution guards and host API limits |

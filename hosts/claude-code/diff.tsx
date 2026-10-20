@@ -1,6 +1,8 @@
 import type { EngineInterface, RenderElement } from 'claude-code'
 import { diffWindow, reviewText, toUnifiedText, type DiffFile } from '../../core/git/diff.ts'
-import { DIFF_MAX_LINES, fileDiff } from '../../core/git/service.ts'
+import { DIFF_MAX_LINES, fileDiff, commitDiff, compareDiff, commitFiles, compare } from '../../core/git/service.ts'
+import { logArgs, parseLog } from '../../core/git/log.ts'
+import { git } from '../../core/git/run.ts'
 import type { Options } from '../../core/options.ts'
 import { currentView, reducePane, type PaneState } from '../../core/pane.ts'
 import { cellWidth, fitEnd, fitPath } from '../../core/shared/fit.ts'
@@ -14,7 +16,7 @@ import { color } from './theme.ts'
 const MINUS = '−'
 const REVIEW_MAX = 8000
 
-type Loaded = { file: DiffFile | null; truncated: boolean } | { error: string }
+type Loaded = { file: DiffFile | null; truncated: boolean; label?: string } | { error: string }
 type Target = NonNullable<PaneState['diff']>
 
 // The diff on screen, read once per file and dropped by every refresh (activity.ts).
@@ -24,10 +26,18 @@ onRefresh(() => {
 })
 
 function diffOf($: EngineInterface, root: string, d: Target): Promise<Loaded> {
-  if (d.source.kind !== 'working') return Promise.resolve({ file: null, truncated: false })
-  const key = `${root}\u0000${d.path}\u0000${d.source.staged}\u0000${d.source.untracked}`
+  const source = d.source
+  const key = `${root}\u0000${d.path}\u0000${JSON.stringify(source)}`
   if (current?.key !== key) {
-    const p = fileDiff(hostFor($, root), root, d.path, d.source).catch(
+    const host = hostFor($, root)
+    const load = async (): Promise<Loaded> => {
+      if (source.kind === 'working') return fileDiff(host, root, d.path, source)
+      if (source.kind === 'compare') return { ...await compareDiff(host, root, source.base, source.head, d.path), label: `${source.base.slice(0, 7)}...${source.head.slice(0, 7)}` }
+      const result = await commitDiff(host, root, source.hash, d.path)
+      const commit = parseLog((await git(host, root, logArgs({ branch: source.hash }, 0))).stdout)[0]
+      return { ...result, label: `${source.hash.slice(0, 7)} ${commit?.subject ?? ''}`.trim() }
+    }
+    const p = load().catch(
       (err: unknown): Loaded => ({ error: firstLine(err) }),
     )
     current = { key, p }
@@ -67,8 +77,19 @@ async function stepFile($: EngineInterface, by: 1 | -1): Promise<void> {
   const pane = await readPane($)
   const g = await readGit($)
   const d = pane.diff
-  if (d === undefined || d.source.kind !== 'working' || g === null || g.root === null) return
+  if (d === undefined || g === null || g.root === null) return
   const source = d.source
+  if (source.kind !== 'working') {
+    const host = hostFor($, g.root)
+    const files = source.kind === 'commit' ? await commitFiles(host, g.root, source.hash) : await compare(host, g.root, source.base, source.head)
+    const next = files[files.findIndex((file) => file.path === d.path) + by]
+    if (!next) { $.ui.toast(by > 0 ? 'This is the last file.' : 'This is the first file.'); return }
+    const view = source.kind === 'commit' ? 'git' : 'git.branches'
+    const id = source.kind === 'commit' ? `commit-file-${source.hash}-${next.path}` : `compare-file-${next.path}`
+    await updateGitUi($, (u) => ({ ...u, diffTop: 0 }))
+    await updatePane($, (s) => reducePane(reducePane(s, { type: 'select', view, id }), { type: 'open-diff', path: next.path, source }))
+    return
+  }
   const rows = groupRows(g as Repo, source.staged)
   const at = rows.findIndex((r) => r.entry.path === d.path)
   const next = rows[at + by]
@@ -116,7 +137,7 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
   )
   const back = act($, () => updatePane($, (s) => reducePane(s, { type: 'back' })))
   const d = pane.diff
-  if (d === undefined || d.source.kind !== 'working' || g === null || g.root === null) {
+  if (d === undefined || g === null || g.root === null) {
     const header = (
       <Box flexDirection="row">
         <Text>{inner > 0 ? ' ' : ''}</Text>
@@ -130,7 +151,7 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
   const file = 'error' in loaded ? null : loaded.file
 
   // Header: the path (never dropped), then +/−, then the source while they fit.
-  const source = d.source.staged ? 'staged' : d.source.untracked ? 'untracked' : 'working tree'
+  const source = d.source.kind === 'working' ? d.source.staged ? 'staged' : d.source.untracked ? 'untracked' : 'working tree' : 'error' in loaded ? d.source.kind : loaded.label ?? d.source.kind
   const plus = file ? `+${file.added}` : ''
   const minus = file ? `${MINUS}${file.removed}` : ''
   const countsW = file ? cellWidth(plus) + 1 + cellWidth(minus) : 0
@@ -143,10 +164,10 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
     <Box flexDirection="row">
       <Text>{inner > 0 ? ' ' : ''}</Text>
       <Button key="back" plain onPress={back}>
-        <Text>{fitPath(d.path, Math.max(0, pathRoom()))}</Text>
-        {showSource && <Text dimColor>{` · ${source}`}</Text>}
-        {showCounts && <Text color={color('added')}>{`  ${plus}`}</Text>}
-        {showCounts && <Text color={color('removed')}>{` ${minus}`}</Text>}
+        <Text>{d.source.kind === 'working' ? fitPath(d.path, Math.max(0, pathRoom())) : fitEnd(source, inner)}</Text>
+        {d.source.kind === 'working' && showSource && <Text dimColor>{` · ${source}`}</Text>}
+        {d.source.kind === 'working' && showCounts && <Text color={color('added')}>{`  ${plus}`}</Text>}
+        {d.source.kind === 'working' && showCounts && <Text color={color('removed')}>{` ${minus}`}</Text>}
       </Button>
     </Box>
   )
@@ -176,6 +197,7 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
     return { header, body: [line('Binary file. Press o to open it.', { dim: true }, 'notice')], actions }
   }
   const body: RenderElement[] = []
+  if (d.source.kind !== 'working') body.push(line(d.path, {}, 'diff-path'))
   if (loaded.truncated) body.push(line(`Diff truncated at ${DIFF_MAX_LINES.toLocaleString('en-US')} lines.`, { color: color('warning') }, 'truncated'))
   const rows = Math.max(1, frame.bodyRows - body.length)
   const w = diffWindow(file, ui.diffTop, rows)

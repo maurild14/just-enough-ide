@@ -3,7 +3,9 @@ import { classifyTool, type ActivityKind, type Touch } from '../../core/activity
 import { ActivityLog, allows } from '../../core/activity/log.ts'
 import { reveal } from '../../core/files/tree.ts'
 import { git } from '../../core/git/run.ts'
-import { snapshot } from '../../core/git/service.ts'
+import { snapshot, agentCandidates, captureReflog } from '../../core/git/service.ts'
+import { AgentCommits } from '../../core/git/agent.ts'
+import { isRepo } from '../../core/git/status.ts'
 import { latest } from '../../core/latest.ts'
 import type { Options } from '../../core/options.ts'
 import { currentView, reducePane } from '../../core/pane.ts'
@@ -16,10 +18,12 @@ import {
   readCwd,
   readPane,
   readTree,
+  readHistory,
   setGit,
   updateActivity,
   updatePane,
   updateTree,
+  updateHistory,
 } from './state.ts'
 
 /** Shimmer redraw period: the 250 ms steps of docs/design.md section 9. */
@@ -36,14 +40,90 @@ const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
 
 type Row = { kind: ActivityKind; at: number }
 
-const guardedSnapshot = latest(snapshot)
+const snapshots = new Map<string, ReturnType<typeof latest<Parameters<typeof snapshot>, Awaited<ReturnType<typeof snapshot>>>>>()
+type Tracking = { agent: AgentCommits; mutations: number; calls: number; epoch: number }
+const trackers = new Map<string, Tracking>()
+let unknownMutations = 0
+
+async function tracking($: EngineInterface, root: string): Promise<Tracking> {
+  const key = `${await $.session.id()}\0${root}`
+  let t = trackers.get(key)
+  if (!t) {
+    t = { agent: AgentCommits.from(await readHistory($, root).then((h) => h.agents, () => [])), mutations: 0, calls: 0, epoch: 0 }
+    // Another hook may have initialized the same session while state was read.
+    if (trackers.has(key)) return trackers.get(key)!
+    trackers.set(key, t)
+  }
+  return t
+}
+
+/** Bookkeeping never changes a user operation's result; nested guards cover hook-aware runners too. */
+export async function mutationGuard($: EngineInterface, root: string): Promise<() => void> {
+  try {
+    const t = await tracking($, root)
+    t.mutations++; t.epoch++; t.agent.invalidate()
+    return () => { t.mutations--; t.epoch++; t.agent.invalidate() }
+  } catch {
+    unknownMutations++
+    for (const t of trackers.values()) { t.epoch++; t.agent.invalidate() }
+    return () => { unknownMutations-- }
+  }
+}
+
+async function headAt($: EngineInterface, root: string): Promise<string | null> {
+  try {
+    const head = (await git(hostFor($, root), root, ['rev-parse', '--verify', '--quiet', 'HEAD'])).stdout.trim()
+    return /^[0-9a-f]{40}$/.test(head) ? head : null
+  } catch { return null }
+}
+
+async function agentWindow($: EngineInterface) {
+  const cwd = await readCwd($)
+  if (!cwd) return null
+  const root = await isRepo(hostFor($, cwd), cwd)
+  if (!root) return null
+  const t = await tracking($, root)
+  t.calls++
+  if (t.calls > 1 || t.mutations > 0 || unknownMutations > 0) { t.epoch++; t.agent.invalidate() }
+  const epoch = t.epoch
+  let token: number | undefined
+  try {
+    const from = await headAt($, root)
+    token = t.agent.toolStart(from, (await $.clock.now()) / 1000)
+    const boundary = await captureReflog(hostFor($, root), root, from)
+    if (t.epoch !== epoch || t.calls > 1 || t.mutations > 0 || unknownMutations > 0) t.agent.invalidate()
+    return async () => {
+      try {
+        const head = await headAt($, root)
+        const candidates = head === null ? [] : await agentCandidates(hostFor($, root), root, from, head, boundary)
+        if (t.epoch !== epoch || t.calls > 1 || t.mutations > 0 || unknownMutations > 0) t.agent.invalidate()
+        t.agent.toolEnd(token!, head, candidates)
+        await updateHistory($, root, (h) => ({ ...h, agents: t.agent.toJSON() }))
+      } finally { t.calls-- }
+    }
+  } catch {
+    t.agent.invalidate()
+    if (token !== undefined) t.agent.toolEnd(token, null, [])
+    t.calls--
+    return null
+  }
+}
 
 /** Re-reads the git snapshot for the current folder; only the latest call lands. */
 export async function refreshGit($: EngineInterface): Promise<void> {
   const root = await readCwd($)
   if (root === '') return
-  const r = await guardedSnapshot(hostFor($, root), root)
-  if (!r.stale) await setGit($, gitState(r.value))
+  const key = await $.session.id()
+  let guarded = snapshots.get(key)
+  if (!guarded) { guarded = latest(snapshot); snapshots.set(key, guarded) }
+  const r = await guarded(hostFor($, root), root)
+  if (!r.stale && await readCwd($) === root) {
+    for (const forget of forgetters) forget()
+    await setGit($, gitState(r.value))
+    if (r.value.root !== null) {
+      try { (await tracking($, r.value.root)).agent.observe(r.value.status.branch.oid) } catch {}
+    }
+  }
 }
 
 // Other caches a refresh drops (the diff view's), registered by their modules so this one imports none of them.
@@ -194,19 +274,21 @@ async function fileChanged($: EngineInterface, path: string): Promise<void> {
 }
 
 /**
- * Agent activity: every tool call is classified after it ran (it is never
- * held up, and the hook does not wait for the bookkeeping), touches glow and
- * the tree follows them, and changes refresh git status and the touched
- * folders. `classic.SessionStart` asks to watch the git index and HEAD, and
- * `classic.FileChanged` refreshes the same way.
+ * Shell attribution brackets next exactly once; activity/follow work runs
+ * after the result without awaiting it. Disk changes share its refresh path.
  */
 export function registerActivity(on: On, options: Options): void {
-  // Observes only, after the tool ran: a failure here must never change the call.
+  // Contain attribution failures; a catch around next could rerun a failed user tool.
   on('tool.call', async ($, e, next) => {
-    const ran = await next(e)
-    void toolRan($, String(e.tool), e, ran, options).catch((err: unknown) => $.ui.log(`jei: activity: ${String(err)}`))
-    return ran
-  }).catch(($, e, next) => next(e))
+    const end = SHELL_TOOLS.has(String(e.tool)) ? await agentWindow($).catch(() => null) : null
+    try {
+      const ran = await next(e)
+      void toolRan($, String(e.tool), e, ran, options).catch(() => undefined)
+      return ran
+    } finally {
+      if (end) await end().catch(() => undefined)
+    }
+  })
 
   on('classic.SessionStart', async ($, e, next) => {
     const r = await next(e)

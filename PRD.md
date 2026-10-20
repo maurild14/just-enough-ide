@@ -261,15 +261,16 @@ Mirrors VS Code's Source Control panel, top to bottom.
 **Graph**
 - Commit history with branch lanes (forks and merges drawn with box characters), each commit's subject, author and relative time; ref badges for local branches, `origin/*`, tags and HEAD.
 - **✦ marks commits created during an agent tool window in this session**: newly reachable hashes must have new commit-producing HEAD reflog evidence and a recent committer time. Checkout/reset movement alone never marks a commit. Overlapping tools, JEI mutations or unavailable evidence suppress marking; an unrelated external commit during a tool remains indistinguishable. See `docs/decisions/0011-git-history-core-contracts.md`.
-- Toolbar: fetch, pull, push, refresh, filter.
+- Graph is collapsible below Staged and Changes and shares their selection/scroll. Rows show lanes, an optional ✦, seven-character hash, accent ref labels, subject and author/relative time from 60 columns when they fit; ref labels drop first. Below 24 columns only hash and subject remain.
+- Contextual fetch (`fetch --prune`) and filter actions; pull/push use Sync and Commit & Push. See `docs/decisions/0014-native-history-views-and-attribution.md`.
 - **Filter** by message text, author, file path or branch (or all branches).
-- Loads the first 200 commits, more on scroll.
+- Loads `graphLimit` commits (200 by default); an explicit Load more row loads the next page.
 - **Click/enter on a commit expands it inline**, listing its changed files with status (M/A/D/R) and +/−. Click/enter on a file **replaces the pane content with that file's diff**.
 - **Commit actions:** copy hash, checkout (detached, confirmed), revert (confirmed; merge commits are refused), open on GitHub/GitLab (when the remote is one, without credentials), **Ask** (`explain commit a41f9c2`).
 
 **Diff view (replaces the pane content)**
 - Unified, one column, wrapped to the pane width, with hunk headers and line numbers. Claude Code draws it with `Code format="diff"`; OpenCode draws `core`'s parsed hunks with theme colors.
-- Header: file, commit or "working tree", +/−.
+- Working header: file, source and +/−. Historical header: `<short> <subject>` or `<base>...<head>`, with the file path above the diff body.
 - `n`/`p` next/previous hunk · `j`/`k` next/previous file of the same commit or change set · `a` Ask to review this diff · `o` open the file · `esc` back to where you came from.
 
 **Changes**

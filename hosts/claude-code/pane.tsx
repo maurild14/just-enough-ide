@@ -8,6 +8,7 @@ import { tabBar, TAB_NAMES } from '../../core/shared/tabs.ts'
 import { renderDiff } from './diff.tsx'
 import { renderFiles, type FilesAction } from './files.tsx'
 import { renderGit } from './git.tsx'
+import { renderBranches } from './branches.tsx'
 import { readCwd, readPane, updatePane } from './state.ts'
 
 export type PaneRender = RenderInput<'Pane'>
@@ -115,7 +116,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const bar = tabBar(columns, room, state.tab, BUTTON_CHROME)
 
   const isFiles = view === 'files' || view === 'files.preview'
-  const isGit = view === 'git' || view === 'git.diff'
+  const isGit = view === 'git' || view === 'git.diff' || view === 'git.branches'
   // Letter keys live on the hint's Buttons, so a view with letter actions keeps
   // its hint (bare below 10 rows) down to 3 rows (docs/design.md section 6).
   const showHint = isFiles || isGit ? rows >= 3 : rows >= 10
@@ -133,7 +134,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
       ? await renderGit($, e, frame, options)
       : view === 'git.diff'
         ? await renderDiff($, e, frame, options)
-        : null
+        : view === 'git.branches' ? await renderBranches($, e, frame) : null
 
   const hintRow = (): RenderElement => {
     if (content === null) {

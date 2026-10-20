@@ -9,7 +9,8 @@ import { shellLine, type Shell } from '../../core/shared/argv.ts'
 import { cellWidth, fitEnd, fitPath, padEnd } from '../../core/shared/fit.ts'
 import { toPosix } from '../../core/shared/paths.ts'
 import type { JeiCommitMode, JeiGit, JeiGitUi } from '../../types/index.d.ts'
-import { refreshAfterChange, refreshGit } from './activity.ts'
+import { mutationGuard, refreshAfterChange, refreshGit } from './activity.ts'
+import { historyConfirmation, renderGraph } from './graph.tsx'
 import { firstLine, hostFor, reason, windowTop, type FilesAction, type FilesFrame, type FilesView, type PaneRender } from './files.tsx'
 import { gitState, readCwd, readGit, readGitUi, readPane, readTick, setGit, updateGitUi, updatePane } from './state.ts'
 import { color, statusLook } from './theme.ts'
@@ -36,7 +37,7 @@ const GENERATE = '✦ Generate'
 /** Shortest the branch part (`⎇ name`) gets before the ahead/behind counts drop. */
 const BRANCH_MIN = 10
 /** Steps that fire repository hooks: these go through the agent's shell when the repo has hooks. */
-const HOOKED = new Set(['commit', 'push', 'pull', 'merge', 'rebase', 'checkout', 'switch'])
+const HOOKED = new Set(['commit', 'push', 'pull', 'merge', 'rebase', 'checkout', 'switch', 'revert'])
 
 const trimDot = (s: string) => s.replace(/\.+$/, '')
 const baseName = (p: string) => p.slice(p.lastIndexOf('/') + 1)
@@ -132,56 +133,59 @@ function messageOf(step: readonly string[]): string | null {
  * the steps after it are skipped.
  */
 export async function runHookAware($: EngineInterface, root: string, steps: readonly string[][], viaAgentShell: boolean): Promise<void> {
-  const host = hostFor($, root)
-  if (!viaAgentShell) return runSteps(host, root, steps)
-  for (const step of steps) {
-    if (!HOOKED.has(step[0] ?? '')) {
-      await git(host, root, step)
-      continue
-    }
-    const tool = await agentShell($)
-    const shell: Shell = tool === 'Bash' ? 'bash' : 'powershell'
-    let words = step
-    let file: string | null = null
-    const message = messageOf(step)
-    if (message !== null) {
-      const gitDir = toPosix((await git(host, root, ['rev-parse', '--absolute-git-dir'])).stdout.trim())
-      file = `${gitDir}/${MESSAGE_FILE}`
-      await $.fs.write(file, `${message}\n`)
-      const at = step.indexOf('-m')
-      words = [...step.slice(0, at), '-F', file, ...step.slice(at + 2)]
-    }
-    // Core's runner sets these through the environment; the agent's shell takes only flags.
-    const command = shellLine(['git', '--no-optional-locks', '-c', 'core.quotepath=off', '-C', root, ...words], shell)
-    const description = `Run git ${step[0]} so the repository's hooks run`
-    const argv = gitArgv(root, step)
-    let leftRunning = false
-    try {
-      const verdict = await $.tool.check({ tool, input: { command, description } })
-      if (verdict.decision === 'deny') {
-        throw new GitError(argv, { exitCode: 1, stdout: '', stderr: `Claude's permissions block ${tool}: ${verdict.reason ?? 'denied'}` })
+  const end = await mutationGuard($, root)
+  try {
+    const host = hostFor($, root)
+    if (!viaAgentShell) return runSteps(host, root, steps)
+    for (const step of steps) {
+      if (!HOOKED.has(step[0] ?? '')) {
+        await git(host, root, step)
+        continue
       }
-      if (verdict.decision === 'ask' && !warnedAsk) {
-        warnedAsk = true
-        $.ui.toast(`This repo has git hooks, so JEI runs git through Claude's shell. Allow ${tool}(git *) to skip the prompt.`)
+      const tool = await agentShell($)
+      const shell: Shell = tool === 'Bash' ? 'bash' : 'powershell'
+      let words = step
+      let file: string | null = null
+      const message = messageOf(step)
+      if (message !== null) {
+        const gitDir = toPosix((await git(host, root, ['rev-parse', '--absolute-git-dir'])).stdout.trim())
+        file = `${gitDir}/${MESSAGE_FILE}`
+        await $.fs.write(file, `${message}\n`)
+        const at = step.indexOf('-m')
+        words = [...step.slice(0, at), '-F', file, ...step.slice(at + 2)]
       }
-      const r =
-        tool === 'Bash'
-          ? await $.tool.call({ tool: 'Bash', command, description, timeout: SHELL_TIMEOUT_MS })
-          : await $.tool.call({ tool: 'PowerShell', command, description, timeout: SHELL_TIMEOUT_MS })
-      if (r.deny !== undefined) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: r.deny })
-      if (r.isError === true) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: shellError(r.text ?? '') })
-      const ran = r.result as { interrupted?: boolean; backgroundTaskId?: string; timedOutAfterMs?: number; backgroundedByUser?: boolean } | undefined
-      if (ran?.backgroundTaskId !== undefined || ran?.timedOutAfterMs !== undefined || ran?.backgroundedByUser === true) {
-        leftRunning = true
-        throw new StillRunning(step[0] ?? 'git')
+      // Core's runner sets these through the environment; the agent's shell takes only flags.
+      const command = shellLine(['git', '--no-optional-locks', '-c', 'core.quotepath=off', '-C', root, ...words], shell)
+      const description = `Run git ${step[0]} so the repository's hooks run`
+      const argv = gitArgv(root, step)
+      let leftRunning = false
+      try {
+        const verdict = await $.tool.check({ tool, input: { command, description } })
+        if (verdict.decision === 'deny') {
+          throw new GitError(argv, { exitCode: 1, stdout: '', stderr: `Claude's permissions block ${tool}: ${verdict.reason ?? 'denied'}` })
+        }
+        if (verdict.decision === 'ask' && !warnedAsk) {
+          warnedAsk = true
+          $.ui.toast(`This repo has git hooks, so JEI runs git through Claude's shell. Allow ${tool}(git *) to skip the prompt.`)
+        }
+        const r =
+          tool === 'Bash'
+            ? await $.tool.call({ tool: 'Bash', command, description, timeout: SHELL_TIMEOUT_MS })
+            : await $.tool.call({ tool: 'PowerShell', command, description, timeout: SHELL_TIMEOUT_MS })
+        if (r.deny !== undefined) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: r.deny })
+        if (r.isError === true) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: shellError(r.text ?? '') })
+        const ran = r.result as { interrupted?: boolean; backgroundTaskId?: string; timedOutAfterMs?: number; backgroundedByUser?: boolean } | undefined
+        if (ran?.backgroundTaskId !== undefined || ran?.timedOutAfterMs !== undefined || ran?.backgroundedByUser === true) {
+          leftRunning = true
+          throw new StillRunning(step[0] ?? 'git')
+        }
+        if (ran?.interrupted === true) throw new StillRunning(step[0] ?? 'git', true)
+      } finally {
+        // A commit still running may yet read its message file: keep it then.
+        if (file !== null && !leftRunning) await $.fs.write(file, '').catch(() => undefined)
       }
-      if (ran?.interrupted === true) throw new StillRunning(step[0] ?? 'git', true)
-    } finally {
-      // A commit still running may yet read its message file: keep it then.
-      if (file !== null && !leftRunning) await $.fs.write(file, '').catch(() => undefined)
     }
-  }
+    } finally { end() }
 }
 
 // ---------------------------------------------------------------------------
@@ -198,7 +202,7 @@ function act($: EngineInterface, fn: () => Promise<unknown>): () => void {
  * the set are one state update, so two presses never both run; a second
  * operation is refused with a toast. False when refused.
  */
-async function busy($: EngineInterface, label: string, fn: () => Promise<void>, refresh = true): Promise<boolean> {
+export async function busy($: EngineInterface, label: string, fn: () => Promise<void>, refresh = true): Promise<boolean> {
   let held: string | null = null
   await updateGitUi($, (u) => {
     held = u.busy
@@ -208,9 +212,12 @@ async function busy($: EngineInterface, label: string, fn: () => Promise<void>, 
     $.ui.toast(`Still working: ${held}`)
     return false
   }
+  const g = await readGit($)
+  const end = refresh && g?.root ? await mutationGuard($, g.root) : () => {}
   try {
     await fn()
   } finally {
+    end()
     await updateGitUi($, (u) => ({ ...u, busy: null }))
     if (refresh) await refreshAfterChange($, [], true)
   }
@@ -394,11 +401,12 @@ async function generate($: EngineInterface, options: Options): Promise<void> {
 async function init($: EngineInterface): Promise<void> {
   const root = await readCwd($)
   if (root === '') return
+  const end = await mutationGuard($, root)
   try {
     await initRepo(hostFor($, root), root)
   } catch (err) {
     $.ui.toast(`Can't initialize the repository: ${trimDot(failure(err))}.`)
-  }
+  } finally { end() }
   await refreshGit($)
 }
 
@@ -417,16 +425,22 @@ async function openDiff($: EngineInterface, row: FileRow): Promise<void> {
 // Selection: the window is anchored to the selected row's id.
 
 /** Selectable rows as last drawn (group headers and files) and the selection they showed. */
-let lastIds: string[] = []
-let lastSelected: string | undefined
-let lastRows = new Map<string, FileRow>()
-let focused: string | undefined
+type GitList = { ids: string[]; selected: string | undefined; rows: Map<string, FileRow>; focused: string | undefined }
+const lists = new Map<string, GitList>()
+async function gitList($: EngineInterface): Promise<GitList> {
+  const key = `${await $.session.id()}\0${await readCwd($)}`
+  let list = lists.get(key)
+  if (!list) { list = { ids: [], selected: undefined, rows: new Map(), focused: undefined }; lists.set(key, list) }
+  return list
+}
 const GROUP_PREFIX = 'group-'
-const isRowKey = (k: string) => k.startsWith('change-') || k.startsWith('staged-') || k.startsWith(GROUP_PREFIX)
+const isRowKey = (k: string) => /^(change-|staged-|group-|graph-|commit-file-|checkout-|revert-|web-)/.test(k)
 
 /** The ring moved onto a Git row: it becomes the selection. */
 export async function focusGit($: EngineInterface, element: string | undefined): Promise<void> {
-  focused = element
+  if (currentView(await readPane($)) !== 'git') return
+  const list = await gitList($)
+  list.focused = element
   if (element === undefined || !isRowKey(element)) return
   if (currentView(await readPane($)) !== 'git') return
   await updatePane($, (s) => reducePane(s, { type: 'select', view: 'git', id: element }))
@@ -434,21 +448,24 @@ export async function focusGit($: EngineInterface, element: string | undefined):
 
 /** Scroll keys on the Git list move the selection. True when handled. */
 export async function scrollGitList($: EngineInterface, by: number): Promise<boolean> {
-  if (currentView(await readPane($)) !== 'git' || lastIds.length === 0) return false
-  const from = lastSelected === undefined ? -1 : lastIds.indexOf(lastSelected)
-  const to = Math.max(0, Math.min(lastIds.length - 1, from < 0 ? 0 : from + Math.sign(by) * Math.max(1, Math.abs(by))))
-  const id = lastIds[to]!
+  if (currentView(await readPane($)) !== 'git') return false
+  const list = await gitList($)
+  if (!list.ids.length) return false
+  const from = list.selected === undefined ? -1 : list.ids.indexOf(list.selected)
+  const to = Math.max(0, Math.min(list.ids.length - 1, from < 0 ? 0 : from + Math.sign(by) * Math.max(1, Math.abs(by))))
+  const id = list.ids[to]!
   await updatePane($, (s) => reducePane(s, { type: 'select', view: 'git', id }))
   await $.ui.focus({ requestId: 'jei', key: id }).catch(() => undefined)
   return true
 }
 
-function selectedTarget(): { row?: FileRow; group?: Group } {
-  const id = lastSelected
+async function selectedTarget($: EngineInterface): Promise<{ row?: FileRow; group?: Group }> {
+  const list = await gitList($)
+  const id = list.selected
   if (id === undefined) return {}
   if (id === `${GROUP_PREFIX}staged`) return { group: 'staged' }
   if (id === `${GROUP_PREFIX}changes`) return { group: 'changes' }
-  const row = lastRows.get(id)
+  const row = list.rows.get(id)
   return row ? { row } : {}
 }
 
@@ -456,7 +473,7 @@ async function keyStage($: EngineInterface): Promise<void> {
   const g = await repoOrToast($)
   if (g === null) return
   const groups = groupsOf(g)
-  const t = selectedTarget()
+  const t = await selectedTarget($)
   if (t.group === 'changes') return stageRows($, groups.changes)
   if (t.row?.group === 'changes') return stageRows($, [t.row])
   $.ui.toast(t.row ? 'That file is already staged.' : 'Select a change first.')
@@ -466,7 +483,7 @@ async function keyUnstage($: EngineInterface): Promise<void> {
   const g = await repoOrToast($)
   if (g === null) return
   const groups = groupsOf(g)
-  const t = selectedTarget()
+  const t = await selectedTarget($)
   if (t.group === 'staged') return unstageRows($, groups.staged)
   if (t.row?.group === 'staged') return unstageRows($, [t.row])
   $.ui.toast('Select a staged file first.')
@@ -476,7 +493,7 @@ async function keyDiscard($: EngineInterface): Promise<void> {
   const g = await repoOrToast($)
   if (g === null) return
   const groups = groupsOf(g)
-  const t = selectedTarget()
+  const t = await selectedTarget($)
   if (t.group === 'changes') return askDiscardAll($, groups.changes)
   if (t.row?.group === 'changes') {
     await setAsk($, { kind: 'discard', paths: [t.row.entry.path], all: false })
@@ -599,7 +616,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     const over = widthOf() - inner
     if (over > 0) branchPart.text = fitEnd(fullBranch, Math.max(Math.min(BRANCH_MIN, cellWidth(fullBranch)), cellWidth(fullBranch) - over))
   }
-  for (const drop of ['repo', 'sync', 'hooks', 'busy', 'shorten', 'ab']) {
+  for (const drop of ['repo', 'sync', 'hooks', ...(ui.busy === 'fetching…' ? [] : ['busy']), 'shorten', 'ab']) {
     if (widthOf() <= inner) break
     if (drop === 'sync') sync = false
     else if (drop === 'shorten') shorten()
@@ -658,6 +675,8 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
         { key: 'sensitive-commit', label: 'Commit anyway', run: act($, () => commitNow($, options, ask.paths)) },
         { ...cancel, key: 'sensitive-cancel' },
       ])
+    } else if (ask.kind === 'history') {
+      askButtons = historyConfirmation($, e, frame, ask)
     } else {
       askText = ['Your branch and its upstream have diverged.']
       askButtons = buttons('ask-buttons', [
@@ -780,11 +799,14 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
   ]
   const wanted = pane.selected.git
   const firstFile = selectable.find((id) => !id.startsWith(GROUP_PREFIX))
+  const graphView = await renderGraph($, e, frame, options, g, wanted ?? firstFile ?? 'group-graph')
+  selectable.push(...graphView.items.filter((i) => i.isRow).map((i) => i.id))
   const selected = wanted !== undefined && selectable.includes(wanted) ? wanted : (firstFile ?? selectable[0])
-  lastIds = selectable
-  lastSelected = selected
-  lastRows = new Map(visible.map((r) => [r.id, r]))
-  const inverseOf = (id: string) => id === selected && !(frame.isFocused && focused === id)
+  const list = await gitList($)
+  list.ids = selectable
+  list.selected = selected
+  list.rows = new Map(visible.map((r) => [r.id, r]))
+  const inverseOf = (id: string) => id === selected && !(frame.isFocused && list.focused === id)
 
   const groupHeader = (group: Group, rows: FileRow[]) => {
     const id = `${GROUP_PREFIX}${group}`
@@ -876,8 +898,9 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     if (ui.collapsed.includes(group)) continue
     for (const r of rows) items.push({ id: r.id, isRow: true, el: fileRow(r) })
   }
+  items.push(...graphView.items)
 
-  const actions: FilesAction[] = [
+  const workingActions: FilesAction[] = [
     { key: 's', run: act($, () => keyStage($)) },
     { key: 'u', run: act($, () => keyUnstage($)) },
     { key: 'd', run: act($, () => keyDiscard($)) },
@@ -885,10 +908,11 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     { key: 'g', run: act($, () => generate($, options)) },
     { key: 'e', run: act($, () => syncNow($)) },
   ]
+  const actions = graphView.pinned.length ? [] : graphView.contextual ? graphView.actions : workingActions
 
   const bodyRows = Math.max(1, frame.bodyRows)
   // A short pane drops the question's rule first, then cuts its text; its Buttons always stay.
-  const pinned: RenderElement[] = []
+  const pinned: RenderElement[] = ask === null ? [...graphView.pinned] : []
   if (ask !== null) {
     const withRule = 1 + askText.length + askButtons.length <= bodyRows - 1
     const text = askText.length + askButtons.length <= bodyRows ? askText : fitAskText(bodyRows - askButtons.length)

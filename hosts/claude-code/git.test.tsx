@@ -88,6 +88,7 @@ type Calls = { writes: { path: string; text: string }[]; runs: string[][]; toast
 
 /** Answers git, the files and the session beneath the plugin; `r` may be changed mid-test. */
 async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd: string }) => Promise<unknown> } }, on: On, r: Repo) {
+  on('session.id', () => ({ value: 'git-test-session' }))
   const calls: Calls = { writes: [], runs: [], toasts: [], fills: [], checks: [], tools: [], prompts: [] }
   const res = (exitCode: number, stdout: string, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
   on('process.run', (_$, e) => {

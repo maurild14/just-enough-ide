@@ -6,7 +6,7 @@ import type { ActivityKind } from '../../core/activity/classify.ts'
 import type { GitSnapshot } from '../../core/git/service.ts'
 import type { StatusEntry } from '../../core/git/status.ts'
 import type { CommitMode } from '../../core/git/commands.ts'
-import type { JeiActivity, JeiCommitMode, JeiGit, JeiGitUi, JeiPane, JeiPreview, JeiTab, JeiTree, JeiView } from '../../types/index.d.ts'
+import type { JeiActivity, JeiCommitMode, JeiGit, JeiGitUi, JeiHistory, JeiPane, JeiPreview, JeiTab, JeiTree, JeiView } from '../../types/index.d.ts'
 
 /** The pane's id: `$.ui.open({ id })` and the `requestId` its `ui.render` reads. */
 export const PANE_ID = 'jei'
@@ -27,6 +27,7 @@ export const tree = atom({ plugin: 'jei', key: 'tree' } as const, {
 } satisfies JeiTree)
 export const preview = atom({ plugin: 'jei', key: 'preview' } as const, { rel: '', source: false, top: 0 } satisfies JeiPreview)
 export const tick = atom({ plugin: 'jei', key: 'tick' } as const, 0)
+export const history = atom({ plugin: 'jei', key: 'history' } as const, {})
 export const gitUi = atom({ plugin: 'jei', key: 'gitUi' } as const, {
   message: '',
   mode: 'commit',
@@ -37,6 +38,14 @@ export const gitUi = atom({ plugin: 'jei', key: 'gitUi' } as const, {
 } satisfies JeiGitUi)
 
 type StateHost = Pick<EngineInterface, 'state'>
+
+const emptyHistory = (): JeiHistory => ({ filter: '', draft: '', filtering: false, pages: 1, expanded: null, agents: [], newBranch: null, branchFilter: '', branchFiltering: false, compared: null })
+export async function readHistory($: StateHost, root: string): Promise<JeiHistory> {
+  return (await read($, history))[root] ?? emptyHistory()
+}
+export function updateHistory($: StateHost, root: string, fn: (h: JeiHistory) => JeiHistory): Promise<Record<string, JeiHistory>> {
+  return update($, history, (all) => ({ ...all, [root]: fn(all[root] ?? emptyHistory()) }))
+}
 
 // Function declarations, not arrows: the validator follows `$` across an
 // import only into a declaration.

@@ -34,7 +34,7 @@ Status: current. Defined in `core/host.ts`; the process, file and model half onl
 
 Action names are stable; rename one only with every consumer in the same change.
 
-The v0.2 keys are defined in core before their host views are built; see `docs/quality.md` for availability. `n` in Git creates from the selected graph commit, while Branches creates from HEAD. `PaneState.diff` is `{ source: DiffSource; path: string }`, with working `{ kind: 'working'; staged; untracked }`, commit `{ kind: 'commit'; hash }` or compare `{ kind: 'compare'; base; head }` sources. `open-diff` carries the same fields; `branches` pushes `git.branches`. Diff/back preserves the current Git stack and selection. Both existing host views currently consume only working sources.
+The v0.2 keys are defined in core; see `docs/quality.md` for host availability. `n` in Git creates from the selected graph commit, while Branches creates from HEAD. `PaneState.diff` is `{ source: DiffSource; path: string }`, with working `{ kind: 'working'; staged; untracked }`, commit `{ kind: 'commit'; hash }` or compare `{ kind: 'compare'; base; head }` sources. `open-diff` carries the same fields; `branches` pushes `git.branches`. Diff/back preserves the current Git stack and selection. Claude Code consumes all three sources; OpenCode history integration remains pending.
 
 ## Adapters
 
@@ -44,6 +44,8 @@ The v0.2 keys are defined in core before their host views are built; see `docs/q
 | OpenCode | `hosts/opencode/`, entries `index.ts`, `tui.ts`, `rpc.ts` | `node:child_process` and `node:fs/promises` in the server entry, `ctx.generate.text` | Solid + OpenTUI views in the TUI entry |
 
 Adapters stay thin: wiring, drawing, host-specific delivery of text to the agent. Anything testable without a host moves to `core/`.
+
+Claude Code's `graph.tsx` contributes rows and contextual actions to `git.tsx`'s existing list window; `branches.tsx` owns the nested Branches view using the same viewport helper. The `history` state atom is keyed by repository root and stores JSON UI state and agent hashes within the host session. Git focus/list state and attribution registries use documented `session.id()` plus root; snapshots have a latest-wins guard per session and reject an obsolete cwd. Each shell call retains its immutable from-HEAD, reflog boundary and core token in its wrapper closure. Full-operation mutation guards also surround hook-aware shell calls, preventing a JEI commit from creating an eligible fresh tool window. ADR 0014 records paging/presentation choices and the native kit/API limits.
 
 The OpenCode foundation (Task 13) is `nodeHost(generate)` in `hosts/opencode/host.ts`: argv-only `spawn` with `shell: false`, `windowsHide`, cwd/env/stdin, cancellation and timeout; filesystem reads use `node:fs/promises`. `readHead` returns only bytes actually read and always closes its handle; missing or unreadable reads return `null`, while a failed listing throws. The server (Task 14) injects `ctx.generate.text({ prompt, model? })`, with a flat string prompt and `provider/model` parsed into `{ providerID, id }`; an empty model uses the host default.
 

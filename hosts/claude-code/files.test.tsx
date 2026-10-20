@@ -42,7 +42,8 @@ function jei(args: string) {
 }
 
 /** Answers the files, git and the session beneath the plugin. Returns the calls it saw. */
-async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd: string }) => Promise<unknown> } }, on: On) {
+async function world($: Engine, on: On) {
+  on('session.id', () => ({ value: 'files-test-session' }))
   const lists: string[] = []
   const runs: string[][] = []
   const fills: { text: string; mode?: string }[] = []
@@ -290,7 +291,9 @@ test('paths outside the project never glow', async ($, on) => {
 })
 
 test('status letters show on changed rows and roll up to folders', async ($, on) => {
+  const clock = mock.clock(on)
   await world($, on)
+  await clock.settle()
   await $.command.run(jei(`${ROOT}/src/api/user.ts`))
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   const row = await ui.find({ key: 'row-src/api/user.ts' })
