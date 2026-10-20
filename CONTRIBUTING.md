@@ -95,12 +95,25 @@ One-time setup by the maintainer:
 
 - The manifest (`.release-please-manifest.json`) starts at `0.1.0`, so
   release-please treats 0.1.0 as released and proposes the next version.
-  Publish 0.1.0 once by hand from a clean checkout of the release commit
-  (`npm publish --access public`) and push the tag `v0.1.0` on that commit;
-  npm can only attach a trusted publisher to a package that exists.
+  `CHANGELOG.md` already holds the hand-written 0.1.0 entry. Bootstrap once:
+  1. Publish 0.1.0 by hand from a clean checkout of the release commit
+     (`npm publish --access public`); npm can only attach a trusted publisher
+     to a package that exists.
+  2. Create a GitHub Release `v0.1.0` on that commit (not just a tag), so the
+     release is visible to people and to release-please.
+  3. Add `"bootstrap-sha": "<that commit>"` at the top level of
+     `release-please-config.json` in a `chore:` commit. release-please then
+     collects changelog commits only after 0.1.0 instead of walking the whole
+     history. It ignores the key once its first release PR is merged; remove
+     it then.
 - On npmjs.com, in the `opencode-jei` package settings, add a trusted
   publisher: GitHub Actions, repository `maurild14/just-enough-ide`, workflow
   `release.yml`, environment `npm`.
 - In the GitHub repository, create the `npm` environment and allow GitHub
   Actions to create pull requests (Settings, Actions, General) so
   release-please can open its PR.
+- Required status checks do not run on the release PR: GitHub does not start
+  workflows for a pull request opened or updated with `GITHUB_TOKEN`. Either
+  give the release-please step a fine-grained PAT or GitHub App token (input
+  `token`) so CI runs on its PR, or do not require checks on that branch
+  (`release-please--branches--main`) and run CI yourself before merging.
