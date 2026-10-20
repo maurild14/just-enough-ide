@@ -62,6 +62,8 @@ Symbols specs assert exact trees for all seven language fixtures, including deco
 
 Symbols review regressions keep a delayed-brace Rust impl's nested method/range and following top-level function while bodyless TS/Go aliases remain leaves. Real rg and Git grep find typed TS interface signatures and methods with nested default calls, excluding ordinary call lines. LSP parser tests pass the native platform explicitly for POSIX double-slash case/backslash refusal and legitimate Windows UNC paths; ambiguous double-slash roots without it fall back.
 
+The LSP performance regression parses 128 bounded locations with a 3,800-space filename segment under a fixed 300 ms budget. Input construction and assertions stay outside timing. It verifies exact first/middle/last path/line data, both location forms, metadata-prefixed paths, colon names and literal parenthesized filename segments. Delimiter scans preserve those paths without superlinear whitespace retries; the regression does not run a multi-megabyte stress benchmark.
+
 Every view is rendered as a snapshot at widths 24, 40, 80 and 120 (200 as a smoke test) and heights 10, 24 and 5, in all three glyph sets, and asserts the checklist in `docs/design.md` §10: no line wider than the pane, exact height, selected row visible, status letters present, right-aligned columns, truncated paths keep the basename, `NO_COLOR` still distinguishes states, no raw color values outside `theme.ts`. A resize sequence (120, 24, 10 rows, 120) must return the same selection and a final output equal to a fresh render. Status: draft — built in milestone 0.1 (plan Tasks 8, 11, 12, 16, 17).
 
 ## Manual QA

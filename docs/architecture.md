@@ -81,6 +81,8 @@ The v0.3 `core/symbols/` services are built ahead of native views/RPC. `outline.
 
 `lsp.ts` parses the six planned operation types from explicitly synthetic text fixtures. Recognized headers, locations, symbol kinds and ranges are validated, including inside-root paths and a 2,000-item cap; unknown or malformed output returns `null` for approximate fallback. Its optional native-platform argument must come from the host when wiring lands; ambiguous `//` roots without an explicit platform return `null`, preserving POSIX case/backslash rules and Windows UNC behavior. No real LSP output was available in the implementation session or bundled examples, so positive real-tool compatibility remains manual QA. Hosts must retain accurate `lsp`/`approximate` source labels and perform their own fresh permission checks when LSP wiring lands.
 
+Location and symbol-metadata parsing scan delimiter tokens and slice path/text at their offsets. They never retry a growing path prefix before a whitespace run, keeping whitespace-bearing filenames linear within the existing bounds.
+
 ```
 host events (tool hooks, file changes, cwd) -+
                                               +-> refresh scheduler -> core (parse, layout, rank) -> view model -> host view

@@ -19,6 +19,22 @@ test('location forms, whitespace, Windows paths and field order vary without los
   expect(parseLsp('goToDefinition', 'Definition:\n/a/acme-app/a:b.ts:4:1 - load', '/a/acme-app')?.refs?.[0]?.rel).toBe('a:b.ts')
 })
 
+test('bounded LSP locations preserve whitespace-bearing filenames within a fixed parse budget', () => {
+  const rel = 'a' + ' '.repeat(3800) + 'b.ts'
+  const input = 'References:\n' + Array.from({ length: 128 }, (_, i) => `${rel}:${i + 1}:1`).join('\n')
+  const start = performance.now()
+  const parsed = parseLsp('findReferences', input, '/acme-app')
+  const elapsed = performance.now() - start
+  expect(elapsed).toBeLessThan(300)
+  expect(parsed?.refs?.length).toBe(128)
+  for (const index of [0, 64, 127]) expect(parsed?.refs?.[index]).toEqual({ rel, line: index + 1, text: '', container: null })
+  expect(parseLsp('findReferences', `References:\n${rel} (line 4-8) - getUser`, '/acme-app')?.refs?.[0]).toEqual({ rel, line: 4, text: 'getUser', container: null })
+  expect(parseLsp('documentSymbol', `Document symbols:\n- Store (class) ${rel}:1:1-9:1`, '/acme-app')?.symbols?.[0]).toEqual({ name: 'Store', kind: 'class', line: 1, endLine: 9, children: [] })
+  expect(parseLsp('workspaceSymbol', `Workspace symbols:\nStore (class) - ${rel} (line 1-9)`, '/acme-app')?.refs?.[0]).toEqual({ rel, line: 1, text: 'Store', container: null })
+  expect(parseLsp('findReferences', 'References:\nsrc/a:b file.ts (line 4-8) - getUser', '/acme-app')?.refs?.[0]).toEqual({ rel: 'src/a:b file.ts', line: 4, text: 'getUser', container: null })
+  for (const rel of ['src/(draft) file.ts', '(draft) file.ts', 'a:1']) expect(parseLsp('findReferences', `References:\n${rel}:1:2`, '/acme-app')?.refs?.[0]?.rel).toBe(rel)
+})
+
 test('ambiguous double-slash LSP roots fail closed without a native platform', () => {
   expect(parseLsp('findReferences', 'References:\n//Acme-app/src/store.ts:1:1', '//acme-app')).toBeNull()
   expect(parseLsp('findReferences', 'References:\nsrc/a\\b.ts:1:1', '//acme-app')).toBeNull()
