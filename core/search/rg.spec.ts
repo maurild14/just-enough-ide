@@ -58,3 +58,28 @@ test('rg literal paths distinguish POSIX colon names from Windows drive paths', 
   expect(parseRgLine(event('./a\\b.txt'), '/work/acme-app', 'linux')).toBeNull()
   expect(parseRgLine(event('.\\src\\a.txt'), 'C:/work/acme-app', 'win32')).toEqual({ rel: 'src/a.txt', line: 1, text: 'target', ranges: [[0, 6]] })
 })
+
+test('dense submatches parse within a generous fixed budget and retain Unicode ranges', () => {
+  const count = 60_000
+  const text = 'ñ😀漢 ' + 'x'.repeat(count) + '\r\n'
+  const json = JSON.stringify({ type: 'match', data: { path: { text: 'dense.ts' }, lines: { text }, line_number: 1,
+    submatches: Array.from({ length: count }, (_, i) => ({ match: { text: 'x' }, start: 10 + i, end: 11 + i })) } })
+  expect(json.length).toBeLessThan(8 * 1024 * 1024)
+  const start = performance.now()
+  const parsed = parseRgLine(json, '/work/acme-app', 'linux')
+  const elapsed = performance.now() - start
+  // Construction and assertions stay outside this generous absolute parsing budget.
+  expect(elapsed).toBeLessThan(1500)
+  if (!parsed || 'error' in parsed) throw new Error('Expected a parsed match.')
+  expect(parsed.text).toBe('ñ😀漢 ' + 'x'.repeat(count))
+  expect(parsed.ranges).toHaveLength(count)
+  expect(parsed.ranges[0]).toEqual([5, 6])
+  expect(parsed.ranges[30_000]).toEqual([30_005, 30_006])
+  expect(parsed.ranges.at(-1)).toEqual([60_004, 60_005])
+})
+
+test('batch offsets keep unordered, interior-byte, zero-width and clamped Unicode boundaries', () => {
+  const json = JSON.stringify({ type: 'match', data: { path: { text: 'unicode.ts' }, lines: { text: 'ñ😀漢 target\r\n' }, line_number: 1,
+    submatches: [{ start: 10, end: 16 }, { start: 2, end: 6 }, { start: 3, end: 5 }, { start: 99, end: 99 }, { start: 0, end: 0 }] } })
+  expect(parseRgLine(json, '/work/acme-app', 'linux')).toEqual({ rel: 'unicode.ts', line: 1, text: 'ñ😀漢 target', ranges: [[5, 11], [1, 3], [1, 1], [11, 11], [0, 0]] })
+})

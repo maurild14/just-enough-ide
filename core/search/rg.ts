@@ -76,11 +76,26 @@ export function parseRgLine(json: string, root: string, platform: Platform = pla
         ? { rel, line: data.line_number, text: '[binary line]', ranges: [] } : null
     }
     const text: string = data.lines.text.replace(/\r?\n$/, '')
-    const ranges: [number, number][] = []
+    const indexes = new Map<number, number>()
+    let lastByte = -1
     for (const range of data.submatches) {
       if (!Number.isSafeInteger(range?.start) || !Number.isSafeInteger(range?.end) || range.start < 0 || range.end < range.start) return null
-      ranges.push([byteToIndex(text, range.start), byteToIndex(text, range.end)])
+      indexes.set(range.start, text.length)
+      indexes.set(range.end, text.length)
+      lastByte = Math.max(lastByte, range.end)
     }
+    // Dense results must index requested boundaries once, never rescan each line prefix.
+    let byte = 0
+    let index = 0
+    for (const ch of text) {
+      if (byte > lastByte) break
+      const cp = ch.codePointAt(0)!
+      const size = cp <= 0x7f ? 1 : cp <= 0x7ff ? 2 : cp <= 0xffff ? 3 : 4
+      for (let at = byte; at < byte + size; at++) if (indexes.has(at)) indexes.set(at, index)
+      byte += size
+      index += ch.length
+    }
+    const ranges: [number, number][] = data.submatches.map((range: { start: number; end: number }) => [indexes.get(range.start)!, indexes.get(range.end)!])
     return { rel, line: data.line_number, text, ranges }
   } catch { return null }
 }

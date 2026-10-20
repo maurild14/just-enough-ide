@@ -73,6 +73,8 @@ The v0.3 `core/search/` services are built ahead of native views/RPC. `rg.ts` co
 
 ADR 0020 adds `nativeRel(root, path, platform)` for Search's input and real-path boundaries while preserving older helper behavior. `parseRgLine` takes an optional platform; services always supply `host.platform`. POSIX colons stay literal, and unsupported POSIX backslashes are omitted/refused before they could alias slash filenames. Direct replacement uses `unsupported-path`. Git fallback retains empty first matches only after two complete successful streams and JS verification at the reported index; other complete but unverifiable pairs produce an explicit error.
 
+Rg submatch conversion collects requested byte boundaries and indexes them during one traversal of the line, with work linear in line bytes plus submatch count. It preserves original range order, UTF-16 indexes, CRLF stripping and single-offset `byteToIndex` behavior, without rescanning a prefix for every boundary.
+
 ```
 host events (tool hooks, file changes, cwd) -+
                                               +-> refresh scheduler -> core (parse, layout, rank) -> view model -> host view
