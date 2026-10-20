@@ -14,40 +14,48 @@ export function layoutGraph(commits: readonly LogCommit[], set: 'unicode' | 'asc
   const node = ascii ? '*' : '●'
   const vertical = ascii ? '|' : '│'
   const rows: GraphRow[] = []
-  let lanes: string[] = []
+  let lanes: (string | null)[] = []
   for (const commit of commits) {
     let column = lanes.indexOf(commit.hash)
-    if (column < 0) { column = lanes.length; lanes.push(commit.hash) }
+    if (column < 0) {
+      column = lanes.indexOf(null)
+      if (column < 0) column = lanes.length
+      lanes[column] = commit.hash
+    }
     const before = [...lanes]
     const next: (string | null)[] = [...lanes]
-    next[column] = commit.parents[0] ?? null
-    for (const parent of commit.parents.slice(1)) {
+    next[column] = null
+    for (const [index, parent] of commit.parents.entries()) {
       if (!next.includes(parent)) {
-        const free = next.indexOf(null)
+        const free = index === 0 ? column : next.indexOf(null)
         if (free >= 0) next[free] = parent
         else next.push(parent)
       }
     }
-    lanes = [...new Set(next.filter((hash): hash is string => hash !== null))]
+    // Moving a live lane through another stem invents a parent junction.
+    while (next.at(-1) === null) next.pop()
+    lanes = next
     const edges: [number, number][] = []
     before.forEach((hash, from) => {
-      for (const parent of from === column ? commit.parents : [hash]) {
+      for (const parent of from === column ? commit.parents : hash === null ? [] : [hash]) {
         const to = lanes.indexOf(parent)
         if (to >= 0) edges.push([from, to])
       }
     })
-    const changed = lanes.length > 0 && (before.length !== lanes.length || edges.some(([from, to]) => from !== to) || commit.parents.length > 1)
+    const changed = lanes.length > 0 && (before.length !== lanes.length || edges.some(([from, to]) => from !== to) || commit.parents.length !== 1)
     let connector: string | null = null
     if (changed) {
       const cells = Array<number>(2 * Math.max(before.length, lanes.length) - 1).fill(0)
+      const junctions = new Set<number>()
       for (const [from, to] of edges) {
         const a = 2 * from, b = 2 * to
+        if (a !== b) { junctions.add(a); junctions.add(b) }
         cells[a]! |= 1; cells[b]! |= 4
         for (let x = Math.min(a, b); x < Math.max(a, b); x++) { cells[x]! |= 2; cells[x + 1]! |= 8 }
       }
-      connector = cells.map((bits) => CONNECTORS[set][bits]!).join('').trimEnd()
+      connector = cells.map((bits, x) => bits === 15 && !junctions.has(x) ? ascii ? 'x' : '╳' : CONNECTORS[set][bits]!).join('').trimEnd()
     }
-    rows.push({ hash: commit.hash, column, lanes: before.length, glyph: before.map((_, i) => i === column ? node : vertical).join(' '), connector })
+    rows.push({ hash: commit.hash, column, lanes: before.length, glyph: before.map((hash, i) => i === column ? node : hash === null ? ' ' : vertical).join(' '), connector })
   }
   return rows
 }

@@ -26,3 +26,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0009 | `0009-esc-is-host-reserved-on-claude-code.md` | Esc is reserved by the host on Claude Code |
 | 0010 | `0010-exact-sensitive-path-approval.md` | Sensitive commit approval names exact paths and is enforced by the server |
 | 0011 | `0011-git-history-core-contracts.md` | History reads, conservative tool attribution, graph cell budgets and contextual branch keys |
+| 0012 | `0012-git-history-evidence-and-state.md` | Stable graph lanes, verified empty history, creation actions and retained diff migration |

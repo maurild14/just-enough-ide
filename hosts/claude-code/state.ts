@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 import type { Tab, View } from '../../core/keys.ts'
-import { initialPane, type PaneState } from '../../core/pane.ts'
+import { initialPane, normalizePane, type PaneState } from '../../core/pane.ts'
 import type { ActivityKind } from '../../core/activity/classify.ts'
 import type { GitSnapshot } from '../../core/git/service.ts'
 import type { StatusEntry } from '../../core/git/status.ts'
@@ -41,13 +41,13 @@ type StateHost = Pick<EngineInterface, 'state'>
 // Function declarations, not arrows: the validator follows `$` across an
 // import only into a declaration.
 export function readPane($: StateHost): Promise<PaneState> {
-  return read($, pane)
+  return read($, pane).then(normalizePane)
 }
 export function readCwd($: StateHost): Promise<string> {
   return read($, cwd)
 }
 export function updatePane($: StateHost, fn: (s: PaneState) => PaneState): Promise<PaneState> {
-  return update($, pane, fn)
+  return update($, pane, (state) => fn(normalizePane(state)))
 }
 export function updateTree($: StateHost, fn: (t: JeiTree) => JeiTree): Promise<JeiTree> {
   return update($, tree, fn)

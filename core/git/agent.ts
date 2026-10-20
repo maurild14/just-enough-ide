@@ -16,7 +16,8 @@ export function parseReflog(stdout: string): ReflogEntry[] | null {
 }
 
 export function creationAction(action: string): boolean {
-  return /^(commit(?: \((?:initial|amend)\))?|revert|cherry-pick|rebase \((?:pick|reword|squash|fixup|continue)\)): /.test(action)
+  return /^(commit(?: \((?:initial|amend|merge|cherry-pick|rebase)\))?|revert|cherry-pick|rebase \((?:pick|reword|squash|fixup|continue)\)): /.test(action)
+    || /^merge .+: Merge made by .+/.test(action)
 }
 
 export class AgentCommits {

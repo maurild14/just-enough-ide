@@ -44,8 +44,8 @@ test('reflog grammar recognizes only known commit-producing actions', () => {
   const raw = `${hash(1)}\0HEAD@{1700000000 +0000}\0commit (initial): chore: initial\0`
   expect(parseReflog(raw)![0]).toMatchObject({ hash: hash(1), action: 'commit (initial): chore: initial', identity: raw.slice(0, -1) })
   expect(parseReflog('broken')).toBeNull()
-  for (const action of ['commit: x', 'commit (initial): x', 'commit (amend): x', 'revert: x', 'cherry-pick: x', 'rebase (pick): x', 'rebase (reword): x']) expect(creationAction(action)).toBe(true)
-  for (const action of ['checkout: x', 'reset: x', 'pull: Fast-forward', 'fetch: x', 'rebase (start): x', 'rebase (finish): x', 'custom: x']) expect(creationAction(action)).toBe(false)
+  for (const action of ['commit: x', 'commit (initial): x', 'commit (amend): x', 'commit (merge): x', 'commit (cherry-pick): x', 'commit (rebase): x', 'merge other: Merge made by the ort strategy.', 'revert: x', 'cherry-pick: x', 'rebase (pick): x', 'rebase (reword): x']) expect(creationAction(action)).toBe(true)
+  for (const action of ['checkout: x', 'reset: x', 'merge other: Fast-forward', 'pull: Fast-forward', 'fetch: x', 'rebase (start): x', 'rebase (finish): x', 'custom: x']) expect(creationAction(action)).toBe(false)
 })
 
 test('real reflog witness excludes same-second checkout/reset history and keeps new creations', async () => {
@@ -80,6 +80,75 @@ test('unborn boundary marks initial commit, newly reachable is bounded and valid
   expect((await newlyReachable(r.host, r.dir, null, to))[0]?.hash).toBe(to)
   expect(r.host.calls.some((c) => c.includes('--max-count=500'))).toBe(true)
   await expect(newlyReachable(r.host, r.dir, 'HEAD', to)).rejects.toThrow()
+})
+
+test('null HEAD is verified against existing history and a commit racing baseline capture', async () => {
+  const existing = await makeRepo()
+  expect(await captureReflog(existing.host, existing.dir, null)).toBeNull()
+  await existing.git('checkout', '--orphan', 'unborn')
+  expect(await captureReflog(existing.host, existing.dir, null)).toBeNull()
+  const r = await makeRepo({}, 0)
+  const run = r.host.run.bind(r.host)
+  let raced = false
+  r.host.run = async (argv, options) => {
+    const result = await run(argv, options)
+    if (argv.includes('reflog') && argv.includes('exists') && !raced) {
+      raced = true
+      await r.git('commit', '--allow-empty', '-m', 'chore: before tool')
+    }
+    return result
+  }
+  const boundary = await captureReflog(r.host, r.dir, null)
+  expect(raced).toBe(true)
+  expect(boundary).toBeNull()
+  const head = await r.git('rev-parse', 'HEAD')
+  expect(await agentCandidates(r.host, r.dir, null, head, boundary)).toEqual([])
+})
+
+test('real Git merge creations and manual completions are witnessed, fast-forward is not', async () => {
+  for (const manual of [false, true]) {
+    const r = await makeRepo({ 'base.txt': 'base\n' })
+    await r.git('checkout', '-b', 'other')
+    r.write('other.txt', 'other\n'); await r.git('add', '-A'); await r.git('commit', '-m', 'feat: other')
+    await r.git('checkout', 'main')
+    r.write('main.txt', 'main\n'); await r.git('add', '-A'); await r.git('commit', '-m', 'feat: main')
+    const from = await r.git('rev-parse', 'HEAD')
+    const boundary = await captureReflog(r.host, r.dir, from)
+    await r.git('merge', '--no-ff', ...(manual ? ['--no-commit'] : []), 'other', '-m', 'feat: merge')
+    if (manual) await r.git('commit', '-m', 'feat: merge')
+    const to = await r.git('rev-parse', 'HEAD')
+    const action = await r.git('reflog', 'show', '-1', '--format=%gs', 'HEAD')
+    expect(action).toStartWith(manual ? 'commit (merge): ' : 'merge other: Merge made by ')
+    expect((await agentCandidates(r.host, r.dir, from, to, boundary)).map((c) => c.hash)).toEqual([to])
+    await r.git('checkout', '-b', 'forward')
+    await r.git('commit', '--allow-empty', '-m', 'feat: already created')
+    const forward = await r.git('rev-parse', 'HEAD')
+    await r.git('checkout', 'main')
+    const beforeForward = await captureReflog(r.host, r.dir, to)
+    await r.git('merge', '--ff-only', 'forward')
+    expect(await r.git('reflog', 'show', '-1', '--format=%gs', 'HEAD')).toContain('Fast-forward')
+    expect(await agentCandidates(r.host, r.dir, to, forward, beforeForward)).toEqual([])
+  }
+})
+
+test('real Git cherry-pick completion and rebase continuation prove creation', async () => {
+  for (const operation of ['cherry-pick', 'rebase'] as const) {
+    const r = await makeRepo({ 'a.txt': 'base\n' })
+    await r.git('checkout', '-b', 'other')
+    r.write('a.txt', 'other\n'); await r.git('commit', '-am', 'feat: other')
+    await r.git('checkout', 'main')
+    r.write('a.txt', 'main\n'); await r.git('commit', '-am', 'feat: main')
+    const from = await r.git('rev-parse', 'HEAD')
+    const boundary = await captureReflog(r.host, r.dir, from)
+    expect((await r.host.run(['git', '-C', r.dir, operation, 'other'])).exitCode).toBe(1)
+    r.write('a.txt', 'resolved\n'); await r.git('add', 'a.txt')
+    if (operation === 'cherry-pick') await r.git('commit', '-m', 'feat: resolved')
+    else await r.git('-c', 'core.editor=true', 'rebase', '--continue')
+    const to = await r.git('rev-parse', 'HEAD')
+    const actions = (await r.git('reflog', 'show', '--format=%gs', 'HEAD')).split('\n')
+    expect(actions.some((action) => action.startsWith(operation === 'cherry-pick' ? 'commit (cherry-pick): ' : 'rebase (continue): '))).toBe(true)
+    expect((await agentCandidates(r.host, r.dir, from, to, boundary)).map((c) => c.hash)).toEqual([to])
+  }
 })
 
 test('unavailable, malformed, ambiguous and truncated witnesses fail closed', async () => {

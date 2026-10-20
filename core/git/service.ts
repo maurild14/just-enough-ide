@@ -74,11 +74,25 @@ async function readReflog(host: Host, root: string) {
   return parseReflog((await git(host, root, ['reflog', 'show', '-z', '--date=raw', '--format=%H%x00%gD%x00%gs', '-n', '501', 'HEAD'])).stdout)
 }
 
+async function missingGitRef(host: Host, root: string, args: string[]): Promise<boolean> {
+  try { await git(host, root, args); return false }
+  catch (error) {
+    if (error instanceof GitError && error.exitCode === 1) return true
+    throw error
+  }
+}
+
 /** Capture before execution; a failed/unreadable baseline must never block a user's tool. */
 export async function captureReflog(host: Host, root: string, head: string | null): Promise<ReflogBoundary | null> {
-  if (head === null) return { entry: null }
-  assertCommitHash(head)
+  if (head !== null) assertCommitHash(head)
   try {
+    if (head === null) {
+      const ref = (await git(host, root, ['symbolic-ref', '--quiet', 'HEAD'])).stdout.trim()
+      if (!ref.startsWith('refs/heads/')) return null
+      const unborn = ['rev-parse', '--verify', '--quiet', 'HEAD']
+      if (!await missingGitRef(host, root, unborn) || !await missingGitRef(host, root, ['reflog', 'exists', 'HEAD'])) return null
+      return await missingGitRef(host, root, unborn) ? { entry: null } : null
+    }
     const entries = await readReflog(host, root)
     return entries?.[0]?.hash === head ? { entry: entries[0].identity } : null
   } catch { return null }

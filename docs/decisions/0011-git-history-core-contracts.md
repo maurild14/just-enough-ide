@@ -2,7 +2,7 @@
 
 > Purpose: resolve v0.2 history, attribution, key and glyph contracts before the host views consume them · Status: current · Last reviewed: 2026-10-20
 
-Status: accepted
+Status: superseded by 0012
 
 ## Context
 

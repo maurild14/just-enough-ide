@@ -1,6 +1,6 @@
 # Hosts
 
-> Purpose: verified API facts, limits and version floors for Claude Code mods and OpenCode 2.x plugins · Status: current · Last reviewed: 2026-10-19
+> Purpose: verified API facts, limits and version floors for Claude Code mods and OpenCode 2.x plugins · Status: current · Last reviewed: 2026-10-20
 
 Source: `PRD.md` §4.2 to §4.4, verified in October 2026. Both APIs are young; a host's exported types are the contract. If a fact here turns out wrong, fix this file and say so in the commit.
 
@@ -11,6 +11,8 @@ Minimum version **2.1.302**. CI also runs against the latest release. The mod AP
 **Mod rules.** A hooks module has no Node, no DOM, no `WebAssembly`, no `eval` and no dynamic `import()`. Imports must stay inside the plugin folder (which is why the whole repo root is the plugin and `core/` ships with it). Relative imports keep their `.ts` extension. `userConfig` values in `plugin.json` are strings; on/off settings are `"on"`/`"off"` pickers.
 
 **Types.** `.claude-plugin/types/` is laid by Claude Code, gitignored and never committed. The plugin's own state contract is `types/index.d.ts`.
+
+Retained v0.1 working-diff state is normalized by shared core `normalizePane` at Claude state reads/updates and OpenCode panel/command memory loads. It preserves selections and flags across reload; drawing performs no migration writes. See `docs/decisions/0012-git-history-evidence-and-state.md`.
 
 | Need | API |
 | --- | --- |

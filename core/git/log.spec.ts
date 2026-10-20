@@ -36,6 +36,12 @@ test('filter grammar keeps quoted spaces and ordinary message words', () => {
   expect(parseGraphFilter("author:'Ana Rivera' branch:feature/ui fix ñ")).toEqual({ author: 'Ana Rivera', branch: 'feature/ui', message: 'fix ñ' })
 })
 
+test('ordinary apostrophes and quoted field punctuation remain literal', () => {
+  expect(parseGraphFilter("don't panic")).toEqual({ message: "don't panic" })
+  expect(parseGraphFilter("rock'n'roll author:O'Neil")).toEqual({ message: "rock'n'roll", author: "O'Neil" })
+  expect(parseGraphFilter(`path:"src/a'b.ts" don't panic`)).toEqual({ path: "src/a'b.ts", message: "don't panic" })
+})
+
 test('real log pages, full refs, unborn HEAD and exact branch validation', async () => {
   const r = await makeRepo({}, 3)
   await r.git('branch', 'feature/ui')

@@ -492,6 +492,38 @@ test('enter on a change opens its diff; back returns with the row selected', asy
   expect(gitRuns(calls, 'add', 'src/api/user.ts')).toHaveLength(2)
 })
 
+test('a retained v0.1 working diff reopens and its actions use the migrated source', async ($, on) => {
+  let retained = false
+  on('state.get', async (_$, e, next) => {
+    const result = await next(e)
+    if (retained && e.plugin === 'jei' && e.key === 'pane' && result.value !== undefined) {
+      return { value: { ...result.value, value: { tab: 'git', stack: ['git', 'git.diff'], selected: { git: 'change-src/api/user.ts' },
+        diff: { path: 'src/api/user.ts', staged: false, untracked: false } } } }
+    }
+    return result
+  })
+  on('state.set', (_$, e, next) => {
+    if (e.plugin === 'jei' && e.key === 'pane') retained = false
+    return next(e)
+  })
+  const calls = await world($, on, repo())
+  const opened = await gitPane($, 'terminal')
+  await opened.press({ key: 'change-src/api/user.ts' })
+  await opened.unmount()
+  for (const surface of SURFACES) {
+    retained = true
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    expect((await ui.find({ type: 'Code' }))?.text).toContain('getUser')
+    expect((await ui.find({ key: 'header' }))?.text).toContain('working tree')
+    await ui.press({ key: 'key-j' })
+    expect(calls.toasts.at(-1)).toBe('This is the last file.')
+    await ui.press({ key: 'back' })
+    await ui.press({ key: 'key-s' })
+    expect(gitRuns(calls, 'add', 'src/api/user.ts').length).toBeGreaterThan(0)
+    await ui.unmount()
+  }
+})
+
 test('diff keys: n and p jump between hunks, a hands a review to the prompt', async ($, on) => {
   const calls = await world($, on, repo())
   const tall = await gitPane($, 'terminal', 80)

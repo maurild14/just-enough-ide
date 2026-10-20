@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { currentView, initialPane, reducePane } from './pane.ts'
+import { currentView, initialPane, normalizePane, reducePane } from './pane.ts'
 
 test('initial and tab switch', () => {
   expect(currentView(initialPane('git'))).toBe('git')
@@ -45,6 +45,20 @@ test('reducer does not mutate', () => {
   const s = initialPane('files')
   reducePane(s, { type: 'select', view: 'files', id: 'x' })
   expect(s.selected).toEqual({})
+})
+
+test('legacy working diffs normalize without losing stack, selection or flags', () => {
+  for (const staged of [false, true]) for (const untracked of [false, true]) {
+    const legacy = { ...initialPane('git'), stack: ['git', 'git.diff'] as const, diff: { path: 'src/a.ts', staged, untracked } }
+    const state = normalizePane({ ...legacy, stack: [...legacy.stack] })
+    expect(state.diff).toEqual({ path: 'src/a.ts', source: { kind: 'working', staged, untracked } })
+    expect(state.stack).toEqual([...legacy.stack])
+    expect(state.selected).toBe(legacy.selected)
+    expect(legacy.diff).toEqual({ path: 'src/a.ts', staged, untracked })
+    expect(normalizePane(state)).toBe(state)
+  }
+  const root = initialPane('files')
+  expect(normalizePane(root)).toBe(root)
 })
 
 

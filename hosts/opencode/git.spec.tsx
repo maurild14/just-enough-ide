@@ -5,6 +5,7 @@ import type { Plugin } from '@opencode/plugin/tui'
 import { createMemo, createSignal, onCleanup } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import { parseOptions } from '../../core/options.ts'
+import { paneMemory } from './pane.tsx'
 import { cellWidth } from '../../core/shared/fit.ts'
 import plugin from '../../tui.ts'
 
@@ -58,7 +59,7 @@ function fixture(options: Record<string, unknown> = {}) {
     renderers.push(r); await r.flush(); return r
   }
   function key(bind: string) { return layers.flatMap((l) => l().commands ?? []).findLast((c) => c.bind === bind && (typeof c.enabled === 'function' ? c.enabled() : c.enabled !== false))?.run() }
-  return { mount, key, calls, confirms, selects, prompts, sent, notices, handlers, setWidth, layers,
+  return { ctx, mount, key, calls, confirms, selects, prompts, sent, notices, handlers, setWidth, layers,
     setGit(value: unknown) { git = value }, confirm(value: boolean | undefined) { confirmation = value }, choose(value: unknown) { selection = value }, edit(value: string | undefined) { edited = value },
     changed() { for (const fn of listeners) fn() },
   }
@@ -72,6 +73,26 @@ test('Git offers initialization outside a repository and immediately reloads aft
   f.key('enter'); await r.flush()
   expect(f.calls.some((c) => c.method === 'init')).toBe(true)
   expect(r.captureCharFrame()).toContain('main*')
+})
+
+test('retained v0.1 diff reopens, navigates files and returns with selection intact', async () => {
+  const f = fixture()
+  f.setGit(repo([entry('a.ts'), entry('b.ts')]))
+  const [, update] = paneMemory(f.ctx)
+  update((draft) => { draft.panes['session-a'] = { tab: 'git', stack: ['git', 'git.diff'], selected: { git: 'changes-a.ts' },
+    diff: { path: 'a.ts', staged: false, untracked: false } } as never })
+  const r = await f.mount()
+  expect(r.captureCharFrame()).toContain('a.ts')
+  expect(r.captureCharFrame()).toContain('after')
+  expect(f.calls.find((c) => c.method === 'diff')?.input).toEqual({ path: 'a.ts', staged: false, untracked: false })
+  f.key('j'); await r.flush()
+  expect(f.calls.filter((c) => c.method === 'diff').at(-1)?.input.path).toBe('b.ts')
+  f.key('k'); await r.flush()
+  expect(f.calls.filter((c) => c.method === 'diff').at(-1)?.input.path).toBe('a.ts')
+  f.key('esc'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Changes')
+  f.key('s'); await r.flush()
+  expect(f.calls.find((c) => c.method === 'stage')?.input).toEqual({ paths: ['a.ts'] })
 })
 
 test('repository metadata, group counts, stage/unstage and confirmed discard use literal relative paths and refresh', async () => {

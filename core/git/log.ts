@@ -5,13 +5,13 @@ export type GraphFilter = { message?: string; author?: string; path?: string; br
 export function parseGraphFilter(text: string): GraphFilter {
   const filter: GraphFilter = {}
   const message: string[] = []
-  for (const raw of text.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) ?? []) {
-    const token = raw.replace(/(["'])(.*?)\1/g, '$2')
-    const field = /^(author|path|branch):(.+)$/.exec(token)
+  for (const raw of text.match(/(?:author|path|branch):(?:"[^"]*"|'[^']*'|\S+)|\S+/g) ?? []) {
+    const field = /^(author|path|branch):(?:"(.*)"|'(.*)'|(.+))$/.exec(raw)
     if (field) {
       const key = field[1] as 'author' | 'path' | 'branch'
-      filter[key] = key === 'branch' && field[2] === '*' ? 'all' : field[2]!
-    } else message.push(token)
+      const value = field[2] ?? field[3] ?? field[4]!
+      filter[key] = key === 'branch' && value === '*' ? 'all' : value
+    } else message.push(raw)
   }
   if (message.length > 0) filter.message = message.join(' ')
   return filter

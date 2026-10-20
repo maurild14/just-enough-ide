@@ -8,7 +8,7 @@ import type { ActivityKind } from '../../core/activity/classify.ts'
 import { hintLine, KEYS, TAB_KEYS } from '../../core/keys.ts'
 import { latest } from '../../core/latest.ts'
 import { parseOptions } from '../../core/options.ts'
-import { currentView, initialPane, reducePane, type PaneAction, type PaneState } from '../../core/pane.ts'
+import { currentView, initialPane, normalizePane, reducePane, type PaneAction, type PaneState } from '../../core/pane.ts'
 import { fitEnd, fitPath } from '../../core/shared/fit.ts'
 import { TAB_NAMES, tabBar } from '../../core/shared/tabs.ts'
 import { insideRel } from '../../core/shared/paths.ts'
@@ -65,7 +65,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   let received = 0
   const live = new Map<string, number>()
   onCleanup(() => { stopped = true })
-  createEffect(() => { setState(memory.panes[props.input.sessionID] ?? initialPane(options.defaultTab)) })
+  createEffect(() => { setState(normalizePane(memory.panes[props.input.sessionID] ?? initialPane(options.defaultTab))) })
   function dispatch(action: PaneAction) {
     const next = reducePane(state(), action)
     setState(next)

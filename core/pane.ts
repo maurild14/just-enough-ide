@@ -12,6 +12,17 @@ export type PaneState = {
   diff?: { source: DiffSource; path: string }
 }
 
+type LegacyPaneState = Omit<PaneState, 'diff'> & { diff: { path: string; staged: boolean; untracked: boolean } }
+
+/** Session state survives plugin reloads, including v0.1's working-diff shape. */
+export function normalizePane(state: PaneState | LegacyPaneState): PaneState {
+  const diff = state.diff
+  if (diff && !('source' in diff)) {
+    return { ...state, diff: { path: diff.path, source: { kind: 'working', staged: diff.staged, untracked: diff.untracked } } }
+  }
+  return state as PaneState
+}
+
 export type PaneAction =
   | { type: 'tab'; tab: Tab }
   | { type: 'open-diff'; source: DiffSource; path: string }

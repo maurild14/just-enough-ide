@@ -2,7 +2,7 @@ import { Plugin } from '@opencode/plugin/tui'
 import { createEffect, onCleanup } from 'solid-js'
 import { parseJeiArgument } from '../../core/command.ts'
 import { parseOptions } from '../../core/options.ts'
-import { initialPane, reducePane } from '../../core/pane.ts'
+import { initialPane, normalizePane, reducePane } from '../../core/pane.ts'
 import { Pane, paneMemory } from './pane.tsx'
 import { JeiRpc } from './rpc.ts'
 
@@ -25,7 +25,7 @@ export default Plugin.define({
           return
         }
         update((draft) => {
-          let state = memory.panes[route.sessionID] ?? initialPane(options.defaultTab)
+          let state = normalizePane(memory.panes[route.sessionID] ?? initialPane(options.defaultTab))
           if (request.tab) state = reducePane(state, { type: 'tab', tab: request.tab })
           if (request.reveal) state = reducePane(state, { type: 'select', view: 'files', id: request.reveal })
           draft.panes[route.sessionID] = state

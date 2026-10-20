@@ -22,12 +22,38 @@ test('merge opens two lanes, common parent merges them and octopus opens three',
   expect(layoutGraph(fixture('octopus'), 'unicode')[1]?.lanes).toBe(3)
 })
 
+test('middle-lane merges preserve unrelated continuations and distinct parent sets', () => {
+  const commit = (hash: string, parents: string[]): LogCommit => ({ hash, parents, author: 'Ana Rivera', time: 0, refs: [], subject: hash })
+  for (const set of ['unicode', 'ascii'] as const) {
+    const history = [commit('M', ['A', 'B', 'C']), commit('A', ['P']), commit('B', ['P']), commit('C', ['P']), commit('P', [])]
+    const simple = layoutGraph(history, set)
+    const extra = layoutGraph(history.map((c) => c.hash === 'B' ? { ...c, parents: ['P', 'C'] } : c), set)
+    expect(simple[2]?.connector).not.toBe(extra[2]?.connector)
+    expect(simple[3]?.column).toBe(2)
+    expect(simple[3]?.glyph).toBe(set === 'unicode' ? '│   ●' : '|   *')
+    expect(simple[4]?.lanes).toBe(1)
+  }
+})
+
+test('passing crossings differ from parent junctions at a live intermediate lane', () => {
+  const commit = (hash: string, parents: string[]): LogCommit => ({ hash, parents, author: 'Ana Rivera', time: 0, refs: [], subject: hash })
+  for (const set of ['unicode', 'ascii'] as const) {
+    const history = [commit('M', ['A', 'B', 'C']), commit('C', ['A'])]
+    const passing = layoutGraph(history, set)[1]!
+    const joined = layoutGraph([history[0]!, commit('C', ['A', 'B'])], set)[1]!
+    expect(passing.connector).toContain(set === 'unicode' ? '╳' : 'x')
+    expect(passing.connector).not.toBe(joined.connector)
+    expect(joined.connector).not.toContain(set === 'unicode' ? '╳' : 'x')
+    expect(cellWidth(set === 'unicode' ? '╳' : 'x')).toBe(1)
+  }
+})
+
 test('missing parents stay live; ASCII has no box characters; glyph widths count lane cells', () => {
   const missing = [{ ...fixture('linear')[0]!, parents: ['missing'] }] as LogCommit[]
   expect(() => layoutGraph(missing, 'unicode')).not.toThrow()
   for (const name of ['linear', 'merge', 'octopus']) {
     for (const row of layoutGraph(fixture(name), 'unicode')) expect(cellWidth(row.glyph)).toBe(2 * row.lanes - 1)
-    for (const row of layoutGraph(fixture(name), 'ascii')) expect(row.glyph + (row.connector ?? '')).toMatch(/^[* |/\\+\-]*$/)
+    for (const row of layoutGraph(fixture(name), 'ascii')) expect(row.glyph + (row.connector ?? '')).toMatch(/^[*x |/\\+\-]*$/)
   }
 })
 

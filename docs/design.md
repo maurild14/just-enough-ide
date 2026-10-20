@@ -59,6 +59,8 @@ Truncation always reads the ellipsis width from the active glyph set. Diff lines
 
 Graph lane rows use `2 * lanes - 1` cells including separators. Pass a cell budget to `fitGraph`, reserving other row content first; clipped rows retain the commit cell whenever at least one cell fits, shift the visible lane window when needed and include the real ellipsis width. The final lone root has no connector row.
 
+Middle lane vacancies remain blank until reused so live continuations do not shift through another stem. A crossing without a parent connection uses the one-cell `╳` (ASCII `x`); actual parent junctions use box junctions (ASCII `+`). See `docs/decisions/0012-git-history-evidence-and-state.md`.
+
 ## 4. Layout grid
 
 ```
