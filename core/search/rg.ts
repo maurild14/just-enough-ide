@@ -1,4 +1,5 @@
-import { insideRel } from '../shared/paths.ts'
+import type { Platform } from '../host.ts'
+import { nativeRel, platformOf } from '../shared/paths.ts'
 
 export type SearchQuery = { text: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; include: string[]; exclude: string[] }
 export type Match = { rel: string; line: number; text: string; ranges: [number, number][] }
@@ -56,7 +57,7 @@ function base64Bytes(text: string): Uint8Array | null {
   return new Uint8Array(out)
 }
 
-export function parseRgLine(json: string, root: string): Match | { error: string } | null {
+export function parseRgLine(json: string, root: string, platform: Platform = platformOf(root)): Match | { error: string } | null {
   try {
     const event = JSON.parse(json)
     if (event?.type === 'error') {
@@ -68,7 +69,7 @@ export function parseRgLine(json: string, root: string): Match | { error: string
     const pathBytes = typeof data?.path?.bytes === 'string' ? base64Bytes(data.path.bytes) : null
     const path = typeof data?.path?.text === 'string' ? data.path.text : pathBytes === null ? null : decodeUtf8(pathBytes)
     if (path === null || path.includes('\0') || !Number.isSafeInteger(data.line_number) || data.line_number < 1 || !Array.isArray(data.submatches)) return null
-    const rel = insideRel(root, path)
+    const rel = nativeRel(root, path, platform)
     if (!rel) return null
     if (typeof data.lines?.text !== 'string') {
       return typeof data.lines?.bytes === 'string' && base64Bytes(data.lines.bytes) !== null

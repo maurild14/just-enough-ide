@@ -27,7 +27,7 @@ test('UTF-8 offsets become UTF-16 indexes for accents, emoji and CJK', () => {
 
 test('real acme-app rg capture keeps Unicode ranges and strips CRLF', () => {
   const lines = readFileSync(new URL('../../test/fixtures/search/acme-app.jsonl', import.meta.url), 'utf8').trim().split('\n')
-  const parsed = lines.map((line) => parseRgLine(line, '/work/acme-app')).filter(Boolean)
+  const parsed = lines.map((line) => parseRgLine(line, '/work/acme-app', 'win32')).filter(Boolean)
   expect(parsed).toEqual([
     { rel: 'src/unicode.ts', line: 1, text: 'ñandú 😀 漢字 target', ranges: [[12, 18]] },
     { rel: 'src/crlf.ts', line: 1, text: 'const target = 1', ranges: [[6, 12]] },
@@ -50,4 +50,11 @@ test('strict UTF-8 accepts valid scalars and rejects overlong, surrogate and tru
   for (const bytes of [[0xc0, 0xaf], [0xed, 0xa0, 0x80], [0xf4, 0x90, 0x80, 0x80], [0xf0, 0x9f], [0x80], [0xc2, 0x20]]) {
     expect(decodeUtf8(new Uint8Array(bytes))).toBeNull()
   }
+})
+
+test('rg literal paths distinguish POSIX colon names from Windows drive paths', () => {
+  const event = (path: string) => JSON.stringify({ type: 'match', data: { path: { text: path }, lines: { text: 'target\n' }, line_number: 1, submatches: [{ start: 0, end: 6 }] } })
+  expect(parseRgLine(event('./a:b.txt'), '/work/acme-app', 'linux')).toEqual({ rel: 'a:b.txt', line: 1, text: 'target', ranges: [[0, 6]] })
+  expect(parseRgLine(event('./a\\b.txt'), '/work/acme-app', 'linux')).toBeNull()
+  expect(parseRgLine(event('.\\src\\a.txt'), 'C:/work/acme-app', 'win32')).toEqual({ rel: 'src/a.txt', line: 1, text: 'target', ranges: [[0, 6]] })
 })

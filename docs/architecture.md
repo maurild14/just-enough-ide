@@ -71,6 +71,8 @@ The OpenCode foundation (Task 13) is `nodeHost(generate)` in `hosts/opencode/hos
 
 The v0.3 `core/search/` services are built ahead of native views/RPC. `rg.ts` contains argv, strict UTF-8/byte-index and tolerant rg/NUL-Git parsers; `results.ts` groups the first 2,000 result lines and caps agent text at 12,000 characters; `replace.ts` plans checked line/range edits, validates regex substrings and emits parseable unified previews; `quickopen.ts` parses numeric line suffixes and ranks touched/recent/basename matches. `service.ts` owns cancellable rg search, verified first-occurrence Git fallback, the 50,000-path file list, shared `buildReplacePlan` and fresh apply checks. No query debounce lives in core: host views must apply the planned 150 ms debounce and latest-wins guard. Search completion carries engine, first error line, elapsed milliseconds and truncation. ADR 0019 records the explicit-directory/files-mode/glob exceptions, 8 MiB fallback buffers and complete 4 MiB write-read limit.
 
+ADR 0020 adds `nativeRel(root, path, platform)` for Search's input and real-path boundaries while preserving older helper behavior. `parseRgLine` takes an optional platform; services always supply `host.platform`. POSIX colons stay literal, and unsupported POSIX backslashes are omitted/refused before they could alias slash filenames. Direct replacement uses `unsupported-path`. Git fallback retains empty first matches only after two complete successful streams and JS verification at the reported index; other complete but unverifiable pairs produce an explicit error.
+
 ```
 host events (tool hooks, file changes, cwd) -+
                                               +-> refresh scheduler -> core (parse, layout, rank) -> view model -> host view

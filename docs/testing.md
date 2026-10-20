@@ -54,6 +54,8 @@ The v0.3 Search foundation has five `core/search/*.spec.ts` seams: rg argv/JSON/
 
 Oversized stdout/stderr regressions exercise real Node and fake-host children and Claude's typed spawn seam, asserting explicit rejection and source cleanup. Claude also tests stalled-consumer backpressure and host-clock timeout cancellation. Replacement expansion is measured in UTF-8 bytes and refused above the shared 4 MiB write limit.
 
+Task 1 review fixes add Linux-Host simulations containing distinct `a\b.txt` and `a/b.txt` targets, assert no counterpart read/write, and exercise colon filenames through parse/search/plan/apply/Quick Open. Shared tests retain Windows containment. Real NoRg fixtures verify `^`, empty regex and first-zero alternatives over Unicode/CRLF/empty lines; synthetic streams reject zero inference after truncation/failure and mismatched companions. POSIX backslashes are explicitly unsupported rather than aliased. These simulations do not replace real POSIX filesystem QA, and source-close tests do not certify silent pending-pull cancellation on the installed Claude host.
+
 Every view is rendered as a snapshot at widths 24, 40, 80 and 120 (200 as a smoke test) and heights 10, 24 and 5, in all three glyph sets, and asserts the checklist in `docs/design.md` §10: no line wider than the pane, exact height, selected row visible, status letters present, right-aligned columns, truncated paths keep the basename, `NO_COLOR` still distinguishes states, no raw color values outside `theme.ts`. A resize sequence (120, 24, 10 rows, 120) must return the same selection and a final output equal to a fresh render. Status: draft — built in milestone 0.1 (plan Tasks 8, 11, 12, 16, 17).
 
 ## Manual QA

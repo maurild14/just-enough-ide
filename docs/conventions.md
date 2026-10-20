@@ -37,6 +37,8 @@ Status: current.
 
 Search exception (ADR 0019): the read-only Git grep fallback uses the existing argv/environment builders with generated `:(glob)`/`:(exclude,glob)` pathspecs and overrides only `GIT_LITERAL_PATHSPECS=0`. Keep every other fixed Git value. Content rg uses `--json --no-config`, explicit `.` and `-e <pattern>`; Quick Open files mode uses `--files --no-config --null` without JSON. Machine-returned paths use `insideRel` so leading/trailing whitespace is literal.
 
+For Search and new symbol/RPC reads, use `nativeRel(root, path, host.platform)` as the machine-path boundary (ADR 0020), including real-path confinement. It preserves POSIX colon names and conservatively refuses POSIX backslashes before legacy normalization. Existing path-helper defaults remain unchanged. `parseRgLine` accepts the platform explicitly; omit it only when root-shape inference is sufficient.
+
 ## UI copy
 
 - English only. Sentences end with a period; no exclamation marks. Labels are short and in sentence case.

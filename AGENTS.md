@@ -37,6 +37,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 | Colored history, right-aligned hashes or shared Back navigation | `docs/decisions/0017-colored-history-and-shared-back-navigation.md` |
 | Claude Sync missing-review recovery or shell permission guidance | `docs/decisions/0018-safe-sync-review-recovery.md` |
 | Search streaming, fallback, replace safety or preview origins | `docs/decisions/0019-search-streams-and-safe-replace.md` |
+| Native Search filenames or zero-width fallback verification | `docs/decisions/0020-native-search-paths-and-zero-width-fallback.md` |
 | Checking what is built and known debt | `docs/quality.md` |
 | Preparing a release (manual QA, release pipeline) | `docs/qa.md`, `CONTRIBUTING.md` |
 | Changing a rule or a past decision | `docs/decisions/README.md` |

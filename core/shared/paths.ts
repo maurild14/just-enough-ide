@@ -16,12 +16,12 @@ export function joinPath(dir: string, name: string): string {
 
 type Norm = { prefix: string; segs: string[] }
 
-function normalize(path: string): Norm {
-  const p = toPosix(path)
+function normalize(path: string, windows = true): Norm {
+  const p = windows ? toPosix(path) : path
   let prefix = ''
   let rest = p
-  const drive = /^[A-Za-z]:/.exec(p)
-  if (p.startsWith('//')) {
+  const drive = windows ? /^[A-Za-z]:/.exec(p) : null
+  if (windows && p.startsWith('//')) {
     prefix = '//'
     rest = p.slice(2)
   } else if (drive) {
@@ -51,9 +51,9 @@ function foldsCase(n: Norm): boolean {
 }
 
 /** Number of leading segments of `path` that make up `root`, or -1 when not inside. */
-function insideCount(root: string, path: string): number {
-  const r = normalize(root)
-  const p = normalize(path)
+function insideCount(root: string, path: string, windows = true): number {
+  const r = normalize(root, windows)
+  const p = normalize(path, windows)
   const fold = foldsCase(r) || foldsCase(p)
   const key = (s: string) => (fold ? s.toLowerCase() : s)
   const bare = (s: string) => key(s.replace(/^([A-Za-z]:)\/$/, '$1'))
@@ -104,6 +104,15 @@ export function insideRel(root: string, path: string): string | null {
   const full = absolute ? p : joinPath(root, p)
   if (!isInside(root, full)) return null
   return relativeTo(root, full)
+}
+
+/** Native machine paths: POSIX colons are literal; unsupported POSIX backslashes fail before normalization. */
+export function nativeRel(root: string, path: string, platform: 'win32' | 'darwin' | 'linux'): string | null {
+  if (platform === 'win32') return insideRel(root, path)
+  if (root.includes('\\') || path.includes('\\')) return null
+  const full = path.startsWith('/') || root === '' ? path : `${root}/${path}`
+  const count = insideCount(root, full, false)
+  return count < 0 ? null : normalize(full, false).segs.slice(count).join('/')
 }
 
 /**

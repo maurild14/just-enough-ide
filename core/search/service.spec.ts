@@ -142,3 +142,98 @@ test('fallback framing preserves literal newline names and exact first match len
   await search(host, root, query, (m) => seen.push(m)).done
   expect(seen).toEqual([{ rel: 'a\nb.txt', line: 1, text: 'ñ target target', ranges: [[2, 8]] }])
 })
+
+test('POSIX literal names never read or replace an unselected slash counterpart', async () => {
+  const root = '/work/acme-app'
+  const files = new Map([['a\\b.txt', 'target\n'], ['a/b.txt', 'target\n'], ['a:b.txt', 'target\n']])
+  const reads: string[] = []
+  const writes: string[] = []
+  let selected = 'a\\b.txt'
+  const host: Host = {
+    platform: 'linux',
+    async run() { return { exitCode: 0, stderr: '', stdout: [...files.keys()].join('\0') + '\0' } },
+    stream() { return { lines: (async function* () { yield JSON.stringify({ type: 'match', data: { path: { text: `./${selected}` }, lines: { text: 'target\n' }, line_number: 1, submatches: [{ start: 0, end: 6 }] } }) })(), done: Promise.resolve({ exitCode: 0, stderr: '' }), cancel() {} } },
+    async list() { return [] },
+    async stat(path) {
+      if (path === root) return { kind: 'dir', size: 0, realPath: root }
+      const text = files.get(path.slice(root.length + 1))
+      return text === undefined ? null : { kind: 'file', size: text.length, realPath: path }
+    },
+    async readHead(path) { reads.push(path); const text = files.get(path.slice(root.length + 1)); return text === undefined ? null : new Uint8Array(Buffer.from(text)) },
+    async readText(path) { reads.push(path); return files.get(path.slice(root.length + 1)) ?? null },
+    async writeText(path, text) { writes.push(path); files.set(path.slice(root.length + 1), text) },
+    async complete() { return '' },
+  }
+  const matches: Match[] = []
+  await search(host, root, query, (match) => matches.push(match)).done
+  expect(matches).toEqual([])
+  expect(await buildReplacePlan(host, root, query, 'done')).toEqual({ files: [], skipped: [] })
+  expect(await applyReplace(host, root, [{ rel: 'a\\b.txt', before: 'target\n', after: 'done\n', count: 1 }])).toEqual({ written: [], skipped: [{ rel: 'a\\b.txt', reason: 'unsupported-path' }] })
+  expect(reads).toEqual([])
+  expect(writes).toEqual([])
+  expect(files.get('a/b.txt')).toBe('target\n')
+  selected = 'a:b.txt'
+  await search(host, root, query, (match) => matches.push(match)).done
+  expect(matches).toEqual([{ rel: 'a:b.txt', line: 1, text: 'target', ranges: [[0, 6]] }])
+  const plan = await buildReplacePlan(host, root, query, 'done')
+  expect(plan.files[0]?.rel).toBe('a:b.txt')
+  expect(await applyReplace(host, root, plan.files)).toEqual({ written: ['a:b.txt'], skipped: [] })
+  expect(writes).toEqual(['/work/acme-app/a:b.txt'])
+  expect(reads.every((path) => path === '/work/acme-app/a:b.txt')).toBe(true)
+  expect(files.get('a/b.txt')).toBe('target\n')
+  expect(await quickOpenFiles(host, root)).toEqual(['a/b.txt', 'a:b.txt'])
+})
+
+test('real Git fallback retains first zero-width matches for anchors and the empty regex', async () => {
+  const repo = await makeRepo({ 'a.txt': 'ñ target\r\n\nlast\n' })
+  for (const text of ['^', '', '^|target']) {
+    const q = { ...query, regex: true, text }
+    const matches: Match[] = []
+    expect(await search(new NoRg(), repo.dir, q, (match) => matches.push(match)).done).toMatchObject({ engine: 'git grep', error: null, truncated: false })
+    expect(matches).toEqual([
+      { rel: 'a.txt', line: 1, text: 'ñ target', ranges: [[0, 0]] },
+      { rel: 'a.txt', line: 2, text: '', ranges: [[0, 0]] },
+      { rel: 'a.txt', line: 3, text: 'last', ranges: [[0, 0]] },
+    ])
+    expect((await buildReplacePlan(new NoRg(), repo.dir, q, '>')).files[0]?.after).toBe('>ñ target\r\n>\n>last\n')
+  }
+})
+
+test('fallback never infers zero-width matches from truncated or failed companion output', async () => {
+  const root = makeTemp()
+  writeFiles(root, { 'a.txt': 'target\n' })
+  for (const mode of ['full-truncated', 'only-truncated', 'only-error']) {
+    const host = new NoRg()
+    host.run = async () => ({ exitCode: 0, stderr: '', stdout: root })
+    const baseStream = host.stream.bind(host)
+    host.stream = (argv, options) => {
+      if (argv[0] === 'rg') return baseStream(argv, options)
+      const only = argv.includes('--only-matching')
+      return {
+        lines: (async function* () {
+          if (!only) yield 'a.txt\0' + '1\0' + '1\0target'
+          if ((!only && mode === 'full-truncated') || (only && mode === 'only-truncated')) yield 'x'.repeat(8 * 1024 * 1024 + 1)
+        })(),
+        done: Promise.resolve({ exitCode: only && mode === 'only-error' ? 2 : 0, stderr: only && mode === 'only-error' ? 'grep failed' : '' }), cancel() {},
+      }
+    }
+    const matches: Match[] = []
+    const result = await search(host, root, { ...query, text: '^', regex: true }, (match) => matches.push(match)).done
+    expect(matches).toEqual([])
+    expect(result).toMatchObject(mode === 'only-error' ? { error: 'grep failed', truncated: false } : { error: null, truncated: true })
+  }
+})
+
+test('fallback reports an explicit error when its first match cannot be verified', async () => {
+  const repo = await makeRepo({ 'a.txt': 'ñ target\n123\n' })
+  const result = await search(new NoRg(), repo.dir, { ...query, text: '[[:alpha:]]*', regex: true }, () => {}).done
+  expect(result.error).toContain('Git grep could not verify the first match')
+  const host = new NoRg()
+  const baseStream = host.stream.bind(host)
+  host.stream = (argv, options) => argv[0] === 'rg' ? baseStream(argv, options) : {
+    lines: (async function* () { yield 'a.txt\0' + '1\0' + '4\0' + (argv.includes('--only-matching') ? 'other' : 'ñ target') })(),
+    done: Promise.resolve({ exitCode: 0, stderr: '' }), cancel() {},
+  }
+  const mismatch = await search(host, repo.dir, query, () => {}).done
+  expect(mismatch.error).toContain('Git grep could not verify the first match')
+})

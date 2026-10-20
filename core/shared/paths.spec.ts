@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { insideRel, isInside, joinPath, nativePath, parentDirs, platformOf, projectRel, relativeTo, toPosix } from './paths.ts'
+import { insideRel, isInside, joinPath, nativePath, nativeRel, parentDirs, platformOf, projectRel, relativeTo, toPosix } from './paths.ts'
 
 test('toPosix', () => expect(toPosix('a\\b\\c')).toBe('a/b/c'))
 
@@ -97,4 +97,19 @@ test('nativePath uses backslashes on Windows only', () => {
   expect(nativePath('win32', 'C:/work/acme-app/a b.ts')).toBe('C:' + String.fromCharCode(92) + 'work' + String.fromCharCode(92) + 'acme-app' + String.fromCharCode(92) + 'a b.ts')
   expect(nativePath('linux', '/work/acme-app/a.ts')).toBe('/work/acme-app/a.ts')
   expect(nativePath('darwin', '/Users/ana/acme-app/a.ts')).toBe('/Users/ana/acme-app/a.ts')
+})
+
+test('native literal paths keep POSIX colons and refuse unsupported backslashes before normalization', () => {
+  for (const platform of ['linux', 'darwin'] as const) {
+    expect(nativeRel('/work/acme-app', './a:b.txt', platform)).toBe('a:b.txt')
+    expect(nativeRel('/work/acme-app', 'a:b.txt', platform)).toBe('a:b.txt')
+    expect(nativeRel('/work/acme-app', '/work/acme-app/a:b.txt', platform)).toBe('a:b.txt')
+    expect(nativeRel('/work/acme-app', './a\\b.txt', platform)).toBeNull()
+    expect(nativeRel('/work/acme-app', '../outside.txt', platform)).toBeNull()
+    expect(nativeRel('/work/acme-app', '/outside.txt', platform)).toBeNull()
+    expect(nativeRel('//work/acme-app', '//work/acme-app/a:b.txt', platform)).toBe('a:b.txt')
+    expect(nativeRel('//work/acme-app', '//WORK/acme-app/a.txt', platform)).toBeNull()
+  }
+  expect(nativeRel('C:/work/acme-app', 'src\\a.txt', 'win32')).toBe('src/a.txt')
+  for (const path of ['C:outside.txt', 'D:/outside.txt', '..\\outside.txt']) expect(nativeRel('C:/work/acme-app', path, 'win32')).toBeNull()
 })

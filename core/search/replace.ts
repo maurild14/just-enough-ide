@@ -1,7 +1,7 @@
 import type { Match, SearchQuery } from './rg.ts'
 
 export type ReplaceFile = { rel: string; before: string; after: string; count: number }
-export type Skipped = { rel: string; reason: 'binary' | 'not-utf8' | 'changed' | 'regex-differs' | 'outside-root' | 'too-large' | 'unreadable' }
+export type Skipped = { rel: string; reason: 'binary' | 'not-utf8' | 'changed' | 'regex-differs' | 'outside-root' | 'too-large' | 'unreadable' | 'unsupported-path' }
 
 export function planReplace(q: SearchQuery, replacement: string, files: { rel: string; text: string; matches: Match[] }[]): { files: ReplaceFile[]; skipped: Skipped[] } {
   const planned: ReplaceFile[] = []
