@@ -40,6 +40,7 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] On Claude Code, a preview or diff with lines wider than the pane cuts them at the edge and the hint line stays at the bottom of the docked pane.
 - [ ] A repo with a real `pre-commit` hook: on Claude Code the commit goes through the agent's shell tool (permission asked first; the message file is written into `.git` via `$.fs.write`); on OpenCode the hook runs. A failing hook shows its message.
 - [ ] Claude Code: a failing shell-tool step shows a readable toast line.
+- [ ] Claude Code, disposable auto-mode session: if Sync reports the missing server review, it stops with Ask Claude/Cancel, without retrying or bypassing hooks/permissions. Ask inserts once into a draft without sending it; unavailable prompt/root change retains the question, and Cancel or `q` does no work. After a completed pull, recovery requests only pending push. Check 24/40/80/120 columns and five rows, plus Branches/diff Back while the question is hidden. Send the draft only when deliberately testing host authorization; later approval is not guaranteed.
 
 ## 4. Diff view
 

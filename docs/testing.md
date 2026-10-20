@@ -60,6 +60,10 @@ The Claude Code v0.2 `graph.test.tsx` and `branches.test.tsx` use the native ter
 
 What the kits cannot see (real paint, real terminals, a real agent) is checked by hand on both hosts before each release, on Windows and one of macOS or Linux. The checklist is `docs/qa.md`.
 
+## Claude Sync recovery
+
+Claude Sync recovery regressions script the exact missing-request classifier refusal through both shell tools' check-deny, call-deny, error text and string error-result channels. They verify pending pull/push and chosen strategy, no retry/direct fallback or submit, separated insertion preserving an existing draft, failed fill, Cancel/q, a stale Git snapshot beside a changed current cwd, ordinary denials/Git errors/divergence/background/interruption, and successful output containing a quoted refusal. Terminal/desktop render checks retain both answers at 24/40/80/120 columns and five rows, then navigate Branches/diff and return to the retained question. These mocks do not prove live server authorization; use the disposable-session QA in `docs/qa.md`.
+
 ## CI
 
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request: `bun run test` on Ubuntu, macOS and Windows; `bun run typecheck` (core + OpenCode); `bun run check:docs`; `claude plugin validate` and `claude plugin test` on Ubuntu; and a gitleaks scan of the full history. The Claude Code job is `continue-on-error` because the CLI may need a signed-in account in CI, so run `bun run validate && bun run test:claude` before every release. The local `typecheck:claude` script needs types Claude Code lays at `.claude-plugin/types/` (gitignored, never committed), so CI checks the Claude Code half with `claude plugin validate` instead.

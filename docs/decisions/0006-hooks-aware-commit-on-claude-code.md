@@ -4,6 +4,8 @@
 
 Status: accepted
 
+Permission-guidance amendment: ADR `0018-safe-sync-review-recovery.md` supersedes the broad shell-permission suggestion below. JEI explains normal host review and offers prompt-only recovery for Sync's verified missing-review refusal; hook routing stays accepted.
+
 ## Context
 
 On Claude Code, `$.process.run` runs git with repository hooks off, so pre-commit, commit-msg and similar hooks do not fire. On OpenCode git is a normal process and hooks fire.

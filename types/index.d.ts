@@ -63,6 +63,7 @@ export type JeiAsk =
   | { kind: 'discard'; paths: string[]; all: boolean }
   | { kind: 'sensitive'; paths: string[] }
   | { kind: 'divergence' }
+  | { kind: 'sync-review'; root: string; pending: string[][]; choice?: 'merge' | 'rebase' }
   | { kind: 'history'; root: string; operation: 'checkout' | 'revert' | 'switch' | 'create'; target: string; start: string | null; confirm: string }
 
 export type JeiHistory = {

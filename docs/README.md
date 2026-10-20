@@ -26,6 +26,7 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/decisions/0015-opencode-history-rpc-and-native-dialogs.md` | OpenCode session-aware history RPC, pinned comparisons, native dialogs and installed schema/clipboard limits. |
 | `docs/decisions/0016-history-cell-budgets-and-action-reachability.md` | Actual graph cell budgets, reachable Sync and established URL-opener semantics. |
 | `docs/decisions/0017-colored-history-and-shared-back-navigation.md` | Semantic graph colors, final aligned hashes, Graph-first order and one-level Back navigation. |
+| `docs/decisions/0018-safe-sync-review-recovery.md` | Root-bound prompt-only recovery for Claude Sync's missing auto-mode review. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
 
 ## Keeping docs current

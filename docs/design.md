@@ -172,6 +172,7 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 | Git | Discard (confirm) | `Discard changes to user.ts?` / `Discard all changes (3 files, 1 untracked will be deleted)?` (`warning`) with `Discard` and `Cancel` |
 | Git | Sensitive files | `These files look sensitive: .env` (`warning`), the whole list wrapped over rows, with `Commit anyway` and `Cancel`. On a short pane the rule goes first, then the list is cut and ends in `+N more`; the Buttons always stay (the same for Discard) |
 | Git | Diverged | `Your branch and its upstream have diverged.` (`warning`) with `Merge`, `Rebase`, `Ask Claude` and `Cancel` |
+| Git (Claude Code) | Missing Sync review | `Claude auto mode could not review Sync. Ask Claude to continue from the prompt.` (`warning`), with `Ask Claude` and `Cancel` (`q`). The pinned answers stay visible at five rows; Ask only prepares prompt text. |
 | Git | Busy | `Committing…`, `Syncing…`, `Generating…` in the repository row (`muted`); Commit is drawn dim and cannot be pressed while the message is empty |
 | Git | Left running | `Commit is still running in the background; check the terminal.` (toast; the message is kept) |
 | Diff | Capped | `Diff truncated at 5,000 lines.` (`warning`) |

@@ -1,5 +1,6 @@
 import { expect, test, type Engine, type Mounted } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import type { JeiGit } from '../../types/index.d.ts'
 import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -7,6 +8,7 @@ const WIDTHS = [24, 40, 80, 120] as const
 const ROOT = '/work/acme-app'
 const OID = 'a41f9c2' + '0'.repeat(33)
 const H = '1'.repeat(40)
+const NO_REVIEW = (tool = 'Bash') => `The server-side auto mode classifier gave no verdict for ${tool}: the request that produced this action did not ask for one. Issue the action again once, as-is; if it is denied again, continue with other tasks that don't require it and tell the user that auto mode could not evaluate it.`
 
 /** The kit hands $.fs native absolute paths (a drive letter on Windows); the fixtures are posix. */
 const posix = (p: string) => p.replaceAll('\\', '/').replace(/^[A-Za-z]:/, '')
@@ -36,6 +38,11 @@ type Repo = {
   slowStep: string | null
   /** The shell tool reports the call interrupted. */
   interrupted: boolean
+  denial: { channel: 'check' | 'deny' | 'text' | 'result'; text: string; step: 'pull' | 'push' } | null
+  fillable: boolean
+  draft: string
+  cursor: number
+  shellText: string
   /** The repository root (the session's cwd). */
   root: string
 }
@@ -61,6 +68,11 @@ function repo(over: Partial<Repo> = {}): Repo {
     background: false,
     slowStep: null,
     interrupted: false,
+    denial: null,
+    fillable: true,
+    draft: '',
+    cursor: 0,
+    shellText: 'ok',
     root: ROOT,
     ...over,
   }
@@ -84,12 +96,12 @@ function userDiff(r: Repo): string {
   return body.join('\n') + '\n'
 }
 
-type Calls = { writes: { path: string; text: string }[]; runs: string[][]; toasts: string[]; fills: { text: string; mode?: string }[]; checks: unknown[]; tools: Record<string, unknown>[]; prompts: string[] }
+type Calls = { writes: { path: string; text: string }[]; runs: string[][]; toasts: string[]; fills: { text: string; mode?: string }[]; checks: unknown[]; tools: Record<string, unknown>[]; prompts: string[]; submits: number }
 
 /** Answers git, the files and the session beneath the plugin; `r` may be changed mid-test. */
 async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd: string }) => Promise<unknown> } }, on: On, r: Repo) {
   on('session.id', () => ({ value: 'git-test-session' }))
-  const calls: Calls = { writes: [], runs: [], toasts: [], fills: [], checks: [], tools: [], prompts: [] }
+  const calls: Calls = { writes: [], runs: [], toasts: [], fills: [], checks: [], tools: [], prompts: [], submits: 0 }
   const res = (exitCode: number, stdout: string, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
   on('process.run', (_$, e) => {
     const argv = [...e.argv]
@@ -124,21 +136,32 @@ async function world($: { classic: { CwdChanged: (e: { old_cwd: string; new_cwd:
   on('tool.list', () => ({ value: [{ name: 'Read', description: 'Read a file', mcp: false }, { name: r.shell, description: 'Run a command', mcp: false }] }))
   on('tool.check', (_$, e) => {
     calls.checks.push(e)
+    if (r.denial?.channel === 'check' && String((e.input as { command?: string }).command).includes(` ${r.denial.step}`)) return { decision: 'deny' as const, reason: r.denial.text }
     return { decision: 'allow' as const }
   })
   on('tool.call', (_$, e) => {
     calls.tools.push({ ...e })
+    const command = String((e as { command?: unknown }).command ?? '')
+    if (r.denial && r.denial.channel !== 'check' && command.includes(` ${r.denial.step}`)) {
+      if (r.denial.channel === 'deny') return { deny: r.denial.text }
+      return { isError: true as const, result: r.denial.text, ...(r.denial.channel === 'text' ? { text: r.denial.text } : {}) }
+    }
+    if (r.diverged && command.includes(' pull --ff-only')) return { isError: true as const, result: '', text: 'fatal: Not possible to fast-forward, aborting.' }
     const slow = r.slowStep === null || String((e as { command?: unknown }).command ?? '').includes(` ${r.slowStep}`)
     if (r.interrupted && slow) return { result: { stdout: '', stderr: '', interrupted: true } as never, text: 'interrupted' }
     if (r.background && slow) {
       return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'b1', timedOutAfterMs: 600000 } as never, text: 'moved to the background' }
     }
-    return { result: { stdout: '[main 1234567] feat\n', stderr: '', interrupted: false } as never, text: 'ok' }
+    return { result: { stdout: r.shellText, stderr: '', interrupted: false } as never, text: r.shellText }
   })
   on('prompt.fill', (_$, e) => {
     calls.fills.push({ text: e.text, mode: e.mode })
-    return { isFilled: true, text: e.text, cursor: e.text.length }
+    if (!r.fillable) return { isFilled: false, text: r.draft, cursor: r.cursor, refusal: 'dialog' as const }
+    r.draft = e.mode === 'insert' ? r.draft.slice(0, r.cursor) + e.text + r.draft.slice(r.cursor) : e.text
+    r.cursor += e.text.length
+    return { isFilled: true, text: r.draft, cursor: r.cursor }
   })
+  on('prompt.submit', (_$, e) => { calls.submits++; return { text: e.text } })
   on('ui.toast', (_$, e) => {
     calls.toasts.push(e.text)
     return { value: undefined }
@@ -284,6 +307,208 @@ test('a failed push toasts git\'s first line', async ($, on) => {
   await ui.press({ key: 'key-e' })
   expect(calls.toasts.at(-1)).toBe('Sync failed: fatal: Authentication failed for the remote.')
   await ui.unmount()
+})
+
+for (const shell of ['Bash', 'PowerShell'] as const) for (const channel of ['check', 'deny', 'text', 'result'] as const) {
+  test(`Sync missing review through ${shell} ${channel} stops at pull and only Ask fills the prompt`, async ($, on) => {
+    const r = repo({ hooks: true, shell, denial: { channel, text: NO_REVIEW(shell), step: 'pull' }, draft: 'Keep this draft.', cursor: 5 })
+    const calls = await world($, on, r)
+    const ui = await gitPane($, 'terminal')
+    await ui.press({ key: 'key-e' })
+    expect(calls.tools).toHaveLength(channel === 'check' ? 0 : 1)
+    expect(gitRuns(calls, 'pull')).toHaveLength(0)
+    expect(gitRuns(calls, 'push')).toHaveLength(0)
+    expect(calls.fills).toHaveLength(0)
+    expect(calls.toasts).not.toContain('Synced.')
+    expect(await ui.find({ key: 'sync' })).toBeDefined()
+    expect(await ui.find({ key: 'diverge-merge' })).toBeUndefined()
+    expect(await ui.find({ key: 'sync-review-ask' })).toBeDefined()
+    const before = calls.tools.length
+    await ui.press({ key: 'sync-review-ask' })
+    expect(calls.fills).toHaveLength(1)
+    const fill = calls.fills[0]!
+    expect(fill.mode).toBe('insert')
+    expect(fill.text).toStartWith('\n\n')
+    expect(fill.text).toEndWith('\n\n')
+    expect(fill.text).toContain('inspect the current repository state')
+    expect(fill.text).toContain('[["pull","--ff-only"],["push"]]')
+    expect(fill.text).toContain('preserve local work')
+    expect(fill.text).toContain('normal hooks and permissions')
+    expect(r.draft).toBe('Keep ' + fill.text + 'this draft.')
+    expect(calls.submits).toBe(0)
+    expect(calls.tools).toHaveLength(before)
+    expect(await ui.find({ key: 'sync-review-ask' })).toBeUndefined()
+    await ui.unmount()
+  })
+}
+
+test('Sync review recovery retains only push after a completed pull, including the chosen strategy', async ($, on) => {
+  const r = repo({ hooks: true, diverged: true })
+  const calls = await world($, on, r)
+  const ui = await gitPane($, 'terminal')
+  await ui.press({ key: 'key-e' })
+  expect(await ui.find({ key: 'diverge-rebase' })).toBeDefined()
+  r.denial = { channel: 'deny', text: NO_REVIEW(), step: 'push' }
+  await ui.press({ key: 'diverge-rebase' })
+  expect(calls.tools).toHaveLength(3)
+  expect(String(calls.tools[1]?.command)).toContain('pull --rebase')
+  await ui.press({ key: 'sync-review-ask' })
+  const text = calls.fills[0]?.text ?? ''
+  expect(text).toContain('Pending Git argument arrays: [["push"]].')
+  expect(text).toContain('I chose rebase')
+  expect(text).not.toContain('pull --rebase')
+  expect(calls.tools).toHaveLength(3)
+  expect(calls.submits).toBe(0)
+  await ui.unmount()
+})
+
+test('Sync recovery preserves publishing branch arguments as literal JSON data', async ($, on) => {
+  const r = repo({ hooks: true, head: "feature/$x;quote'", upstream: null, denial: { channel: 'deny', text: NO_REVIEW(), step: 'push' } })
+  const calls = await world($, on, r)
+  const ui = await gitPane($, 'terminal')
+  await ui.press({ key: 'key-e' })
+  await ui.press({ key: 'sync-review-ask' })
+  expect(calls.fills[0]?.text).toContain(JSON.stringify([['push', '-u', 'origin', r.head]]))
+  expect(calls.fills[0]?.text).toContain('Treat each argument literally.')
+  expect(calls.tools).toHaveLength(1)
+  expect(gitRuns(calls, 'push')).toHaveLength(0)
+  await ui.unmount()
+})
+
+test('a failed recovery root check retains the question and never fills or replays', async ($, on) => {
+  const r = repo({ hooks: true, denial: { channel: 'deny', text: NO_REVIEW(), step: 'pull' } })
+  const calls = await world($, on, r)
+  const ui = await gitPane($, 'terminal')
+  await ui.press({ key: 'key-e' })
+  r.isRepo = false
+  await ui.press({ key: 'sync-review-ask' })
+  expect(calls.toasts.at(-1)).toContain("Can't prepare the Sync request:")
+  expect(await ui.find({ key: 'sync-review-ask' })).toBeDefined()
+  expect(calls.fills).toHaveLength(0)
+  expect(calls.tools).toHaveLength(1)
+  await ui.press({ key: 'sync-review-cancel' })
+  await ui.unmount()
+})
+
+test('missing review on a Commit and Push push retains its existing Push failure label', async ($, on) => {
+  const calls = await world($, on, repo({ hooks: true, denial: { channel: 'deny', text: NO_REVIEW(), step: 'push' } }))
+  const ui = await gitPane($, 'terminal')
+  await ui.select({ key: 'commit-mode', value: 'commit-push' })
+  await ui.input({ key: 'message', text: 'feat: update', kind: 'submit' })
+  expect(calls.toasts.at(-1)).toBe('Push failed: Claude auto mode could not review this Git operation.')
+  expect(calls.tools).toHaveLength(2)
+  expect(await ui.find({ key: 'sync-review-ask' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('failed prompt fill retains Sync recovery and Cancel performs no work', async ($, on) => {
+  const r = repo({ hooks: true, fillable: false, denial: { channel: 'deny', text: NO_REVIEW(), step: 'pull' } })
+  const calls = await world($, on, r)
+  for (const surface of SURFACES) {
+    const ui = await gitPane($, surface)
+    await ui.press({ key: 'key-e' })
+    await ui.press({ key: 'sync-review-ask' })
+    expect(await ui.find({ key: 'sync-review-ask' })).toBeDefined()
+    expect(calls.toasts.at(-1)).toBe("The prompt can't take the request right now.")
+    const count = calls.fills.length
+    expect((await ui.find({ key: 'sync-review-cancel' }))?.props.hotkey).toBe('q')
+    await ui.press({ key: 'sync-review-cancel' })
+    expect(await ui.find({ key: 'sync-review-ask' })).toBeUndefined()
+    expect(calls.fills).toHaveLength(count)
+    await ui.unmount()
+  }
+  expect(calls.tools).toHaveLength(2)
+  expect(calls.submits).toBe(0)
+})
+
+test('Sync recovery refuses a changed root even before the cached snapshot catches up', async ($, on) => {
+  let stale = false
+  let cached: JeiGit | null = null
+  on('state.get', async (_$, e, next) => {
+    const result = await next(e)
+    if (e.plugin === 'jei' && e.key === 'git' && result.value !== undefined) {
+      if (stale) return { value: { ...result.value, value: cached } }
+      cached = result.value.value as JeiGit | null
+    }
+    return result
+  })
+  const r = repo({ hooks: true, denial: { channel: 'deny', text: NO_REVIEW(), step: 'pull' } })
+  const calls = await world($, on, r)
+  const ui = await gitPane($, 'terminal')
+  await ui.press({ key: 'key-e' })
+  stale = true
+  r.root = '/work/acme-app-next'
+  await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: r.root })
+  await ui.press({ key: 'sync-review-ask' })
+  expect(calls.fills).toHaveLength(0)
+  expect(calls.tools).toHaveLength(1)
+  expect(calls.toasts.at(-1)).toContain('repository changed')
+  expect(gitRuns(calls, '--show-toplevel').at(-1)).toEqual(['git', '--no-optional-locks', '-C', r.root, 'rev-parse', '--show-toplevel'])
+  expect(await ui.find({ key: 'sync-review-ask' })).toBeDefined()
+  await ui.press({ key: 'sync-review-cancel' })
+  await ui.unmount()
+})
+
+test('ordinary shell refusal, Git error and classifier lookalikes retain normal Sync failure behavior', async ($, on) => {
+  const r = repo({ hooks: true })
+  const calls = await world($, on, r)
+  const ui = await gitPane($, 'terminal')
+  for (const text of ["Claude's permissions block Bash: denied", 'fatal: Authentication failed.', 'The server-side auto mode classifier gave no verdict for Bash: no result was retained.']) {
+    r.denial = { channel: 'text', text, step: 'pull' }
+    await ui.press({ key: 'key-e' })
+    expect(calls.toasts.at(-1)).toBe(`Sync failed: ${text.replace(/\.+$/, '')}.`)
+    expect(await ui.find({ key: 'sync-review-ask' })).toBeUndefined()
+    expect(await ui.find({ key: 'diverge-merge' })).toBeUndefined()
+  }
+  r.denial = null
+  r.shellText = NO_REVIEW()
+  await ui.press({ key: 'key-e' })
+  expect(calls.toasts.at(-1)).toBe('Synced.')
+  expect(await ui.find({ key: 'sync-review-ask' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('background Sync stops push and keeps its established running notice', async ($, on) => {
+  const calls = await world($, on, repo({ hooks: true, background: true, slowStep: 'pull' }))
+  const ui = await gitPane($, 'terminal')
+  await ui.press({ key: 'key-e' })
+  expect(calls.toasts.at(-1)).toBe('Sync is still running in the background; check the terminal.')
+  expect(calls.tools).toHaveLength(1)
+  expect(await ui.find({ key: 'sync-review-ask' })).toBeUndefined()
+  expect(await ui.find({ key: 'sync' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('Sync recovery keeps both answers through native surface resize and hidden-question navigation', async ($, on) => {
+  const calls = await world($, on, repo({ hooks: true, denial: { channel: 'deny', text: NO_REVIEW(), step: 'pull' } }))
+  for (const surface of SURFACES) {
+    const ui = await gitPane($, surface)
+    await ui.press({ key: 'key-e' })
+    for (const width of WIDTHS) for (const rows of [30, 5]) {
+      await ui.redraw(paneProps(width, rows))
+      expect(await ui.find({ key: 'sync-review-ask' })).toBeDefined()
+      expect(await ui.find({ key: 'sync-review-cancel' })).toBeDefined()
+      const widths = lineWidths(await ui.drawn() as Node)
+      expect(widths.length).toBeLessThanOrEqual(rows)
+      for (const cells of widths) expect(cells).toBeLessThanOrEqual(width)
+    }
+    await ui.redraw(paneProps(80, 20))
+    await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'group-graph', origin: { kind: 'person' } } as never)
+    await ui.press({ key: 'key-b' })
+    expect(await ui.find({ key: 'sync-review-ask' })).toBeUndefined()
+    expect((await ui.find({ key: 'back' }))?.props.hotkey).toBe('q')
+    await ui.press({ key: 'back' })
+    expect(await ui.find({ key: 'sync-review-ask' })).toBeDefined()
+    await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'change-src/api/user.ts', origin: { kind: 'person' } } as never)
+    await ui.press({ key: 'change-src/api/user.ts' })
+    expect(await ui.find({ key: 'sync-review-ask' })).toBeUndefined()
+    expect((await ui.find({ key: 'back' }))?.props.hotkey).toBe('q')
+    await ui.press({ key: 'back' })
+    expect(await ui.find({ key: 'sync-review-ask' })).toBeDefined()
+    await ui.press({ key: 'sync-review-cancel' })
+    await ui.unmount()
+  }
+  expect(calls.fills).toHaveLength(0)
 })
 
 test('g fills the message from the model; an empty message disables Commit', async ($, on) => {

@@ -4,11 +4,12 @@ import type { GitSnapshot } from '../../core/git/service.ts'
 import { GitError, git, gitArgv } from '../../core/git/run.ts'
 import type { FileStatus, StatusEntry } from '../../core/git/status.ts'
 import type { Options } from '../../core/options.ts'
+import { KEYS } from '../../core/keys.ts'
 import { currentView, reducePane } from '../../core/pane.ts'
 import { shellLine, type Shell } from '../../core/shared/argv.ts'
 import { cellWidth, fitEnd, fitPath, padEnd } from '../../core/shared/fit.ts'
 import { toPosix } from '../../core/shared/paths.ts'
-import type { JeiCommitMode, JeiGit, JeiGitUi } from '../../types/index.d.ts'
+import type { JeiAsk, JeiCommitMode, JeiGit, JeiGitUi } from '../../types/index.d.ts'
 import { mutationGuard, refreshAfterChange, refreshGit } from './activity.ts'
 import { historyConfirmation, renderGraph } from './graph.tsx'
 import { firstLine, hostFor, reason, windowTop, type FilesAction, type FilesFrame, type FilesView, type PaneRender } from './files.tsx'
@@ -107,6 +108,14 @@ export class StillRunning extends Error {
   }
 }
 
+/** A host review refusal, not a Git failure: core Sync must keep the pending steps intact. */
+class MissingReview extends Error {
+  constructor(readonly pending: string[][]) {
+    super('Claude auto mode could not review this Git operation.')
+    this.name = 'MissingReview'
+  }
+}
+
 /** The longest a shell tool runs a step in the foreground (its maximum). */
 const SHELL_TIMEOUT_MS = 600_000
 /** The commit message file for the agent's shell, in the git dir (never in the shell line). */
@@ -137,7 +146,7 @@ export async function runHookAware($: EngineInterface, root: string, steps: read
   try {
     const host = hostFor($, root)
     if (!viaAgentShell) return runSteps(host, root, steps)
-    for (const step of steps) {
+    for (const [index, step] of steps.entries()) {
       if (!HOOKED.has(step[0] ?? '')) {
         await git(host, root, step)
         continue
@@ -158,22 +167,28 @@ export async function runHookAware($: EngineInterface, root: string, steps: read
       const command = shellLine(['git', '--no-optional-locks', '-c', 'core.quotepath=off', '-C', root, ...words], shell)
       const description = `Run git ${step[0]} so the repository's hooks run`
       const argv = gitArgv(root, step)
+      const fail = (text: string): never => {
+        if (text.includes(`The server-side auto mode classifier gave no verdict for ${tool}: the request that produced this action did not ask for one.`)) {
+          throw new MissingReview(steps.slice(index).map((pending) => [...pending]))
+        }
+        throw new GitError(argv, { exitCode: 1, stdout: '', stderr: text })
+      }
       let leftRunning = false
       try {
         const verdict = await $.tool.check({ tool, input: { command, description } })
         if (verdict.decision === 'deny') {
-          throw new GitError(argv, { exitCode: 1, stdout: '', stderr: `Claude's permissions block ${tool}: ${verdict.reason ?? 'denied'}` })
+          fail(`Claude's permissions block ${tool}: ${verdict.reason ?? 'denied'}`)
         }
         if (verdict.decision === 'ask' && !warnedAsk) {
           warnedAsk = true
-          $.ui.toast(`This repo has git hooks, so JEI runs git through Claude's shell. Allow ${tool}(git *) to skip the prompt.`)
+          $.ui.toast("This repo has git hooks, so JEI uses Claude's shell with its normal permissions and review.")
         }
         const r =
           tool === 'Bash'
             ? await $.tool.call({ tool: 'Bash', command, description, timeout: SHELL_TIMEOUT_MS })
             : await $.tool.call({ tool: 'PowerShell', command, description, timeout: SHELL_TIMEOUT_MS })
-        if (r.deny !== undefined) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: r.deny })
-        if (r.isError === true) throw new GitError(argv, { exitCode: 1, stdout: '', stderr: shellError(r.text ?? '') })
+        if (r.deny !== undefined) fail(r.deny)
+        if (r.isError === true) fail(shellError(r.text ?? (typeof r.result === 'string' ? r.result : '')))
         const ran = r.result as { interrupted?: boolean; backgroundTaskId?: string; timedOutAfterMs?: number; backgroundedByUser?: boolean } | undefined
         if (ran?.backgroundTaskId !== undefined || ran?.timedOutAfterMs !== undefined || ran?.backgroundedByUser === true) {
           leftRunning = true
@@ -344,7 +359,7 @@ async function commitNow($: EngineInterface, options: Options, confirmed: readon
         $.ui.toast(`Committed. ${stillRunning(RUNNING_WHAT[err.step] ?? 'Push', err)}`)
         return
       }
-      const pushed = err instanceof GitError && err.argv.includes('push')
+      const pushed = err instanceof GitError && err.argv.includes('push') || err instanceof MissingReview && err.pending[0]?.[0] === 'push'
       $.ui.toast(`${pushed ? 'Push' : 'Commit'} failed: ${trimDot(failure(err))}.`)
     }
   })
@@ -362,10 +377,32 @@ async function syncNow($: EngineInterface, choice?: 'merge' | 'rebase'): Promise
       else if ('divergence' in r) await setAsk($, { kind: 'divergence' })
       else $.ui.toast(`Sync failed: ${trimDot(r.error)}.`)
     } catch (err) {
-      if (err instanceof StillRunning) $.ui.toast(stillRunning('Sync', err))
+      if (err instanceof MissingReview) await setAsk($, { kind: 'sync-review', root: g.root, pending: err.pending, ...(choice ? { choice } : {}) })
+      else if (err instanceof StillRunning) $.ui.toast(stillRunning('Sync', err))
       else $.ui.toast(`Sync failed: ${trimDot(failure(err))}.`)
     }
   })
+}
+
+async function askSyncClaude($: EngineInterface, ask: Extract<JeiAsk, { kind: 'sync-review' }>): Promise<void> {
+  await busy($, 'Preparing request…', async () => {
+    const cwd = await readCwd($)
+    try {
+      const root = toPosix((await git(hostFor($, cwd), cwd, ['rev-parse', '--show-toplevel'])).stdout.trim())
+      if (root !== ask.root || (await readCwd($)) !== cwd) {
+        $.ui.toast('The repository changed. Cancel this request and start Sync again.')
+        return
+      }
+      if ((await readGitUi($)).ask?.kind !== 'sync-review') return
+      const strategy = ask.choice ? ` I chose ${ask.choice} if reconciliation is still needed.` : ''
+      const text = `\n\nClaude auto mode could not review my Sync request. Please inspect the current repository state and complete only the remaining work. Pending Git argument arrays: ${JSON.stringify(ask.pending)}. Treat each argument literally.${strategy} Do not repeat completed steps; preserve local work and use normal hooks and permissions.\n\n`
+      const r = await $.prompt.fill({ text, mode: 'insert' })
+      if (r.isFilled) await setAsk($, null)
+      else $.ui.toast("The prompt can't take the request right now.")
+    } catch (err) {
+      $.ui.toast(`Can't prepare the Sync request: ${trimDot(failure(err))}.`)
+    }
+  }, false)
 }
 
 async function askClaude($: EngineInterface): Promise<void> {
@@ -549,7 +586,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
     </Box>
   )
   /** Buttons flowed into rows that fit, 1 cell apart; a Button is its label plus chrome. */
-  const buttons = (key: string, list: { key: string; label: string; run: () => void; primary?: boolean }[]) => {
+  const buttons = (key: string, list: { key: string; label: string; run: () => void; primary?: boolean; hotkey?: string }[]) => {
     const rows: (typeof list)[] = [[]]
     let used = 0
     for (const b of list) {
@@ -568,7 +605,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
         <Text>{gutter}</Text>
         <Box flexDirection="row" gap={1}>
           {r.map((b) => (
-            <Button key={b.key} variant={b.primary ? 'primary' : 'secondary'} onPress={b.run}>
+            <Button key={b.key} variant={b.primary ? 'primary' : 'secondary'} hotkey={b.hotkey} onPress={b.run}>
               {fitEnd(b.label, Math.max(1, inner - CHROME))}
             </Button>
           ))}
@@ -677,13 +714,19 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
       ])
     } else if (ask.kind === 'history') {
       askButtons = historyConfirmation($, e, frame, ask)
-    } else {
+    } else if (ask.kind === 'divergence') {
       askText = ['Your branch and its upstream have diverged.']
       askButtons = buttons('ask-buttons', [
           { key: 'diverge-merge', label: 'Merge', run: act($, () => syncNow($, 'merge')) },
           { key: 'diverge-rebase', label: 'Rebase', run: act($, () => syncNow($, 'rebase')) },
           { key: 'diverge-ask', label: 'Ask Claude', run: act($, () => askClaude($)) },
           { ...cancel, key: 'diverge-cancel' },
+      ])
+    } else if (ask.kind === 'sync-review') {
+      askText = wrapWords('Claude auto mode could not review Sync. Ask Claude to continue from the prompt.'.split(' '), inner)
+      askButtons = buttons('ask-buttons', [
+        { key: 'sync-review-ask', label: 'Ask Claude', run: act($, () => askSyncClaude($, ask)) },
+        { ...cancel, key: 'sync-review-cancel', hotkey: KEYS.git.find((key) => key.action === 'back')!.key },
       ])
     }
   }
