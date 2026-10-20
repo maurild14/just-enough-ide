@@ -1,0 +1,3 @@
+Synthetic fixture: illustrative parser contract, not captured LSP output.
+Outgoing calls:
+src/storage.ts (line 2) - load

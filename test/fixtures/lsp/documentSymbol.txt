@@ -1,0 +1,4 @@
+Synthetic fixture: illustrative parser contract, not captured LSP output.
+Document symbols:
+- Store (class) src/store.ts:1:1-9:1
+  - getUser (method) src/store.ts (line 3-8)

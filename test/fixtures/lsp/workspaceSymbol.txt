@@ -1,0 +1,3 @@
+Synthetic fixture: illustrative parser contract, not captured LSP output.
+Workspace symbols:
+getUser (function) - src/store.ts:3:1

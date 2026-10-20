@@ -75,6 +75,12 @@ ADR 0020 adds `nativeRel(root, path, platform)` for Search's input and real-path
 
 Rg submatch conversion collects requested byte boundaries and indexes them during one traversal of the line, with work linear in line bytes plus submatch count. It preserves original range order, UTF-16 indexes, CRLF stripping and single-offset `byteToIndex` behavior, without rescanning a prefix for every boundary.
 
+The v0.3 `core/symbols/` services are built ahead of native views/RPC. `outline.ts` recognizes TypeScript/JavaScript, Python, Go, Rust, Java, C# and Markdown, with a 2,000-symbol cap and only the first 2,000 characters scanned per line. C-like scopes count braces outside strings/comments, Python uses indentation (tabs advance to eight-column stops), Go receiver methods attach to their declared type, and Markdown headings nest by level. Unbalanced scopes close at EOF. The bounded scanner and iterative enclosure lookup avoid recursive traversal; Go method attachment uses a single final filter.
+
+`approx.ts` builds escaped definition queries, literal whole-word references and unique callee names (at most 2,000), reusing the string/comment scanner. `service.ts` uses the public Search API for approximate navigation, prefers same-file definitions, caches file outlines per reference request, groups incoming references by enclosing function/method and resolves each outgoing callee's first definition. Source reads validate native and real-path confinement, regular-file status, the complete byte count, UTF-8 and NUL absence within 4 MiB. Unsupported/unreadable outlines return `null`; missing containers remain `null`. Agent text is capped at 12,000 characters with an omission count. These services make no model or LSP call.
+
+`lsp.ts` parses the six planned operation types from explicitly synthetic text fixtures. Recognized headers, locations, symbol kinds and ranges are validated, including inside-root paths and a 2,000-item cap; unknown or malformed output returns `null` for approximate fallback. No real LSP output was available in the implementation session or bundled examples, so positive real-tool compatibility remains manual QA. Hosts must retain accurate `lsp`/`approximate` source labels and perform their own fresh permission checks when LSP wiring lands.
+
 ```
 host events (tool hooks, file changes, cwd) -+
                                               +-> refresh scheduler -> core (parse, layout, rank) -> view model -> host view
@@ -151,7 +157,7 @@ Status: current for `core/activity/`, `core/latest.ts`, `core/pane.ts` and `core
 
 ## Services
 
-Status: current for `core/git/service.ts` and `core/files/service.ts`. These are the only core entry points the adapters call besides pure helpers; each takes a `Host` and returns plain data.
+Status: current for `core/git/service.ts`, `core/files/service.ts`, `core/search/service.ts` and `core/symbols/service.ts`. These are the core service entry points the adapters call besides pure helpers; each takes a `Host` and returns plain data.
 
 - `core/git/service.ts`: `snapshot(host, cwd)` returns `{ root: null }` outside a repo, else `{ root, status, numstat, staged, hooks }` (status, `diff --numstat` and `diff --cached --numstat` counts keyed by path, `usesHooks`). `stage`, `unstage` skip git for no paths; `discard` runs `discardPlan` (callers confirm first). `fileDiff` returns one `DiffFile` capped at 5,000 lines (`DIFF_MAX_LINES`); untracked files use `--no-index` and exit 1 counts as success. `generateMessage` sends the staged diff (the working diff when nothing is staged) cut to 12,000 characters to `host.complete` and runs `cleanMessage`. `commitPlan` is pure: steps from `commitSteps` (with `publish` set to the branch head for `commit-push` without an upstream), `sensitive` is the sensitive subset of what the commit will include (every changed path when the smart commit runs `add -A`, else the staged paths), `viaAgentShell` is `snap.hooks`. `runSteps` stops at the first `GitError`. `sync` reads `pull.rebase`/`pull.ff`, runs `syncSteps` and returns `{ ok: true }`, `{ ok: false, divergence: true }` (only without a `choice`) or `{ ok: false, error: <first line> }`; a detached HEAD gives `Detached HEAD: check out a branch to sync.`; with `choice` it runs `resolveDivergence`. An optional `run(steps)` replaces the direct runner (Claude Code routes hook-firing steps through the agent's shell with it); its `GitError` is classified the same way.
 - `core/files/service.ts`: `listDir` lists a folder and asks `git check-ignore --stdin -z` which listed paths are ignored (none outside a repo). `loadPreview` stats first (size settles empty, image and too-large without reading), reads at most `PREVIEW_MAX_BYTES`, and returns `text` plus `language`, or `rows` (200 at most) for csv/tsv. A missing path, folder, rejected path or outside-root symlink is `empty`; an in-root regular file whose `readHead` returns `null` is `error`. `allFiles` is `ls-files -co --exclude-standard -z` in a repo, else a breadth-first walk capped at 20,000 entries that skips `.git` and `node_modules`. `openFile` runs `openArgv` and ignores the exit code (some openers exit 1 on success).
@@ -168,7 +174,7 @@ hosts/claude-code    hosts/opencode   never import each other
 
 - `core/` never imports from `hosts/`, entries or host packages.
 - The two adapters never import each other. Shared logic moves down into `core/`.
-- Inside `core/`, `host.ts`, `keys.ts` and `shared/` are leaves; tab folders (`files/`, `git/`, `activity/`) may use `shared/` and `host.ts`, not each other's internals except through exported types.
+- Inside `core/`, `host.ts`, `keys.ts` and `shared/` are leaves; tab folders may use `shared/` and `host.ts`, not each other's internals except through exported types. Symbols additionally consumes Search's public query/parser helpers and service API, keeping process/path behavior shared.
 - Specs may use `bun:test` and `node:*`; the purity rule binds non-spec files.
 
 ## File map
@@ -183,6 +189,8 @@ core/
   git/{run.ts, status.ts, diff.ts, commands.ts, hooks.ts, message.ts, sensitive.ts, sync.ts, service.ts}
   activity/{classify.ts, shell.ts, log.ts (ActivityLog, allows, shimmerPhase)}
   files/{tree.ts, preview.ts, csv.ts (parseDelimited, fitTable), open.ts, icons.ts, mention.ts, service.ts}
+  search/{rg.ts, results.ts, replace.ts, quickopen.ts, service.ts}
+  symbols/{outline.ts, approx.ts, lsp.ts, service.ts}
 hosts/claude-code/    host.ts, state.ts, theme.ts, pane.tsx, files.tsx, git.tsx, diff.tsx, activity.ts, *.test.tsx, measure.ts (test helper)
 hosts/opencode/       host.ts, rpc.ts, server.ts, tui.tsx, pane.tsx, files.tsx, colors.ts, hand-off.ts, git.tsx, diff.tsx, *.spec.ts(x)
 types/index.d.ts      Claude Code PluginState contract
@@ -192,7 +200,7 @@ docs/                 this documentation; docs/plans/ holds implementation plans
 scripts/              dev scripts (check-docs.ts)
 ```
 
-Later milestones add `core/search/` and `core/symbols/` (0.3) and `core/fsops.ts` (0.4). Status: draft — built in the milestone shown.
+Milestone 0.3 host Search/Symbols views and RPC remain pending. Milestone 0.4 adds `core/fsops.ts`. Status: draft — built in the milestone shown.
 
 ## Packaging
 

@@ -1,0 +1,3 @@
+Synthetic fixture: illustrative parser contract, not captured LSP output.
+Incoming calls:
+src/app.ts:8:2 - start
