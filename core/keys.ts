@@ -1,5 +1,5 @@
 export type Tab = 'files' | 'search' | 'symbols' | 'git'
-export type View = 'files' | 'files.preview' | 'search' | 'symbols' | 'git' | 'git.diff'
+export type View = 'files' | 'files.preview' | 'search' | 'symbols' | 'git' | 'git.diff' | 'git.branches'
 export type Key = { key: string; action: string; label: string }
 
 const up: Key = { key: 'up', action: 'move-up', label: 'move' }
@@ -39,8 +39,22 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     { key: 'u', action: 'unstage', label: 'unstage' },
     { key: 'd', action: 'discard', label: 'discard' },
     { key: 'c', action: 'commit', label: 'commit' },
+    { key: 'y', action: 'copy-hash', label: 'copy hash' },
+    { key: 'a', action: 'ask', label: 'ask' },
+    { key: 'b', action: 'branches', label: 'branches' },
+    { key: 'f', action: 'filter', label: 'filter' },
+    { key: 't', action: 'fetch', label: 'fetch' },
+    { key: 'n', action: 'new-branch', label: 'new branch' },
     { key: 'g', action: 'generate-message', label: 'generate' },
     { key: 'e', action: 'sync', label: 'sync' },
+    back,
+  ],
+  'git.branches': [
+    up, down,
+    { key: 'enter', action: 'switch', label: 'switch' },
+    { key: 'n', action: 'new-branch', label: 'new' },
+    { key: 'c', action: 'compare', label: 'compare' },
+    { key: 'f', action: 'filter', label: 'filter' },
     back,
   ],
   'git.diff': [

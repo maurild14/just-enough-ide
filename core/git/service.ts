@@ -1,4 +1,6 @@
 import type { Host } from '../host.ts'
+import { creationAction, parseReflog, type Candidate, type ReflogBoundary } from './agent.ts'
+import { assertCommitHash, commitDiffArgs, commitFilesArgs, parseCommitFiles, type CommitFile } from './commit.ts'
 import { commitSteps, discardArgs, discardPlan, stageArgs, unstageArgs } from './commands.ts'
 import type { CommitMode } from './commands.ts'
 import { capDiff, omitSensitive, parseNumstat, parseUnifiedDiff, untrackedDiffArgs, workingDiffArgs } from './diff.ts'
@@ -11,9 +13,96 @@ import { STATUS_ARGS, isRepo, parseStatus } from './status.ts'
 import type { BranchInfo, RepoStatus, StatusEntry } from './status.ts'
 import { isDivergence, resolveDivergence, syncSteps } from './sync.ts'
 import type { PullConfig } from './sync.ts'
+import { logArgs, parseLog, type GraphFilter, type LogCommit } from './log.ts'
 
 export const DIFF_MAX_LINES = 5000
 const PROMPT_MAX_CHARS = 12_000
+
+export async function graph(host: Host, root: string, filter: GraphFilter, count: number): Promise<{ commits: LogCommit[]; more: boolean }> {
+  if (!Number.isSafeInteger(count) || count < 1 || !Number.isSafeInteger(count + 1)) throw new Error('Invalid graph count.')
+  let branch = filter.branch
+  if (branch !== undefined && branch !== 'all') {
+    const refs = (await git(host, root, ['for-each-ref', '--format=%(refname)', 'refs/heads/', 'refs/remotes/'])).stdout.trim().split('\n')
+    const matches = refs.filter((ref) => ref === branch || ref === `refs/heads/${branch}` || ref === `refs/remotes/${branch}`)
+    if (matches.length !== 1) throw new Error('Invalid branch.')
+    branch = (await git(host, root, ['rev-parse', '--verify', `${matches[0]}^{commit}`])).stdout.trim()
+    assertCommitHash(branch)
+  } else if (branch === undefined) {
+    try { await git(host, root, ['rev-parse', '--verify', '--quiet', 'HEAD']) }
+    catch (error) {
+      if (error instanceof GitError && error.exitCode === 1) return { commits: [], more: false }
+      throw error
+    }
+  }
+  const commits = parseLog((await git(host, root, logArgs({ ...filter, branch }, count))).stdout)
+  return { commits: commits.slice(0, count), more: commits.length > count }
+}
+
+export async function commitFiles(host: Host, root: string, hash: string): Promise<CommitFile[]> {
+  assertCommitHash(hash)
+  const [names, counts] = await Promise.all(commitFilesArgs(hash).map((args) => git(host, root, args)))
+  return parseCommitFiles(names!.stdout, counts!.stdout)
+}
+
+export async function commitDiff(host: Host, root: string, hash: string, path: string): Promise<{ file: DiffFile | null; truncated: boolean }> {
+  assertCommitHash(hash)
+  const parents = (await git(host, root, ['rev-list', '--parents', '--max-count=1', hash])).stdout.trim().split(' ')
+  const isRoot = parents.length === 1
+  const args = commitDiffArgs(hash, path, isRoot)
+  // Include both paths so the pathspec does not turn a rename into a new-file diff.
+  if (!isRoot) {
+    const from = (await commitFiles(host, root, hash)).find((file) => file.path === path)?.from
+    if (from !== undefined) args.push(from)
+  }
+  const file = parseUnifiedDiff((await git(host, root, args)).stdout).find((file) => file.path === path)
+  return file === undefined ? { file: null, truncated: false } : capDiff(file, DIFF_MAX_LINES)
+}
+
+export async function newlyReachable(host: Host, root: string, from: string | null, to: string): Promise<Candidate[]> {
+  assertCommitHash(to)
+  if (from !== null) assertCommitHash(from)
+  const args = ['rev-list', '--no-commit-header', '--format=%H %ct', '--max-count=500', to, ...(from === null ? [] : ['--not', from])]
+  const candidates: Candidate[] = []
+  for (const line of (await git(host, root, args)).stdout.split('\n')) {
+    const match = /^([0-9a-f]{40}) (\d+)$/.exec(line)
+    if (match) candidates.push({ hash: match[1]!, time: Number(match[2]) })
+  }
+  return candidates
+}
+
+async function readReflog(host: Host, root: string) {
+  return parseReflog((await git(host, root, ['reflog', 'show', '-z', '--date=raw', '--format=%H%x00%gD%x00%gs', '-n', '501', 'HEAD'])).stdout)
+}
+
+/** Capture before execution; a failed/unreadable baseline must never block a user's tool. */
+export async function captureReflog(host: Host, root: string, head: string | null): Promise<ReflogBoundary | null> {
+  if (head === null) return { entry: null }
+  assertCommitHash(head)
+  try {
+    const entries = await readReflog(host, root)
+    return entries?.[0]?.hash === head ? { entry: entries[0].identity } : null
+  } catch { return null }
+}
+
+/** Only creations above the immutable boundary are evidence; failures suppress attribution. */
+export async function agentCandidates(host: Host, root: string, from: string | null, to: string, boundary: ReflogBoundary | null): Promise<Candidate[]> {
+  assertCommitHash(to)
+  if (from !== null) assertCommitHash(from)
+  if (boundary === null) return []
+  try {
+    const entries = await readReflog(host, root)
+    if (entries === null || entries[0]?.hash !== to) return []
+    let end = entries.length
+    if (boundary.entry !== null) {
+      const matches = entries.flatMap((entry, index) => entry.identity === boundary.entry ? [index] : [])
+      if (matches.length !== 1) return []
+      end = matches[0]!
+    } else if (from !== null || entries.length > 500 || !entries.at(-1)?.action.startsWith('commit (initial): ')) return []
+    const created = new Set(entries.slice(0, end).filter((entry) => creationAction(entry.action)).map((entry) => entry.hash))
+    if (created.size === 0) return []
+    return (await newlyReachable(host, root, from, to)).filter((candidate) => created.has(candidate.hash))
+  } catch { return [] }
+}
 
 type Counts = Map<string, { added: number | null; removed: number | null }>
 

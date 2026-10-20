@@ -1,6 +1,6 @@
 # JEI design guide
 
-> Purpose: how every JEI view looks and behaves at any pane size · Status: current · Last reviewed: 2026-10-19
+> Purpose: how every JEI view looks and behaves at any pane size · Status: current · Last reviewed: 2026-10-20
 
 Status: the Files and Git (repository row, Changes, diff) views are built in milestone 0.1 (plan Tasks 11, 12, 16, 17); the Graph and Branches are draft, built in 0.2; Search is draft, built in 0.3; Symbols is draft, built in 0.4. The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
 
@@ -39,7 +39,7 @@ Bold is allowed only for the active tab and conflicts. Never use italic, blink o
 
 ## 3. Glyphs
 
-Every glyph is a single cell wide. Measure width with a wcwidth function, never with string length, because CJK names take 2 cells. Do not use emoji. `glyphs: auto` picks `nerd` when a Nerd Font is detected, `plain` when the terminal is UTF-8, and ASCII otherwise.
+Graph node and lane glyphs occupy one cell; the configured ellipsis can occupy more (ASCII `...` is three). Measure terminal cells with the shared width helpers, because CJK names take 2 cells. Do not use emoji. Options remain `glyphs: auto | nerd | plain`; `auto` currently uses plain icons until Nerd Font detection exists. ASCII is a renderer fallback, not a public option. See `docs/decisions/0011-git-history-core-contracts.md`.
 
 | Meaning | Plain Unicode | ASCII |
 | --- | --- | --- |
@@ -56,6 +56,8 @@ Every glyph is a single cell wide. Measure width with a wcwidth function, never 
 | Separators (rule, hint line) | `─`, `·` | `-`, `-` |
 
 Truncation always reads the ellipsis width from the active glyph set. Diff lines keep git's own `+`/`-` in every set.
+
+Graph lane rows use `2 * lanes - 1` cells including separators. Pass a cell budget to `fitGraph`, reserving other row content first; clipped rows retain the commit cell whenever at least one cell fits, shift the visible lane window when needed and include the real ellipsis width. The final lone root has no connector row.
 
 ## 4. Layout grid
 

@@ -1,6 +1,6 @@
 # Testing
 
-> Purpose: which tests exist, which runner runs them, and what every view must prove · Status: current · Last reviewed: 2026-10-19
+> Purpose: which tests exist, which runner runs them, and what every view must prove · Status: current · Last reviewed: 2026-10-20
 
 Source: `PRD.md` §8.1 and `docs/design.md` §10. Run `bun run test`, `bun run typecheck` and `bun run check:docs` before finishing.
 
@@ -27,6 +27,8 @@ Never mix them: `claude plugin test` loads every `*.test.ts` in the plugin folde
 Task 16 review regressions also type into the filter at heights 2 and 5 while checking shortcut suppression, preserve distinct leading-space siblings through preview/mention/open/filter and activity, and distinguish failed file-list requests from no matches with retry and changed-event recovery. `core/shared/paths.spec.ts` covers literal whitespace and rejected escapes in `insideRel`; the server specs verify literal-path preview and activity delivery across the RPC boundary.
 
 ## Fixtures
+
+The v0.2 core history specs cover NUL log metadata/ref fixtures (`log-linear.txt`, `log-merge.txt`, `log-octopus.txt`), quoted filters, safe branch resolution and paging; lane forks/merges, missing parents and terminal-cell clipping with Unicode and ASCII ellipses; rename/binary counts; and real root, first-parent merge and rename diffs through `test/fake-host.ts`. Attribution tests reject same-second checkout/reset targets, malformed/missing/ambiguous/truncated reflog evidence and overlapping or JEI-invalidated windows, allow a boundary within a long reflog, verify unborn initial commits, and cover the persistence cap. Pane specs cover working/commit/compare sources and Branches/back; key specs include Branches throughout the width sweep. Host suites continue to exercise existing working diffs; history UI and live tool integration remain later v0.2 tasks.
 
 The registered OpenCode server's commit regression approves `.env`, creates `id_rsa` before the commit request, and verifies that the incomplete approved list is refused before staging or creating a commit. Explicit approval of the fresh complete list then succeeds. The server spec clears ambient `GIT_*`, uses an empty global gitconfig and restores the environment after each test; repositories and identities still come from `test/fake-host.ts`. TUI regressions cover a refusal after its final local plan, full-list reapproval, cancelled retry and duplicate submit protection. Contract/caller fixtures all require `approvedSensitive: string[]`.
 

@@ -25,7 +25,7 @@ function rootName(dir: string): string {
 /** Header text for a view: what the body is about. */
 function headerOf(view: View, root: string): string {
   if (view === 'files' || view === 'files.preview') return rootName(root)
-  if (view === 'git' || view === 'git.diff') return TAB_NAMES.git
+  if (view === 'git' || view === 'git.diff' || view === 'git.branches') return TAB_NAMES.git
   return TAB_NAMES[view]
 }
 

@@ -408,8 +408,7 @@ async function openDiff($: EngineInterface, row: FileRow): Promise<void> {
     reducePane(reducePane(s, { type: 'select', view: 'git', id: row.id }), {
       type: 'open-diff',
       path: row.entry.path,
-      staged: row.group === 'staged',
-      untracked: row.status === 'untracked',
+      source: { kind: 'working', staged: row.group === 'staged', untracked: row.status === 'untracked' },
     }),
   )
 }

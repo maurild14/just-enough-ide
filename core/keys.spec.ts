@@ -32,7 +32,8 @@ const has = (view: View, keys: string[]) => {
 test('required keys per view', () => {
   has('files', ['f', 'a', 'o', 'h', 'enter'])
   has('files.preview', ['m', 'a', 'o', 'esc'])
-  has('git', ['s', 'u', 'd', 'c', 'g', 'e', 'enter'])
+  has('git', ['s', 'u', 'd', 'c', 'y', 'a', 'b', 'f', 't', 'n', 'g', 'e', 'enter'])
+  has('git.branches', ['up', 'down', 'enter', 'n', 'c', 'f', 'esc'])
   has('git.diff', ['n', 'p', 'j', 'k', 'a', 'o', 'esc'])
 })
 
@@ -50,8 +51,8 @@ test('hint line fits every width and has no help key', () => {
 })
 
 test('hint line at 24, 40, 80 and 10', () => {
-  expect(hintLine('git', 40)).toBe('↑↓ move · enter open · s u d c g e esc')
-  expect(hintLine('git', 24)).toBe('↑↓ enter s u d c g e esc')
+  expect(hintLine('git', 40)).toBe('↑↓ enter s u d c y a b f t n g e esc')
+  expect(hintLine('git', 24)).toBe('↑↓ s u d c y a b f t esc')
   expect(hintLine('files', 24)).toBe('↑↓ enter a o f h esc')
   expect(hintLine('files', 40)).toBe('↑↓ move · enter open · a o f h esc')
   expect(hintLine('files', 80)).toBe('↑↓ move · enter open · a mention · o open in editor · f filter · h hidden · esc')
@@ -95,5 +96,5 @@ test('the OpenCode hint line never shows a colon and separates the bare tail', (
       const parts = line.split(' · ')
       for (const part of parts.slice(0, -1)) expect(words.has(part.split(' ').at(-1)!) || part.split(' ').length === 1).toBe(true)
     }
-  expect(hintLine('git', 80)).toBe('↑↓ move · enter open · s stage · u unstage · d discard · c commit · g e esc')
+  expect(hintLine('git', 80)).toBe('↑↓ move · enter open · s stage · u unstage · d discard · c y a b f t n g e esc')
 })

@@ -260,7 +260,7 @@ Mirrors VS Code's Source Control panel, top to bottom.
 
 **Graph**
 - Commit history with branch lanes (forks and merges drawn with box characters), each commit's subject, author and relative time; ref badges for local branches, `origin/*`, tags and HEAD.
-- **✦ marks commits the agent made in this session** (detected from git actions run through the agent's shell tool and from HEAD movement during an agent tool call).
+- **✦ marks commits created during an agent tool window in this session**: newly reachable hashes must have new commit-producing HEAD reflog evidence and a recent committer time. Checkout/reset movement alone never marks a commit. Overlapping tools, JEI mutations or unavailable evidence suppress marking; an unrelated external commit during a tool remains indistinguishable. See `docs/decisions/0011-git-history-core-contracts.md`.
 - Toolbar: fetch, pull, push, refresh, filter.
 - **Filter** by message text, author, file path or branch (or all branches).
 - Loads the first 200 commits, more on scroll.
@@ -283,7 +283,7 @@ Mirrors VS Code's Source Control panel, top to bottom.
 - **Switch** to a branch; **create** a branch (from HEAD or from a selected commit) and switch to it; **compare with main** (lists the files the branch changes vs. its merge base and opens their diffs).
 - Switching with uncommitted changes: JEI stops and asks (carry changes over if git allows / cancel). It never stashes on its own.
 
-**Keys (Git tab):** `enter` expand/open · `s` stage · `u` unstage · `d` discard · `c` commit · `g` generate message · `y` copy hash · `a` Ask · `b` branches · `f` filter · `e` sync · `t` fetch.
+**Keys (Git tab):** `enter` expand/open · `s` stage · `u` unstage · `d` discard · `c` commit · `y` copy hash · `a` Ask · `b` branches · `f` filter · `t` fetch · `n` new branch from the selected graph commit · `g` generate message · `e` sync. **Branches:** `enter` switch · `n` new from HEAD · `c` compare · `f` filter · `esc` back.
 
 **Build:** every command goes through one runner, `git --no-optional-locks -C <root> …` with `GIT_OPTIONAL_LOCKS=0` (Claude Code: `$.process.run`; OpenCode: `node:child_process` in the server entry). Read with porcelain/plumbing formats only (`status --porcelain=v2 -z`, `log --format=%H%x00%P%x00…`, `diff --numstat -z`, `for-each-ref --format`), parsed in `core/`. The graph layout (assigning lanes from parent hashes) is a pure function in `core/` with its own unit tests. Refresh on `.git/HEAD`, `.git/index` and ref changes and after git actions. Network operations (fetch, pull, push) show progress in the repository row and report failures as a toast with git's first error line.
 

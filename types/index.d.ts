@@ -5,14 +5,19 @@
 // (hosts/claude-code/state.ts). Every value is JSON data.
 
 export type JeiTab = 'files' | 'search' | 'symbols' | 'git'
-export type JeiView = 'files' | 'files.preview' | 'search' | 'symbols' | 'git' | 'git.diff'
+export type JeiView = 'files' | 'files.preview' | 'search' | 'symbols' | 'git' | 'git.diff' | 'git.branches'
+
+export type JeiDiffSource =
+  | { kind: 'working'; staged: boolean; untracked: boolean }
+  | { kind: 'commit'; hash: string }
+  | { kind: 'compare'; base: string; head: string }
 
 /** core/pane.ts PaneState. */
 export type JeiPane = {
   tab: JeiTab
   stack: JeiView[]
   selected: Partial<Record<JeiView, string>>
-  diff?: { path: string; staged: boolean; untracked: boolean }
+  diff?: { path: string; source: JeiDiffSource }
 }
 
 /** core/activity/log.ts ActivityLog JSON: rel path to its latest touch. */

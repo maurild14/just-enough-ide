@@ -1,6 +1,6 @@
 # JEI docs index
 
-> Purpose: the map of everything written down about JEI; start here · Status: current · Last reviewed: 2026-10-19
+> Purpose: the map of everything written down about JEI; start here · Status: current · Last reviewed: 2026-10-20
 
 These docs are JEI's persistent memory. `AGENTS.md` (identical to `CLAUDE.md`) is the short entry point; everything in depth lives here. If code and docs disagree, fix one of them in the same change. `bun run check:docs` verifies links, this index and the headers.
 
@@ -19,6 +19,7 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/qa.md` | The manual QA checklist run on both hosts before every release. |
 | `docs/decisions/` | Architecture decision records (ADRs); see `docs/decisions/README.md` for the format and the list. |
 | `docs/decisions/0010-exact-sensitive-path-approval.md` | Exact approved sensitive-path lists across the OpenCode commit RPC. |
+| `docs/decisions/0011-git-history-core-contracts.md` | Git history reads, tool attribution, graph cell budgets and contextual branch keys. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
 
 ## Keeping docs current

@@ -1,15 +1,21 @@
 import type { Tab, View } from './keys.ts'
 
+export type DiffSource =
+  | { kind: 'working'; staged: boolean; untracked: boolean }
+  | { kind: 'commit'; hash: string }
+  | { kind: 'compare'; base: string; head: string }
+
 export type PaneState = {
   tab: Tab
   stack: View[]
   selected: Partial<Record<View, string>>
-  diff?: { path: string; staged: boolean; untracked: boolean }
+  diff?: { source: DiffSource; path: string }
 }
 
 export type PaneAction =
   | { type: 'tab'; tab: Tab }
-  | { type: 'open-diff'; path: string; staged: boolean; untracked: boolean }
+  | { type: 'open-diff'; source: DiffSource; path: string }
+  | { type: 'branches' }
   | { type: 'preview'; rel: string }
   | { type: 'back' }
   | { type: 'select'; view: View; id: string }
@@ -46,8 +52,10 @@ export function reducePane(s: PaneState, a: PaneAction): PaneState {
         tab: 'git',
         stack: push(s, 'git', 'git.diff'),
         selected: s.selected,
-        diff: { path: a.path, staged: a.staged, untracked: a.untracked },
+        diff: { path: a.path, source: a.source },
       }
+    case 'branches':
+      return { tab: 'git', stack: push(s, 'git', 'git.branches'), selected: s.selected }
     case 'back': {
       if (s.stack.length <= 1) return s
       const stack = s.stack.slice(0, -1)

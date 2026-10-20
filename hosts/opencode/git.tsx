@@ -235,10 +235,10 @@ export function Git(props: {
   }
   function openDiff(row: Row) {
     props.dispatch({ type: 'select', view: 'git', id: row.id })
-    props.dispatch({ type: 'open-diff', path: row.path!, staged: row.group === 'staged', untracked: row.status === 'untracked' })
+    props.dispatch({ type: 'open-diff', path: row.path!, source: { kind: 'working', staged: row.group === 'staged', untracked: row.status === 'untracked' } })
   }
   function nextFile(by: 1 | -1) {
-    const d = props.state.diff!; const rows = groups()[d.staged ? 'staged' : 'changes']; const at = rows.findIndex((r) => r.path === d.path)
+    const d = props.state.diff!; if (d.source.kind !== 'working') return; const rows = groups()[d.source.staged ? 'staged' : 'changes']; const at = rows.findIndex((r) => r.path === d.path)
     if (rows[at + by]) openDiff(rows[at + by]!)
   }
   const placeholder = () => {

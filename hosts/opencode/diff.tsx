@@ -3,13 +3,14 @@ import type { Plugin } from '@opencode/plugin/tui'
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js'
 import { diffWindow, reviewText, toUnifiedText, type DiffFile, type DiffLine } from '../../core/git/diff.ts'
 import { DIFF_MAX_LINES } from '../../core/git/service.ts'
+import type { PaneState } from '../../core/pane.ts'
 import { latest } from '../../core/latest.ts'
 import { cellWidth, fitEnd, fitPath } from '../../core/shared/fit.ts'
 import { insideRel } from '../../core/shared/paths.ts'
 import { handToAgent } from './hand-off.ts'
 import type { JeiRpc } from './rpc.ts'
 
-type Target = { path: string; staged: boolean; untracked: boolean }
+type Target = NonNullable<PaneState['diff']>
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid diff reply.')
   return value as Record<string, unknown>
@@ -47,12 +48,13 @@ export function Diff(props: {
   const theme = () => props.ctx.theme
   const colors = () => theme().diff?.text
   const cwd = createMemo(() => props.cwd)
-  const target = createMemo(() => ({ path: props.target.path, staged: props.target.staged, untracked: props.target.untracked }), undefined,
-    { equals: (a, b) => a.path === b.path && a.staged === b.staged && a.untracked === b.untracked })
+  const target = createMemo(() => ({ path: props.target.path, source: props.target.source }), undefined,
+    { equals: (a, b) => a.path === b.path && JSON.stringify(a.source) === JSON.stringify(b.source) })
   const load = latest(async (target: Target) => {
     const safe = insideRel(cwd(), target.path)
     if (!safe || safe !== target.path) throw new Error('Invalid diff path.')
-    return readDiff(await props.api.diff(target))
+    if (target.source.kind !== 'working') return { file: null, truncated: false }
+    return readDiff(await props.api.diff({ path: target.path, staged: target.source.staged, untracked: target.source.untracked }))
   })
   createEffect(() => {
     const selected = target(); props.revision; cwd()
@@ -122,7 +124,7 @@ export function Diff(props: {
   props.bind((action) => { void run(action).catch(() => props.ctx.ui.toast.show({ message: 'Unable to complete diff action.', variant: 'error' })) })
   onCleanup(() => { stopped = true; props.bind(() => {}) })
   const header = () => {
-    const f = loaded()?.file; const source = props.target.staged ? 'staged' : props.target.untracked ? 'untracked' : 'working tree'
+    const f = loaded()?.file; const d = props.target.source; const source = d.kind === 'working' ? d.staged ? 'staged' : d.untracked ? 'untracked' : 'working tree' : d.kind
     const suffix = ` · ${source}${f ? ` +${f.added} −${f.removed}` : ''}`
     return props.width >= 40 ? fitPath(props.target.path, Math.max(8, props.width - cellWidth(suffix) - 2)) + suffix : fitPath(props.target.path, props.width - 2)
   }

@@ -1,6 +1,6 @@
 # Architecture
 
-> Purpose: how JEI is split between a host-independent core and two thin host adapters, and how data moves · Status: current · Last reviewed: 2026-10-19
+> Purpose: how JEI is split between a host-independent core and two thin host adapters, and how data moves · Status: current · Last reviewed: 2026-10-20
 
 The layout is fixed; modules appear as plan Tasks 3-17 are built (see `docs/quality.md`). Source: `PRD.md` §4.1 and §8.
 
@@ -27,11 +27,14 @@ Status: current. Defined in `core/host.ts`; the process, file and model half onl
 | --- | --- |
 | `files` | `up`: move-up, `down`: move-down, `enter`: activate, `a`: mention, `o`: open-editor, `f`: filter, `h`: toggle-hidden, `esc`: back |
 | `files.preview` | `up`: scroll-up, `down`: scroll-down, `a`: mention, `o`: open-editor, `m`: toggle-markdown-source, `esc`: back |
-| `git` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: stage, `u`: unstage, `d`: discard, `c`: commit, `g`: generate-message, `e`: sync, `esc`: back |
+| `git` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: stage, `u`: unstage, `d`: discard, `c`: commit, `y`: copy-hash, `a`: ask, `b`: branches, `f`: filter, `t`: fetch, `n`: new-branch, `g`: generate-message, `e`: sync, `esc`: back |
+| `git.branches` | `up`: move-up, `down`: move-down, `enter`: switch, `n`: new-branch, `c`: compare, `f`: filter, `esc`: back |
 | `git.diff` | `up`: scroll-up, `down`: scroll-down, `n`: next-hunk, `p`: prev-hunk, `j`: next-file, `k`: prev-file, `a`: ask-review, `o`: open-editor, `esc`: back |
 | `search`, `symbols` | `up`: move-up, `down`: move-down, `enter`: activate, `esc`: back (more keys arrive in 0.3 and 0.4) |
 
 Action names are stable; rename one only with every consumer in the same change.
+
+The v0.2 keys are defined in core before their host views are built; see `docs/quality.md` for availability. `n` in Git creates from the selected graph commit, while Branches creates from HEAD. `PaneState.diff` is `{ source: DiffSource; path: string }`, with working `{ kind: 'working'; staged; untracked }`, commit `{ kind: 'commit'; hash }` or compare `{ kind: 'compare'; base; head }` sources. `open-diff` carries the same fields; `branches` pushes `git.branches`. Diff/back preserves the current Git stack and selection. Both existing host views currently consume only working sources.
 
 ## Adapters
 
@@ -83,6 +86,18 @@ Status: current for `run.ts`, `status.ts`, `diff.ts`, `commands.ts`, `hooks.ts`,
 - `core/git/hooks.ts`: `readHookSignals(host, root)` uses only the Host: `config --get core.hooksPath` (exit 1 means unset), `.git/hooks` located through `rev-parse --git-path hooks` (correct in linked worktrees), `.husky/`, `lefthook.yml` / `.lefthook.yml`, `.pre-commit-config.yaml`, and `.gitattributes` text. `usesHooks` ignores `*.sample` hook files and treats `filter=lfs` as a hook-like signal.
 - `core/git/sensitive.ts` and `core/git/message.ts`: see `docs/security.md` for the sensitive list; `commitPrompt` asks for one Conventional Commits message (subject up to 72 characters) with the diff cut to `maxChars` and a truncation note, `cleanMessage` strips a leading "Commit message:", unwraps a fence only when the text starts with one (unterminated accepted; a fence inside a body is kept) and strips surrounding quotes; `commitPrompt` never cuts a surrogate pair.
 
+## Git history contracts
+
+The v0.2 core is built; host Graph and Branches views remain draft. ADR `docs/decisions/0011-git-history-core-contracts.md` records the preflight contract corrections.
+
+- `core/git/log.ts`: NUL-delimited commit records, full HEAD/local/remote/tag badges, `isMerge`, quoted `author:`, `path:` and `branch:` filter tokens (`branch:*` means all); remaining words form a fixed-string, case-insensitive message filter. `logArgs` requests topo order and count plus one. Named revisions follow `--end-of-options`; literal paths follow `--` last.
+- `core/git/graph.ts`: pure parent-waiting lanes, Unicode/ASCII commit rows and fork/merge/closure connectors. Missing loaded parents keep their lanes. `fitGraph(row, maxCells, ellipsis)` uses actual cells, preserves the commit when width is positive, includes the active ellipsis and crops connectors too. A lane budget must first become `2 * lanes - 1` cells; a host must reserve other row content before passing its final graph cell budget.
+- `core/git/commit.ts`: `CommitFile` name-status/numstat pairing, binary null counts, rename origins, first-parent merge argv and root/nonroot diff argv. `assertCommitHash` is the shared 40-lowercase-hex boundary; these history reads are SHA-1-only.
+- `core/git/agent.ts`: pure `AgentCommits`, reflog parser, creation-action allowlist, `Candidate = { hash; time /* committer unix seconds */ }`, `ReflogBoundary = { entry: string | null }`. Tracker API: `toolStart(head: string | null, now: number): number`, `toolEnd(token: number, head: string | null, candidates: readonly Candidate[]): void`, `invalidate(): void`, `observe(head: string | null): void`, `lastHead(): string | null`, `has(hash): boolean`, `toJSON(): string[]`, and `AgentCommits.from(hashes: readonly string[]): AgentCommits`. Only the last 1,000 inserted valid hashes persist. Every overlapping window is suppressed until its own token ends; a JEI mutation invalidates all open windows. Refresh observation never changes captured start evidence.
+- `core/git/service.ts`: `graph(host, root, filter, count)` returns `{ commits, more }` (positive safe integer count and count plus one, exact local/remote ref resolution, unborn HEAD empty). `commitFiles(host, root, hash)` and `commitDiff(host, root, hash, path)` use real first-parent/root reads and the existing 5,000-line cap; renames include both paths. `newlyReachable(host, root, from: string | null, to: string): Promise<Candidate[]>` caps at 500. `captureReflog(host, root, head: string | null): Promise<ReflogBoundary | null>` captures the newest complete raw-date HEAD reflog identity, or the explicit empty unborn baseline. `agentCandidates(host, root, from: string | null, to: string, boundary: ReflogBoundary | null): Promise<Candidate[]>` accepts only new commit-producing reflog records above a unique boundary and reachable from final HEAD. A 501-record read bounds the witness to 500 new entries; failed, malformed, ambiguous, missing-boundary or raced evidence yields no candidates. The pure tracker then applies the two-second committer-clock slack.
+
+Hosts must await baseline capture before executing a tool without failing it on bookkeeping errors, retain its immutable start HEAD and boundary by call identity, and end its token with the actual final HEAD even when no candidates exist. Keep each tracker per session/repository; invalidate before every JEI mutation, including hook-aware shell calls. Only hashes survive session-state serialization. The witness cannot distinguish an unrelated external commit made during that same tool window; conservative overlaps also cause deliberate missed marks.
+
 ## Files layer
 
 Status: current for `core/files/` and `core/shared/fit.ts`.
@@ -103,7 +118,7 @@ Status: current for `core/activity/`, `core/latest.ts`, `core/pane.ts` and `core
 - `core/activity/shell.ts`: `classifyShell` splits a command line outside quotes on `|`, `||`, `&&`, `;` and `&`, tokenizes each segment with `splitCommand`, drops redirections and flags (and the value of known value flags such as `head -n 5`), and reads file words of `cat head tail less more bat type Get-Content` (`-Path`/`-LiteralPath` value) and `rg`/`grep` (first word is the pattern unless `-e`/`-f`). `git` with `commit push pull checkout switch merge rebase reset` is kind `git` (wins over reads); `status diff log show` and everything else give `null`. Nothing is executed.
 - `core/activity/log.ts`: `ActivityLog` takes `now` as an argument everywhere (no clock inside). `glow` falls linearly from 1 to 0 over `GLOW_MS` (2000); `isGlowing` tells adapters whether to keep a redraw timer; `touched` stays true for the session; `toJSON`/`from` round-trip. `allows(setting, kind)` applies the `activity` option (`git` shows unless `none`).
 - `core/latest.ts`: `latest(fn)` is the refresh guard. Only the most recent call yields `{ value, stale: false }`; an older call yields `{ stale: true }` even when it rejects; a rejected latest call rejects.
-- `core/pane.ts`: `reducePane` is pure. `tab` resets the stack to the tab's root view but keeps `selected` (per-view selection survives tab switches). `open-diff` pushes `git.diff` and records `diff`; `preview` pushes `files.preview` and selects the file in Files; both switch tab when needed. `back` pops (restoring `git` with `selected.git` intact) and is a no-op on a root view.
+- `core/pane.ts`: `reducePane` is pure. `tab` resets the stack to the tab's root view but keeps `selected` (per-view selection survives tab switches). `open-diff` pushes `git.diff` and records `diff`; `preview` pushes `files.preview` and selects the file in Files; both switch tab when needed. `branches` pushes `git.branches`; `back` restores the originating view and its selection, and is a no-op on a root view.
 - `core/command.ts`: `parseJeiArgument` trims; empty toggles; a tab name (any case) opens that tab; anything else reveals a posix-normalized path (no leading `./`) in Files.
 
 ## Services

@@ -2,7 +2,7 @@ import type { EngineInterface, RenderElement } from 'claude-code'
 import { diffWindow, reviewText, toUnifiedText, type DiffFile } from '../../core/git/diff.ts'
 import { DIFF_MAX_LINES, fileDiff } from '../../core/git/service.ts'
 import type { Options } from '../../core/options.ts'
-import { currentView, reducePane } from '../../core/pane.ts'
+import { currentView, reducePane, type PaneState } from '../../core/pane.ts'
 import { cellWidth, fitEnd, fitPath } from '../../core/shared/fit.ts'
 import { toPosix } from '../../core/shared/paths.ts'
 import { onRefresh } from './activity.ts'
@@ -15,7 +15,7 @@ const MINUS = '−'
 const REVIEW_MAX = 8000
 
 type Loaded = { file: DiffFile | null; truncated: boolean } | { error: string }
-type Target = { path: string; staged: boolean; untracked: boolean }
+type Target = NonNullable<PaneState['diff']>
 
 // The diff on screen, read once per file and dropped by every refresh (activity.ts).
 let current: { key: string; p: Promise<Loaded> } | null = null
@@ -24,9 +24,10 @@ onRefresh(() => {
 })
 
 function diffOf($: EngineInterface, root: string, d: Target): Promise<Loaded> {
-  const key = `${root}\u0000${d.path}\u0000${d.staged}\u0000${d.untracked}`
+  if (d.source.kind !== 'working') return Promise.resolve({ file: null, truncated: false })
+  const key = `${root}\u0000${d.path}\u0000${d.source.staged}\u0000${d.source.untracked}`
   if (current?.key !== key) {
-    const p = fileDiff(hostFor($, root), root, d.path, { staged: d.staged, untracked: d.untracked }).catch(
+    const p = fileDiff(hostFor($, root), root, d.path, d.source).catch(
       (err: unknown): Loaded => ({ error: firstLine(err) }),
     )
     current = { key, p }
@@ -66,8 +67,9 @@ async function stepFile($: EngineInterface, by: 1 | -1): Promise<void> {
   const pane = await readPane($)
   const g = await readGit($)
   const d = pane.diff
-  if (d === undefined || g === null || g.root === null) return
-  const rows = groupRows(g as Repo, d.staged)
+  if (d === undefined || d.source.kind !== 'working' || g === null || g.root === null) return
+  const source = d.source
+  const rows = groupRows(g as Repo, source.staged)
   const at = rows.findIndex((r) => r.entry.path === d.path)
   const next = rows[at + by]
   if (next === undefined) {
@@ -79,8 +81,7 @@ async function stepFile($: EngineInterface, by: 1 | -1): Promise<void> {
     reducePane(reducePane(s, { type: 'select', view: 'git', id: next.id }), {
       type: 'open-diff',
       path: next.entry.path,
-      staged: d.staged,
-      untracked: next.status === 'untracked',
+      source: { kind: 'working', staged: source.staged, untracked: next.status === 'untracked' },
     }),
   )
 }
@@ -115,7 +116,7 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
   )
   const back = act($, () => updatePane($, (s) => reducePane(s, { type: 'back' })))
   const d = pane.diff
-  if (d === undefined || g === null || g.root === null) {
+  if (d === undefined || d.source.kind !== 'working' || g === null || g.root === null) {
     const header = (
       <Box flexDirection="row">
         <Text>{inner > 0 ? ' ' : ''}</Text>
@@ -129,7 +130,7 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
   const file = 'error' in loaded ? null : loaded.file
 
   // Header: the path (never dropped), then +/−, then the source while they fit.
-  const source = d.staged ? 'staged' : d.untracked ? 'untracked' : 'working tree'
+  const source = d.source.staged ? 'staged' : d.source.untracked ? 'untracked' : 'working tree'
   const plus = file ? `+${file.added}` : ''
   const minus = file ? `${MINUS}${file.removed}` : ''
   const countsW = file ? cellWidth(plus) + 1 + cellWidth(minus) : 0
