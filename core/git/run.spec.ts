@@ -55,6 +55,24 @@ test('GitError redacts remote URL credentials without changing the executed argv
   expect(JSON.stringify({ message: error.message, stderr: error.stderr, argv: error.argv })).not.toContain('fictional-secret')
 })
 
+test('GitError redacts whitespace-bearing URL userinfo from every diagnostic field', async () => {
+  const safeRemote = 'https://github.com/acme/acme-app.git'
+  const safeDiagnostic = `fatal: unable to access '${safeRemote}': refused`
+  for (const whitespace of [' ', '\t', '\r\n']) {
+    const remote = `https://ana:fictional${whitespace}secret@github.com/acme/acme-app.git`
+    const diagnostic = `fatal: unable to access '${remote}': refused`
+    for (const source of ['stderr', 'stdout'] as const) {
+      const { host, calls } = fakeHost({ exitCode: 128, stdout: '', stderr: '', [source]: diagnostic })
+      const error = await git(host, '/r', ['fetch', remote]).catch((error) => error)
+      expect(calls[0]!.argv).toEqual(gitArgv('/r', ['fetch', remote]))
+      expect(error.argv).toEqual(gitArgv('/r', ['fetch', safeRemote]))
+      expect(error.stderr).toBe(source === 'stderr' ? safeDiagnostic : '')
+      expect(error.message).toBe(safeDiagnostic)
+      expect(error.firstLine).toBe(safeDiagnostic)
+    }
+  }
+})
+
 test('isRepo returns the trimmed root, or null on failure', async () => {
   const ok = fakeHost({ exitCode: 0, stdout: '/home/x/acme-app\n', stderr: '' })
   expect(await isRepo(ok.host, '/home/x/acme-app/src')).toBe('/home/x/acme-app')

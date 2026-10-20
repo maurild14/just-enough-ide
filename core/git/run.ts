@@ -26,7 +26,7 @@ export class GitError extends Error {
 }
 
 function redactUrlCredentials(text: string): string {
-  return text.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/]*@/gi, '$1')
+  return text.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^/]*@/gi, '$1')
 }
 
 function firstNonEmptyLine(text: string): string | null {
