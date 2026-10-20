@@ -91,8 +91,9 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
       await $.ui.focus({ requestId: 'jei', key: 'branch-filter' }).catch(() => undefined)
     }) },
   ]
-  const pinned = ui.ask?.kind === 'history' && ui.ask.root === root ? historyConfirmation($, e, frame, ui.ask) : await branchInput($, e, frame, root)
-  if (historyUi.branchFiltering && Input) pinned.push(<Box key="branch-filter-row" flexDirection="row"><Text> </Text><Input key="branch-filter" value={historyUi.branchFilter} placeholder="Filter branches"
+  const question = ui.ask?.kind === 'history' && ui.ask.root === root ? ui.ask : null
+  const pinned = question ? historyConfirmation($, e, frame, question) : await branchInput($, e, frame, root)
+  if (!question && historyUi.branchFiltering && Input) pinned.push(<Box key="branch-filter-row" flexDirection="row"><Text> </Text><Input key="branch-filter" value={historyUi.branchFilter} placeholder="Filter branches"
     onInput={(branchFilter: string) => historyAct($, () => updateHistory($, root, (historyUi) => ({ ...historyUi, branchFilter })))()}
     onSubmit={(branchFilter: string) => historyAct($, () => updateHistory($, root, (historyUi) => ({ ...historyUi, branchFilter, branchFiltering: false })))()} /></Box>)
   const room = Math.max(1, frame.bodyRows - pinned.length)
