@@ -2,7 +2,7 @@
 
 > Purpose: resolve v0.3 search process, fallback, replacement and retained-navigation contracts · Status: current · Last reviewed: 2026-10-20
 
-Status: accepted
+Status: accepted; retained-data bounds and capped replacement planning are superseded by 0023.
 
 ## Context
 

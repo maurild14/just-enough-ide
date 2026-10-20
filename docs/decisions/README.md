@@ -37,3 +37,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0020 | `0020-native-search-paths-and-zero-width-fallback.md` | Native literal filename boundaries and verified zero-width fallback matches |
 | 0021 | `0021-native-search-symbol-controls-and-path-evidence.md` | Compact native controls, fresh LSP checks, marked source previews and canonical path evidence |
 | 0022 | `0022-opencode-search-symbols-and-review-state.md` | Session-scoped OpenCode streams, stored replacement review and marked source targets |
+| 0023 | `0023-bounded-search-and-complete-replacement-review.md` | Estimated retention budgets and complete replacement review |

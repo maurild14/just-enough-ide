@@ -28,8 +28,45 @@ test('preview is a parseable unified diff even for odd names and no final newlin
   for (const rel of ['src/a b.ts', 'a\nb.ts', '漢.ts']) {
     const diff = parseUnifiedDiff(previewText({ rel, before: 'one\r\ntwo', after: 'one\r\nthree', count: 1 }))[0]!
     expect(diff.path).toBe(rel)
-    expect(diff.added).toBe(2)
-    expect(diff.removed).toBe(2)
+    expect(diff.added).toBe(1)
+    expect(diff.removed).toBe(1)
     expect(diff.hunks[0]?.lines.filter((line) => line.kind === 'meta')).toHaveLength(2)
+  }
+})
+
+test('replacement previews localize changes with three context lines and merge nearby hunks', () => {
+  const before = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`).join('\n') + '\n'
+  const after = before.replace('line 5\n', 'changed 5\n').replace('line 7\n', 'changed 7\n').replace('line 25\n', 'changed 25\n')
+  const diff = parseUnifiedDiff(previewText({ rel: 'a.ts', before, after, count: 3 }))[0]!
+  expect(diff.hunks.map(h => h.header)).toEqual(['@@ -2,9 +2,9 @@', '@@ -22,7 +22,7 @@'])
+  expect(diff.added).toBe(3)
+  expect(diff.removed).toBe(3)
+  const single = parseUnifiedDiff(previewText({ rel: 'a.ts', before: before.split('\n').slice(0, 10).join('\n') + '\n', after: before.split('\n').slice(0, 10).join('\n').replace('line 5', 'changed') + '\n', count: 1 }))[0]!
+  expect(single.hunks[0]?.header).toBe('@@ -2,7 +2,7 @@')
+})
+
+test('multiline replacement preview trims common prefix/suffix and handles newline-only edits', () => {
+  const before = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n') + '\n'
+  const after = before.replace('line 10\n', 'first\nsecond\n')
+  const diff = parseUnifiedDiff(previewText({ rel: 'a.ts', before, after, count: 1 }))[0]!
+  expect(diff.hunks[0]?.header).toBe('@@ -7,7 +7,8 @@')
+  expect(diff.added).toBe(2)
+  expect(diff.removed).toBe(1)
+  const newline = parseUnifiedDiff(previewText({ rel: 'a.ts', before: 'one', after: 'one\n', count: 1 }))[0]!
+  expect(newline.added).toBe(1)
+  expect(newline.removed).toBe(1)
+  expect(newline.hunks[0]?.lines.filter(line => line.kind === 'meta')).toHaveLength(1)
+  const appended = parseUnifiedDiff(previewText({ rel: 'a.ts', before: 'one', after: 'one\ntwo', count: 1 }))[0]!
+  expect(appended.added).toBe(2)
+  expect(appended.removed).toBe(1)
+  expect(appended.hunks[0]?.lines.filter(line => line.kind === 'meta')).toHaveLength(2)
+  expect(parseUnifiedDiff(previewText({ rel: 'a.ts', before: 'same\n', after: 'same\n', count: 1 }))[0]?.hunks).toEqual([])
+})
+
+test('whole-word replacement refuses Unicode word neighbors including astral letters', () => {
+  for (const text of ['señal', 'alü', 'al\u0301', 'al\u200c', '𝒜al']) {
+    const start = text.indexOf('al')
+    const file = { rel: 'a.ts', text, matches: [{ rel: 'a.ts', line: 1, text, ranges: [[start, start + 2]] as [number, number][] }] }
+    expect(planReplace({ ...query, text: 'al', wholeWord: true }, 'el', [file])).toEqual({ files: [], skipped: [{ rel: 'a.ts', reason: 'regex-differs' }] })
   }
 })

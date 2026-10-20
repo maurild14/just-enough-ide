@@ -16,7 +16,7 @@ test('argv protects option-like patterns and config, flags and glob values', () 
   expect(searchArgs({ ...query, regex: true })).not.toContain('-F')
   expect(searchArgs({ ...query, wholeWord: true })).toContain('-w')
   expect(parseGlobs('src/** !**/*.test.ts !**')).toEqual({ include: ['src/**'], exclude: ['**/*.test.ts', '**'] })
-  expect(gitGrepArgs({ ...query, text: '-rf', include: [':(exclude)*'], exclude: ['**/*.test.ts'] }).slice(-5)).toEqual(['-e', '-rf', '--', ':(glob):(exclude)*', ':(exclude,glob)**/*.test.ts'])
+  expect(gitGrepArgs({ ...query, text: '-rf', include: [':(exclude)*'], exclude: ['**/*.test.ts'] }).slice(-5)).toEqual(['-e', '-rf', '--', ':(glob)**/:(exclude)*', ':(exclude,glob)**/*.test.ts'])
 })
 
 test('UTF-8 offsets become UTF-16 indexes for accents, emoji and CJK', () => {

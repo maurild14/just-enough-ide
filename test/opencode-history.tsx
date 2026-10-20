@@ -40,7 +40,7 @@ export function historyFixture(options: Record<string, unknown> = {}) {
   let confirmation: boolean | undefined = false
   let selection: unknown = undefined
   let edited: string | undefined = undefined
-  const handlers: Record<string, (input: any) => Promise<unknown>> = {
+  const handlers: Record<string, (input: any, options?: { signal?: AbortSignal }) => Promise<unknown>> = {
     state: async () => ({ cwd, options: parseOptions({ ...options, defaultTab: 'git' }), git, activity: {} }),
     generate: async () => ({ message: 'feat: update app' }), commitPlan: async () => ({ steps: [], sensitive: [], viaAgentShell: false }),
     diff: async (input) => diff(input.path), sync: async () => ({ ok: true }),
@@ -49,7 +49,7 @@ export function historyFixture(options: Record<string, unknown> = {}) {
     compare: async () => ({ files: [{ path: 'a.ts', status: 'M', added: 2, removed: 1 }, { path: 'b.ts', status: 'A', added: 1, removed: 0 }], source: { kind: 'compare', base: hash, head: other } }),
     switchBranch: async () => ({ ok: true }), createBranch: async () => ({ ok: true }), checkout: async (i) => i.confirmed ? { ok: true } : { ok: false, confirm: 'Check out 1111111 (detached HEAD)?' }, revert: async (i) => i.confirmed ? { ok: true } : { ok: false, confirm: 'Revert 1111111?' },
   }
-  const api = Object.fromEntries(Object.keys(JeiRpc.methods).map((method) => [method, async (input: any) => { calls.push({ method, input }); return handlers[method]?.(input) ?? {} }]))
+  const api = Object.fromEntries(Object.keys(JeiRpc.methods).map((method) => [method, async (input: any, options?: { signal?: AbortSignal }) => { calls.push({ method, input }); return handlers[method]?.(input, options) ?? {} }]))
   api.events = { on(name: string, fn: (event: { data: unknown; location: { directory: string } }) => void) { const set = listeners.get(name) ?? new Set(); listeners.set(name, set); set.add(fn); return () => set.delete(fn) } } as any
   const copied: string[] = []; let copyResult = true
   const ctx = { renderer: { copyToClipboardOSC52(text: string) { copied.push(text); return copyResult } },

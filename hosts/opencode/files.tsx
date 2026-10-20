@@ -77,6 +77,7 @@ export function Files(props: {
   const [previewRel, setPreviewRel] = createSignal('')
   const [top, setTop] = createSignal(0)
   let treeTop = 0
+  let previewTarget: { rel: string; line: number } | undefined
   let stopped = false
   let code: CodeRenderable | undefined
   const cache = new Map<string, Promise<Listing>>()
@@ -130,7 +131,11 @@ export function Files(props: {
   const targetLine = () => isPreview() ? props.state.preview?.line : undefined
   const source = createMemo(() => preview()?.text?.split('\n') ?? [])
   const markedLine = () => targetLine() === undefined ? undefined : Math.max(1, Math.min(source().length, targetLine()!))
-  createEffect(() => { previewPath(); const line = markedLine(); if (line !== undefined) setTop(line - 1) })
+  createEffect(() => {
+    const rel = previewPath(), line = targetLine()
+    if (!rel || line === undefined) { previewTarget = undefined; return }
+    if (preview()?.text !== undefined && (previewTarget?.rel !== rel || previewTarget.line !== line)) { previewTarget = { rel, line }; setTop(markedLine()! - 1) }
+  })
   createEffect(() => {
     cwd(); props.revision
     const rel = previewPath()

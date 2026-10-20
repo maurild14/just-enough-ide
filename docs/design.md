@@ -167,6 +167,7 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 | Search | Idle | `Type to search the project.` |
 | Search | No results | `No results.` |
 | Search | Capped | `Results truncated.` |
+| Search | Canceled | `Search canceled.` |
 | Search | No ripgrep | `ripgrep (rg) is not installed. Install it to search:` with the installation URL; fallback summaries add `· git grep` |
 | Symbols | Nothing selected | `Select a file in Files.` |
 | Symbols | None found | `No symbols.` / `No outline for this file type.` |

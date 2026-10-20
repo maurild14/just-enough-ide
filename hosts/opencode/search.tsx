@@ -8,14 +8,14 @@ import { currentView, type PaneState, type PaneAction } from '../../core/pane.ts
 import { parseQuery, rankFiles } from '../../core/search/quickopen.ts'
 import { previewText, type ReplaceFile, type Skipped } from '../../core/search/replace.ts'
 import { parseGlobs, type Match, type SearchQuery } from '../../core/search/rg.ts'
-import { sendText } from '../../core/search/results.ts'
+import { replaceAskText, sendText } from '../../core/search/results.ts'
 import { cellWidth, fitEnd, fitPath, printable } from '../../core/shared/fit.ts'
 import { nativeRel } from '../../core/shared/paths.ts'
 import { handToAgent } from './hand-off.ts'
 import type { JeiRpc } from './rpc.ts'
 
-type SearchState = { text: string; globs: string; replacement: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; matches: Match[]; summary: string; engine: string; planId: string; files: ReplaceFile[]; skipped: Skipped[]; busy: boolean; applying: boolean; serial: number; revision: number; quickFiles?: string[]; quickRevision?: number; subject?: { match?: Match; quick?: string; replacement?: string } }
-const initial = (): SearchState => ({ text: '', globs: '', replacement: '', caseSensitive: false, regex: false, wholeWord: false, matches: [], summary: '', engine: 'rg', planId: '', files: [], skipped: [], busy: false, applying: false, serial: 0, revision: -1 })
+type SearchState = { text: string; quickText?: string; globs: string; replacement: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; matches: Match[]; summary: string; engine: string; planId: string; files: ReplaceFile[]; skipped: Skipped[]; busy: boolean; applying: boolean; serial: number; refreshSearch?: boolean; quickFiles?: string[]; quickRevision?: number; subject?: { match?: Match; quick?: string; replacement?: string } }
+const initial = (): SearchState => ({ text: '', globs: '', replacement: '', caseSensitive: false, regex: false, wholeWord: false, matches: [], summary: '', engine: 'rg', planId: '', files: [], skipped: [], busy: false, applying: false, serial: 0 })
 const natural = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
 function record(v: unknown): Record<string, unknown> { if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Invalid Search reply.'); return v as Record<string, unknown> }
 function rel(v: unknown): string { if (typeof v !== 'string' || !v || v.includes('\0') || nativeRel('', v, 'linux') !== v) throw new Error('Invalid Search path.'); return v }
@@ -70,7 +70,7 @@ export function Search(props: {
   function stop() {
     epoch++; clearTimeout(timer); pending?.abort(); pending = undefined
     if (runId) { const id = runId; runId = ''; void props.api.searchCancel({ sessionID: props.sessionID, id }).catch(() => {}) }
-    if (!s.applying) update(d => { d.busy = false })
+    if (!s.applying) update(d => { d.busy = false; if (d.summary === 'Searching…') d.summary = 'Search canceled.' })
   }
   function restart() {
     stop()
@@ -106,9 +106,10 @@ export function Search(props: {
       const controller = new AbortController(); setQuickError(''); setQuickLoading(true)
       void props.api.quickOpenFiles({}, { signal: controller.signal }).then(raw => { if (!stopped && !controller.signal.aborted) { const files = strings(record(raw).files).slice(0, 50_000).map(rel); update(d => { d.quickFiles = files; d.quickRevision = revision }) } }).catch(error => { if (!stopped && !controller.signal.aborted) { setQuickError(reason(error)); props.ctx.ui.toast.show({ message: fitEnd(reason(error) + (s.quickFiles?.length ? ' Showing cached files.' : ''), Math.max(1, props.width)), variant: 'error' }) } }).finally(() => { if (!stopped && !controller.signal.aborted) setQuickLoading(false) })
       onCleanup(() => controller.abort())
-    } else if (s.revision !== revision && !replacing()) { update(d => { d.revision = revision }); if (s.text || s.regex) restart() }
+    }
   })
-  const ranked = createMemo(() => rankFiles(parseQuery(s.text).name, s.quickFiles ?? [], { touched: new Set(Object.keys(props.activity.toJSON())), recent: props.state.recent }, 200))
+  createEffect(() => { if (!quick() && !replacing() && s.refreshSearch && !s.applying) { update(d => { delete d.refreshSearch }); untrack(restart) } })
+  const ranked = createMemo(() => rankFiles(parseQuery(s.quickText ?? '').name, s.quickFiles ?? [], { touched: new Set(Object.keys(props.activity.toJSON())), recent: props.state.recent }, 200))
   type Row = { id: string; label?: string; match?: Match; path?: string; passive?: boolean; diff?: string }
   const rows = createMemo(() => {
     const all: Row[] = []
@@ -149,14 +150,14 @@ export function Search(props: {
       const raw = record(await props.api.replaceApply({ sessionID: props.sessionID, planId, rels })), written = strings(raw.written).map(rel), skipped = skips(raw.skipped)
       if (written.some(path => !rels.includes(path)) || raw.error !== undefined && typeof raw.error !== 'string') throw new Error('Invalid Search reply.')
       const replaced = files.filter(f => written.includes(f.rel)).reduce((n, f) => n + f.count, 0)
-      update(d => { d.skipped = [...d.skipped, ...skipped]; d.files = d.files.filter(f => !written.includes(f.rel) && !skipped.some(s => s.rel === f.rel)) })
+      update(d => { d.skipped = [...d.skipped, ...skipped]; d.files = d.files.filter(f => !written.includes(f.rel) && !skipped.some(s => s.rel === f.rel)); if (written.length) d.refreshSearch = true })
       if (!stopped) props.ctx.ui.toast.show({ message: `Replaced ${replaced} matches in ${written.length} files.${raw.error ? ` ${raw.error}` : ''}`, variant: raw.error ? 'error' : 'info' })
     } finally { try { await props.refresh() } finally { update(d => { d.applying = false; d.busy = false }) } }
   }
   async function submit() {
     if (s.applying) return
     const field = editing(); setEditing(null)
-    if (quick()) { const path = ranked()[0]; if (path) preview(path, parseQuery(s.text).line ?? undefined); return }
+    if (quick()) { const path = ranked()[0]; if (path) preview(path, parseQuery(s.quickText ?? '').line ?? undefined); return }
     if (field !== 'replacement') return
     if (s.busy) stop()
     const generation = epoch; pending = new AbortController(); update(d => { d.busy = true })
@@ -170,7 +171,7 @@ export function Search(props: {
     } finally { if (generation === epoch) update(d => { d.busy = false }) }
   }
   async function run(action: string): Promise<void> {
-    if (action === 'back') { if (editing()) { stop(); setEditing(null) } else { stop(); props.dispatch({ type: 'back' }) }; return }
+    if (action === 'back') { if (editing()) { if (editing() === 'replacement') stop(); setEditing(null) } else { stop(); props.dispatch({ type: 'back' }) }; return }
     if (action === 'move-up' || action === 'move-down' || action === 'scroll-up' || action === 'scroll-down') {
       setEditing(null)
       const file = replacing() && expanded().includes(selected() ?? '') ? s.files.find(f => f.rel === selected()) : undefined
@@ -185,31 +186,25 @@ export function Search(props: {
     if (action === 'edit') { setEditing('query'); return }
     if (action === 'include' || action === 'replace') { setEditing(action === 'include' ? 'globs' : 'replacement'); return }
     if (action.startsWith('toggle-')) { const field = action === 'toggle-case' ? 'caseSensitive' : action === 'toggle-regex' ? 'regex' : 'wholeWord'; update(d => { d[field] = !d[field] }); restart(); return }
-    if (action === 'quickopen' || action === 'search') { stop(); update(d => { d.text = '' }); setEditing('query'); props.dispatch(action === 'quickopen' ? { type: 'quickopen' } : { type: 'back' }); return }
+    if (action === 'quickopen' || action === 'search') { stop(); setEditing('query'); props.dispatch(action === 'quickopen' ? { type: 'quickopen' } : { type: 'back' }); return }
     if (action === 'apply-file') {
       if (id.startsWith('toggle:')) { const path = id.slice(7); setExpanded(old => old.includes(path) ? old.filter(p => p !== path) : [...old, path]); return }
       const path = command ? s.subject?.replacement : id
       return apply(path && s.files.some(f => f.rel === path) ? [path] : [])
     }
     if (action === 'apply-all') return apply(s.files.map(f => f.rel))
-    if (action === 'activate') { if (quick()) { const path = ranked()[Number(id.slice(5))]; if (path) preview(path, parseQuery(s.text).line ?? undefined) } else { const m = s.matches[Number(id.slice(6))]; if (m) preview(m.rel, m.line) }; return }
+    if (action === 'activate') { if (quick()) { const path = ranked()[Number(id.slice(5))]; if (path) preview(path, parseQuery(s.quickText ?? '').line ?? undefined) } else { const m = s.matches[Number(id.slice(6))]; if (m) preview(m.rel, m.line) }; return }
     if (action === 'mention') { if (quick()) { const path = command ? ranked().find(path => path === s.subject?.quick) : ranked()[Number(id.slice(5))]; if (path) await handToAgent(props.ctx, props.sessionID, `@${path} `) } else { const target = s.subject?.match, m = command ? s.matches.find(m => m.rel === target?.rel && m.line === target.line && m.text === target.text) : s.matches[Number(id.slice(6))]; if (m) await handToAgent(props.ctx, props.sessionID, sendText(s.text, [m])) }; return }
     if (action === 'send-all') return handToAgent(props.ctx, props.sessionID, sendText(s.text, s.matches))
-    if (action === 'ask') {
-      const text = `Replace ${JSON.stringify(s.text)} with ${JSON.stringify(s.replacement)} in: `
-      const locations = s.matches.map(m => `${m.rel}:${m.line}`); let result = text, count = 0
-      for (const location of locations) { const suffix = `, …and ${locations.length - count - 1} more.`; if (result.length + location.length + 2 + suffix.length > 12_000) break; result += (count ? ', ' : '') + location; count++ }
-      if (count < locations.length) result = result.slice(0, 11_950) + `, …and ${locations.length - count} more.`
-      return handToAgent(props.ctx, props.sessionID, result.slice(0, 12_000))
-    }
+    if (action === 'ask') return handToAgent(props.ctx, props.sessionID, replaceAskText(query(), s.replacement, s.matches))
   }
   const invoke = (action: string) => { void run(action).catch(fail) }
   props.bind(invoke, () => editing() !== null)
   onCleanup(() => { stopped = true; stop(); offMatches(); offDone(); props.bind(() => {}, () => false) })
   const field = () => editing() ?? 'query'
-  const fieldValue = () => field() === 'query' ? s.text : field() === 'globs' ? s.globs : s.replacement
+  const fieldValue = () => field() === 'query' ? quick() ? s.quickText ?? '' : s.text : field() === 'globs' ? s.globs : s.replacement
   const markers = () => compact() && !quick() && field() === 'query' ? [s.caseSensitive ? '[Aa]' : '', s.regex ? '[.*]' : '', s.wholeWord ? '[\\b]' : '', s.engine === 'git grep' ? 'git grep' : '', s.summary === 'Results truncated.' ? 'truncated' : ''].filter(Boolean).join(' ') : ''
-  const change = (value: string) => { const key = field() === 'query' ? 'text' : field() === 'globs' ? 'globs' : 'replacement'; if (s[key] === value) return; update(d => { d[key] = value }); if (key !== 'replacement' && !quick()) restart() }
+  const change = (value: string) => { const key = field() === 'query' ? quick() ? 'quickText' : 'text' : field() === 'globs' ? 'globs' : 'replacement'; if (s[key] === value) return; update(d => { d[key] = value }); if (key !== 'replacement' && !quick()) restart() }
   function matchSpans(m: Match) {
     const prefix = `${m.line}: `, width = Math.max(0, inner() - cellWidth(prefix)), first = m.ranges[0]?.[0] ?? 0
     let from = Math.max(0, first - Math.floor(width / 3)); if (/[\uDC00-\uDFFF]/.test(m.text[from] ?? '')) from--

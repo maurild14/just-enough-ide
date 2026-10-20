@@ -113,6 +113,11 @@ export function updateGitUi($: StateHost, fn: (g: JeiGitUi) => JeiGitUi): Promis
 export function resetGitUi($: StateHost): Promise<JeiGitUi> {
   return update($, gitUi, (g) => ({ ...g, busy: null, ask: null }))
 }
+/** Hot reload keeps data, but no abandoned operation, editor or confirmation. */
+export async function resetSearchSymbols($: StateHost): Promise<void> {
+  await update($, searches, all => Object.fromEntries(Object.entries(all).map(([root, s]) => [root, { ...s, busy: false, editing: null, confirm: null, summary: s.summary === 'Searching…' ? 'Search canceled.' : s.summary }])))
+  await update($, symbols, all => Object.fromEntries(Object.entries(all).map(([root, s]) => [root, { ...s, busy: false, loading: false, editing: false, permission: false }])))
+}
 export function bumpTick($: StateHost): Promise<number> {
   return update($, tick, (n) => (n + 1) % 1_000_000)
 }

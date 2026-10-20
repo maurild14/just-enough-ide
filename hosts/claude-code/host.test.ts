@@ -77,6 +77,31 @@ test('a stalled stream keeps backpressure and a host timer cancels its producer'
   expect(timerCancelled).toBe(true)
 })
 
+test('cancel before a pending pull delivers 64 lines never creates a new backpressure wait', async () => {
+  let deliver!: () => void
+  let closed = false
+  const host = claudeHost(fakeEngine({ spawn: () => (async function* () {
+    try {
+      yield { stream: 'stdout', text: 'early\n'.repeat(63) }
+      await new Promise<void>(resolve => { deliver = resolve })
+      yield { stream: 'stdout', text: 'late\n'.repeat(64) }
+      return { code: 0, signal: null }
+    } finally { closed = true }
+  })() }), 'linux')
+  const stream = host.stream(['rg'])
+  for (let i = 0; i < 100; i++) await Promise.resolve()
+  stream.cancel()
+  deliver()
+  let settled = false
+  void stream.done.then(() => { settled = true })
+  for (let i = 0; i < 100; i++) await Promise.resolve()
+  expect(settled).toBe(true)
+  expect(closed).toBe(true)
+  const lines: string[] = []
+  if (settled) for await (const line of stream.lines) lines.push(line)
+  expect(lines).toEqual(Array(63).fill('early'))
+})
+
 test('oversized stdout lines and stderr reject and close the spawned source', async () => {
   for (const pipe of ['stdout', 'stderr']) {
     let closed = false
@@ -113,7 +138,7 @@ test('run passes argv and init through and keeps the result', async () => {
 test('a truncated stdout fails instead of parsing a partial list', async () => {
   const host = claudeHost(fakeEngine({ run: async () => result({ isStdoutTruncated: true }) }), 'linux')
   await expect(host.run(['git', '--no-optional-locks', '-C', '/work/acme-app', 'ls-files'])).rejects.toThrow(
-    'Output too large: git --no-optional-locks -C',
+    'File list too large',
   )
 })
 

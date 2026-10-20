@@ -20,6 +20,7 @@ export function claudeHost($: EngineInterface, platform: Platform): Host {
       if (options.signal?.aborted) throw new Error('aborted')
       const source = $.process.spawn({ argv, ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
         ...(options.env === undefined ? {} : { env: options.env }), ...(options.stdin === undefined ? {} : { input: options.stdin }) })
+      void source.result?.catch(() => {})
       const queue: string[] = []
       let queued = 0
       let wake: (() => void) | undefined
@@ -40,6 +41,7 @@ export function claudeHost($: EngineInterface, platform: Platform): Host {
         try {
           while (!cancelled) {
             const next = await source.next()
+            if (cancelled) break
             if (next.done) {
               if (pending) queue.push(pending)
               return { exitCode: next.value.code ?? 1, stderr }
@@ -57,7 +59,7 @@ export function claudeHost($: EngineInterface, platform: Platform): Host {
               queue.push(line); queued += line.length
               pending = ''
               wake?.(); wake = undefined
-              if (queued >= 1_048_576 || queue.length >= 64) await new Promise<void>((resolve) => { resume = resolve })
+              if (!cancelled && (queued >= 1_048_576 || queue.length >= 64)) await new Promise<void>((resolve) => { resume = resolve })
               if (cancelled) break
             }
             wake?.(); wake = undefined
@@ -101,7 +103,7 @@ export function claudeHost($: EngineInterface, platform: Platform): Host {
       if (options.timeoutMs !== undefined) init.timeoutMs = options.timeoutMs
       const r = await $.process.run(argv, init)
       // A cut stdout would parse as a short list; fail loudly instead.
-      if (r.isStdoutTruncated) throw new Error(`Output too large: ${argv.slice(0, 3).join(' ')}`)
+      if (r.isStdoutTruncated) throw new Error(argv.includes('ls-files') ? 'File list too large for this host (4 MiB). Narrow the project and retry.' : `Output too large: ${argv.slice(0, 3).join(' ')}`)
       return { exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr }
     },
 

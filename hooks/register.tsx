@@ -7,13 +7,13 @@ import { projectRel } from '../core/shared/paths.ts'
 import { TAB_NAMES } from '../core/shared/tabs.ts'
 import { refreshGit, registerActivity } from '../hosts/claude-code/activity.ts'
 import { scrollDiff } from '../hosts/claude-code/diff.tsx'
-import { focusFiles, scrollFiles } from '../hosts/claude-code/files.tsx'
+import { focusFiles, forgetFileList, scrollFiles } from '../hosts/claude-code/files.tsx'
 import { focusGit, scrollGitList } from '../hosts/claude-code/git.tsx'
 import { focusBranches, scrollBranches } from '../hosts/claude-code/branches.tsx'
 import { focusSearch, scrollSearch, stopSearch } from '../hosts/claude-code/search.tsx'
 import { enterSymbols, focusSymbols, scrollSymbols, stopSymbols } from '../hosts/claude-code/symbols.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
-import { initPane, PANE_ID, readCwd, readPane, resetGitUi, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
+import { initPane, PANE_ID, readCwd, readPane, resetGitUi, resetSearchSymbols, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
 
 const TITLE = 'JEI'
 
@@ -40,10 +40,13 @@ export const register: Register = (on, raw) => {
       name: 'jei',
       description: 'Toggle the JEI pane: /jei [files|search|symbols|git|<path>]',
     })
+    await stopSearch($, true)
+    await stopSymbols($)
     await setCwd($, e.cwd)
     autoOpenArmed = (await initPane($, options.defaultTab)) && options.startOpen
     await resetGitUi($)
-    if ((await readPane($)).tab === 'symbols') await enterSymbols($)
+    await resetSearchSymbols($)
+    if ((await readPane($)).tab === 'symbols') void enterSymbols($).catch(err => $.ui.log(`jei: ${reason(err)}`))
     void refreshGit($).catch(() => undefined)
     return next(e)
   })
@@ -86,8 +89,9 @@ export const register: Register = (on, raw) => {
       await updateTree($, (t) => ({ ...t, expanded: [...reveal(new Set(t.expanded), id)] }))
       await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id }))
     }
-    if (tab === 'symbols') await enterSymbols($)
-    return { text: (await openPane($)) ?? `JEI opened on ${TAB_NAMES[tab]}.` }
+    const opened = await openPane($)
+    if (tab === 'symbols') void enterSymbols($).catch(err => $.ui.log(`jei: ${reason(err)}`))
+    return { text: opened ?? `JEI opened on ${TAB_NAMES[tab]}.` }
   })
 
   // Observes only: a failure must never hold up the cd, so the catch passes it on.
@@ -95,6 +99,7 @@ export const register: Register = (on, raw) => {
     await stopSearch($)
     await stopSymbols($)
     await setCwd($, e.new_cwd)
+    if ((await readPane($)).tab === 'symbols') void enterSymbols($).catch(err => $.ui.log(`jei: ${reason(err)}`))
     void refreshGit($).catch(() => undefined) // never holds up the cd
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -121,6 +126,6 @@ export const register: Register = (on, raw) => {
   ).catch(
     ($, e, next) => next(e),
   )
-  on('ui.close', async ($, e, next) => { if (e.id === 'jei') { await stopSearch($); await stopSymbols($) }; return next(e) })
-  on('session.end', async ($, e, next) => { await stopSearch($); await stopSymbols($); return next(e) })
+  on('ui.close', async ($, e, next) => { if (e.id === 'jei') { await stopSearch($, true); await stopSymbols($); forgetFileList(await readCwd($)) }; return next(e) }).catch(($, e, next) => next(e))
+  on('session.end', async ($, e, next) => { await stopSearch($, true); await stopSymbols($); return next(e) }).catch(($, e, next) => next(e))
 }

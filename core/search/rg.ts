@@ -101,9 +101,10 @@ export function parseRgLine(json: string, root: string, platform: Platform = pla
 }
 
 export function gitGrepArgs(q: SearchQuery): string[] {
-  return ['grep', '-n', '--column', '-z', '-I', '--no-color', ...(q.caseSensitive ? [] : ['-i']), q.regex ? '-E' : '-F',
+  const globPath = (glob: string) => glob.includes('/') ? glob : `**/${glob}`
+  return ['grep', '-n', '--column', '-z', '-I', '--no-color', '--no-full-name', ...(q.caseSensitive ? [] : ['-i']), q.regex ? '-E' : '-F',
     ...(q.wholeWord ? ['-w'] : []), '-e', q.text, '--',
-    ...q.include.map((glob) => `:(glob)${glob}`), ...q.exclude.map((glob) => `:(exclude,glob)${glob}`)]
+    ...q.include.map((glob) => `:(glob)${globPath(glob)}`), ...q.exclude.map((glob) => `:(exclude,glob)${globPath(glob)}`)]
 }
 
 /** Column-only output has no length: leave a caret until the service verifies the first -o match. */

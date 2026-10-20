@@ -42,6 +42,8 @@ export type JeiPreview = { rel: string; source: boolean; top: number; line?: num
 
 export type JeiSearch = {
   text: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; globs: string; replacement: string
+  quickText?: string
+  subject?: Partial<Record<'search' | 'quickopen' | 'search.replace', string>>
   editing: 'query' | 'globs' | 'replacement' | null
   matches: { rel: string; line: number; text: string; ranges: [number, number][] }[]
   summary: string; engine: 'rg' | 'git grep'; busy: boolean
@@ -54,7 +56,7 @@ export type JeiSymbolNode = { name: string; kind: 'function' | 'class' | 'method
 export type JeiSymbolRef = { rel: string; line: number; text: string; container: string | null }
 export type JeiSymbols = {
   rel: string; nodes: JeiSymbolNode[]; source: 'lsp' | 'approximate'; notice: string
-  query: string; editing: boolean; busy: boolean; permission: boolean
+  query: string; editing: boolean; busy: boolean; permission: boolean; loading?: boolean
   selection?: Partial<Record<'symbols' | 'symbols.results', string>>
   result: { title: string; source: 'lsp' | 'approximate'; refs: JeiSymbolRef[]; subject?: { rel: string; node: JeiSymbolNode } } | null
   calls: { id: string; name: string; rel: string; node: JeiSymbolNode; direction: 'incomingCalls' | 'outgoingCalls'; depth: number; expanded: boolean; source: 'lsp' | 'approximate'; refs: JeiSymbolRef[] }[]

@@ -41,12 +41,15 @@ export function Symbols(props: {
 }) {
   const [s, update] = props.ctx.storage.memory<SymbolState>(`jei.symbols.${props.sessionID}\0${props.cwd}`, { initial: { rel: '', nodes: [], notice: '', query: '', busy: false, result: null, calls: [], subjects: {} } })
   const [editing, setEditing] = createSignal(false)
+  const [loading, setLoading] = createSignal(false)
   let stopped = false, generation = 0, pending: AbortController | undefined, listTop = 0
+  let outlineGeneration = 0, outlinePending: AbortController | undefined
   const view = createMemo(() => currentView(props.state)), results = () => view() === 'symbols.results', selected = () => props.state.selected[view()]
   const selectedFile = createMemo(() => props.state.selected.files)
   const theme = () => props.ctx.theme, inner = () => Math.max(0, props.width - 2)
   const active = (stamp: number) => !stopped && generation === stamp && ['symbols', 'symbols.results'].includes(view())
-  function stop() { generation++; pending?.abort(); update(d => { d.busy = false }); setEditing(false) }
+  const outlineActive = (stamp: number) => !stopped && outlineGeneration === stamp && ['symbols', 'symbols.results'].includes(view())
+  function stop() { generation++; pending?.abort(); outlineGeneration++; outlinePending?.abort(); setLoading(false); update(d => { d.busy = false }); setEditing(false) }
   function select(id: string) { props.dispatch({ type: 'select', view: view(), id }); if (!id.startsWith('command:') && id !== 'notice') update(d => { d.subjects[view()] = id }) }
   const errorText = (error: unknown) => error && typeof error === 'object' && !Array.isArray(error) && 'message' in error && typeof error.message === 'string' ? error.message.split(/\r?\n/)[0]! : 'Unable to complete Symbols.'
   async function outline(path: string, signal: AbortSignal) {
@@ -57,17 +60,17 @@ export function Symbols(props: {
   createEffect(() => {
     const file = selectedFile(); props.revision
     const candidates = [...new Set([file, ...Object.entries(props.activity.toJSON()).sort((a, b) => b[1].at - a[1].at).map(([path]) => path)].filter((p): p is string => !!p))]
-    const stamp = ++generation; pending?.abort(); const controller = new AbortController(); pending = controller
-    update(d => { d.busy = true })
+    const stamp = ++outlineGeneration; outlinePending?.abort(); const controller = new AbortController(); outlinePending = controller
+    setLoading(true)
     void (async () => {
       for (const path of candidates) {
         rel(path)
         const result = await outline(path, controller.signal)
-        if (!active(stamp)) return
+        if (!outlineActive(stamp)) return
         if (result.file) { const reset = s.rel !== path || !s.nodes.length; update(d => { d.rel = path; d.nodes = result.nodes ?? []; d.notice = result.nodes === null ? 'No outline for this file type.' : '' }); if (reset && result.nodes?.length && !results()) select('node-0'); return }
       }
-      if (active(stamp)) update(d => { d.rel = ''; d.nodes = []; d.notice = 'Select a file in Files.' })
-    })().catch(error => { if (active(stamp)) update(d => { d.notice = errorText(error); d.nodes = [] }) }).finally(() => { if (active(stamp)) update(d => { d.busy = false }) })
+      if (outlineActive(stamp)) update(d => { d.rel = ''; d.nodes = []; d.notice = 'Select a file in Files.' })
+    })().catch(error => { if (outlineActive(stamp)) update(d => { d.notice = errorText(error); d.nodes = [] }) }).finally(() => { if (outlineActive(stamp)) setLoading(false) })
     onCleanup(() => controller.abort())
   })
   async function perform(fn: (stamp: number, signal: AbortSignal) => Promise<void>) {
@@ -115,7 +118,7 @@ export function Symbols(props: {
       let previous = ''
       for (const [i, ref] of (s.result?.refs ?? []).entries()) { if (props.height > 3 && previous !== ref.rel) all.push({ id: `group:${ref.rel}`, text: ref.rel, passive: true }); previous = ref.rel; all.push({ id: `ref-${i}`, text: `${ref.line}: ${ref.container ? ref.container + ' · ' : ''}${ref.text.trim()}`, target: ref }) }
     }
-    if (!all.length) all.push({ id: 'notice', text: results() ? 'No results.' : s.notice || (s.busy ? 'Loading…' : 'No symbols.'), passive: true })
+    if (!all.length) all.push({ id: 'notice', text: results() ? 'No results.' : s.notice || (loading() ? 'Loading…' : 'No symbols.'), passive: true })
     for (const key of KEYS[view()]) if (/^[a-z]$/.test(key.key) && key.action !== 'back') all.push({ id: `command:${key.action}`, text: `${key.key} ${key.label}` })
     return all
   })

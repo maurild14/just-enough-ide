@@ -8,6 +8,7 @@ import { parseLsp, type LspOp } from '../../core/symbols/lsp.ts'
 import { fileOutline, definitions, findSymbol, readSource, references, incoming, outgoing, symbolSendText } from '../../core/symbols/service.ts'
 import type { SymbolNode } from '../../core/symbols/outline.ts'
 import type { SymbolRef } from '../../core/symbols/approx.ts'
+import type { Host } from '../../core/host.ts'
 import type { JeiSymbols } from '../../types/index.d.ts'
 import { onRefresh } from './activity.ts'
 import { firstLine, projectHost, showPreview, windowTop, type FilesFrame, type FilesView, type PaneRender } from './files.tsx'
@@ -15,12 +16,12 @@ import { readActivity, readCwd, readPane, readSymbols, readTick, updatePane, upd
 
 type Parsed = ReturnType<typeof parseLsp>
 type Input = { operation: LspOp; filePath: string; line: number; character: number; query?: string }
-type Runtime = { epoch: number; ids: string[]; focused?: string; pending?: { input: Input; call?: string }; fresh: boolean; load: ReturnType<typeof latest<[() => Promise<unknown>], unknown>> }
+type Runtime = { epoch: number; controller: AbortController; ids: string[]; focused?: string; pending?: { input: Input; call?: string }; fresh: boolean; load: ReturnType<typeof latest<[() => Promise<unknown>], unknown>> }
 const runtimes = new Map<string, Runtime>()
 async function runtime($: EngineInterface, root: string): Promise<Runtime> {
   const key = `${await $.session.id()}\0${root}`
   let r = runtimes.get(key)
-  if (!r) { r = { epoch: 0, ids: [], fresh: false, load: latest(async (run: () => Promise<unknown>) => run()) }; runtimes.set(key, r) }
+  if (!r) { r = { epoch: 0, controller: new AbortController(), ids: [], fresh: false, load: latest(async (run: () => Promise<unknown>) => run()) }; runtimes.set(key, r) }
   return r
 }
 onRefresh(() => {
@@ -30,7 +31,18 @@ export async function stopSymbols($: EngineInterface): Promise<void> {
   if (!runtimes.size) return
   const root = await readCwd($), r = await runtime($, root), epoch = ++r.epoch
   r.pending = undefined
-  await updateSymbols($, root, s => r.epoch === epoch ? { ...s, busy: false, editing: false, permission: false } : s)
+  r.controller.abort()
+  await updateSymbols($, root, s => r.epoch === epoch ? { ...s, busy: false, loading: false, editing: false, permission: false } : s)
+}
+function begin(r: Runtime): number { r.controller.abort(); r.controller = new AbortController(); return ++r.epoch }
+/** One captured signal covers the whole fallback, including sequential callee searches. */
+async function symbolHost($: EngineInterface, root: string): Promise<Host> {
+  const signal = (await runtime($, root)).controller.signal, host = await projectHost($, root)
+  signal.throwIfAborted()
+  return { ...host,
+    stream(argv, options) { signal.throwIfAborted(); return host.stream(argv, { ...options, signal }) },
+    async run(argv, options) { signal.throwIfAborted(); const result = await host.run(argv, { ...options, signal }); signal.throwIfAborted(); return result },
+  }
 }
 const flatten = (nodes: readonly SymbolNode[], depth = 0): { node: SymbolNode; depth: number }[] => nodes.flatMap(node => [{ node, depth }, ...flatten(node.children, depth + 1)])
 function act($: EngineInterface, fn: () => Promise<unknown>): () => void { return () => { void fn().catch(err => $.ui.toast(firstLine(err))) } }
@@ -64,36 +76,41 @@ async function exact($: EngineInterface, root: string, input: Input | null, deli
       await updateSymbols($, root, s => ({ ...s, permission: true }))
       return null
     }
-    if (verdict.decision === 'deny') { r.pending = undefined; await updateSymbols($, root, s => ({ ...s, permission: false })); return null }
+    if (verdict.decision === 'deny') { r.pending = undefined; await updateSymbols($, root, s => ({ ...s, permission: false })); if (deliberate) $.ui.toast('LSP request refused.'); return null }
     r.pending = undefined
     await updateSymbols($, root, s => ({ ...s, permission: false }))
     const result = await $.tool.call({ tool: 'LSP', ...input } as never)
     if (!await current()) return null
-    if ('deny' in result || result.isError || !result.text) return null
-    return parseLsp(input.operation, result.text, root, (await projectHost($, root)).platform)
-  } catch { return null }
+    if ('deny' in result || result.isError || !result.text) { if (deliberate) $.ui.toast('LSP request failed or was refused.'); return null }
+    const parsed = parseLsp(input.operation, result.text, root, (await projectHost($, root)).platform)
+    if (!parsed && deliberate) $.ui.toast('LSP returned unsupported results.')
+    return parsed
+  } catch (err) { if (deliberate && await current()) $.ui.toast(`LSP request failed: ${firstLine(err)}.`); return null }
 }
 
 export async function enterSymbols($: EngineInterface): Promise<void> {
   const root = await readCwd($), pane = await readPane($), r = await runtime($, root), old = await readSymbols($, root)
-  try { await projectHost($, root) } catch (err) { await updateSymbols($, root, s => ({ ...s, rel: '', nodes: [], source: 'approximate', notice: firstLine(err), busy: false })); return }
+  try { await projectHost($, root) } catch (err) { await updateSymbols($, root, s => ({ ...s, rel: '', nodes: [], source: 'approximate', notice: firstLine(err), busy: false, loading: false })); return }
   const activity = await readActivity($)
   const touched = Object.entries(activity).sort((a, b) => b[1].at - a[1].at).map(([rel]) => rel)
   let rel = ''
   for (const candidate of [pane.selected.files, ...touched]) {
     if (candidate && await readSource(await projectHost($, root), root, candidate) !== null) { rel = candidate; break }
   }
-  if (r.fresh && old.rel === rel) return
+  if (r.fresh && old.rel === rel) { if (r.controller.signal.aborted) begin(r); return }
   r.fresh = true
-  const epoch = ++r.epoch
+  const epoch = begin(r)
+  await updateSymbols($, root, s => ({ ...s, rel, nodes: old.rel === rel ? s.nodes : [], source: old.rel === rel ? s.source : 'approximate', notice: '', loading: true }))
   const result = await r.load(async () => {
     const nodes = rel ? await fileOutline((await projectHost($, root)), root, rel) : null
+    if (r.epoch !== epoch || await readCwd($) !== root) return null
+    await updateSymbols($, root, s => ({ ...s, nodes: nodes ?? [], source: 'approximate', notice: !rel ? 'Select a file in Files.' : nodes === null ? 'No outline for this file type.' : '' }))
     const parsed = rel ? await exact($, root, await inputFor($, root, 'documentSymbol', rel)) : null
     return { nodes: parsed?.symbols ?? nodes ?? [], source: parsed?.symbols ? 'lsp' as const : 'approximate' as const, notice: !rel ? 'Select a file in Files.' : nodes === null && !parsed?.symbols ? 'No outline for this file type.' : '' }
   })
   if (!result.stale && r.epoch === epoch && await readCwd($) === root) {
     const data = result.value as Pick<JeiSymbols, 'nodes' | 'source' | 'notice'>
-    await updateSymbols($, root, s => ({ ...s, ...data, rel, busy: false }))
+    await updateSymbols($, root, s => ({ ...s, ...data, rel, busy: false, loading: false }))
   }
 }
 export async function symbolsEditing($: EngineInterface): Promise<boolean> { return ['symbols', 'symbols.results'].includes(currentView(await readPane($))) && (await readSymbols($, await readCwd($))).editing }
@@ -110,8 +127,9 @@ export async function focusSymbols($: EngineInterface, key: string | undefined):
   r.focused = key
   if (key?.startsWith('symbols-row-')) {
     const id = key.slice(12)
-    await updateSymbols($, root, s => ({ ...s, editing: false, ...(!id.startsWith('command-') && id !== 'permission' ? { selection: { ...s.selection, [view]: id } } : {}) }))
-    await updatePane($, s => reducePane(s, { type: 'select', view, id }))
+    const s = await readSymbols($, root), data = !id.startsWith('command-') && id !== 'permission'
+    if (s.editing || data && s.selection?.[view] !== id) await updateSymbols($, root, s => ({ ...s, editing: false, ...(data ? { selection: { ...s.selection, [view]: id } } : {}) }))
+    if (pane.selected[view] !== id) await updatePane($, s => reducePane(s, { type: 'select', view, id }))
   } else if (key === 'symbols-find' && !(await readSymbols($, root)).editing) await updateSymbols($, root, s => ({ ...s, editing: true }))
 }
 export async function scrollSymbols($: EngineInterface, by: number): Promise<boolean> {
@@ -120,7 +138,9 @@ export async function scrollSymbols($: EngineInterface, by: number): Promise<boo
   const root = await readCwd($), r = await runtime($, root)
   if ((await readSymbols($, root)).editing) return false
   const from = r.ids.indexOf(pane.selected[view] ?? ''), id = r.ids[Math.max(0, Math.min(r.ids.length - 1, from < 0 ? 0 : from + by))]
-  if (id) {
+  if (id && id !== pane.selected[view]) {
+    const s = await readSymbols($, root)
+    if (!id.startsWith('command-') && id !== 'permission' && s.selection?.[view] !== id) await updateSymbols($, root, u => ({ ...u, selection: { ...u.selection, [view]: id } }))
     await updatePane($, s => reducePane(s, { type: 'select', view, id }))
     await $.ui.focus({ requestId: 'jei', key: `symbols-row-${id}` }).catch(() => {})
   }
@@ -166,22 +186,22 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
     await operation(async () => {
       const parsed = await request(item.direction, item.rel, item.node, false, id)
       if (!await current()) return
-      const refs = parsed?.refs ?? await (item.direction === 'incomingCalls' ? incoming((await projectHost($, root)), root, item.node.name) : outgoing((await projectHost($, root)), root, item.rel, item.node))
+      const refs = parsed?.refs ?? await (item.direction === 'incomingCalls' ? incoming((await symbolHost($, root)), root, item.node.name) : outgoing((await symbolHost($, root)), root, item.rel, item.node))
       if (!await current()) return
       await publishCalls(id, refs, parsed?.refs ? 'lsp' : 'approximate')
     })
   }
   const operation = async (fn: () => Promise<unknown>) => {
     if ((await readSymbols($, root)).busy) return
-    const epoch = ++r.epoch
+    const epoch = begin(r)
     requestEpoch = epoch
-    await updateSymbols($, root, u => ({ ...u, busy: true }))
+    await updateSymbols($, root, u => ({ ...u, busy: true, loading: false }))
     try { await fn() } finally { if (r.epoch === epoch) await updateSymbols($, root, u => ({ ...u, busy: false })) }
   }
   const command = async (action: string) => {
     if (s.busy) return
     if (action === 'find-symbol') { await updateSymbols($, root, u => ({ ...u, editing: true })); await $.ui.focus({ requestId: 'jei', key: 'symbols-find' }).catch(() => {}); return }
-    if (action === 'send') {
+    if (action === 'send') return operation(async () => {
       let subject = view === 'symbols' && selectedNode ? { rel: s.rel, node: selectedNode } : s.result?.subject
       const id = s.selection?.['symbols.results'] ?? selected
       const call = s.calls.find(item => item.id === id)
@@ -195,10 +215,11 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
         }
       }
       if (!subject) { $.ui.toast('Select a symbol first.'); return }
-      const refs = await references((await projectHost($, root)), root, subject.node.name)
+      if (!await current()) return
+      const refs = await references((await symbolHost($, root)), root, subject.node.name)
       if (await current()) return fill($, symbolSendText(subject.node.name, { rel: subject.rel, line: subject.node.line, text: subject.node.name, container: null }, refs))
       return
-    }
+    })
     if (!selectedNode || !s.rel) { $.ui.toast('Select a symbol first.'); return }
     if (action === 'calls') {
       await updateSymbols($, root, u => ({ ...u, result: { title: `Calls: ${selectedNode.name}`, source: 'approximate', refs: [] }, selection: { ...u.selection, 'symbols.results': 'callers' }, calls: ['incomingCalls', 'outgoingCalls'].map((direction, i) => ({ id: i ? 'calls' : 'callers', name: i ? 'Calls' : 'Callers', rel: s.rel, node: selectedNode, direction: direction as 'incomingCalls' | 'outgoingCalls', depth: 0, expanded: false, source: 'approximate', refs: [] })) }))
@@ -209,7 +230,7 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
       const op = action === 'definition' ? 'goToDefinition' : 'findReferences'
       const parsed = await request(op, s.rel, selectedNode)
       if (!await current()) return
-      const refs = parsed?.refs ?? await (op === 'goToDefinition' ? definitions((await projectHost($, root)), root, selectedNode.name, s.rel) : references((await projectHost($, root)), root, selectedNode.name))
+      const refs = parsed?.refs ?? await (op === 'goToDefinition' ? definitions((await symbolHost($, root)), root, selectedNode.name, s.rel) : references((await symbolHost($, root)), root, selectedNode.name))
       if (!await current()) return
       if (op === 'goToDefinition' && refs.length === 1) { await preview(refs[0]!.rel, refs[0]!.line); return }
       await showResults(`${op === 'goToDefinition' ? 'Definitions' : 'References'}: ${selectedNode.name}`, refs, !!parsed?.refs, op === 'findReferences' ? { rel: s.rel, node: selectedNode } : undefined)
@@ -217,7 +238,7 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
   }
   if (view === 'symbols') {
     for (const [i, { node, depth }] of nodes.entries()) rows.push({ id: `node-${i}`, el: row(`node-${i}`, `${' '.repeat(Math.min(depth * 2, Math.floor(inner / 3)))}${node.kind[0]} ${node.name}`, () => preview(s.rel, node.line)) })
-    if (!nodes.length) rows.push({ id: 'notice', el: text(s.notice || 'No symbols.') })
+    if (!nodes.length) rows.push({ id: 'notice', el: text(s.notice || (s.loading ? 'Loading outline…' : 'No symbols.')) })
   } else if (s.calls.length) {
     const appendCall = (item: JeiSymbols['calls'][number]): void => {
       rows.push({ id: item.id, el: row(item.id, `${' '.repeat(Math.min(item.depth * 2, Math.floor(inner / 3)))}${item.expanded ? '▾' : '▸'} ${item.name} · ${item.source === 'lsp' ? 'LSP' : 'approximate'}`, () => expand(item.id)) })
@@ -254,7 +275,8 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
       if (!parsed || !await current()) return
       if (pending.call) await publishCalls(pending.call, parsed.refs ?? [], 'lsp')
       else if (pending.input.operation === 'documentSymbol') await updateSymbols($, root, u => ({ ...u, nodes: parsed.symbols ?? u.nodes, source: parsed.symbols ? 'lsp' : 'approximate' }))
-      else await showResults(pending.input.operation, parsed.refs ?? [], true, pending.input.operation === 'findReferences' ? s.result?.subject : undefined)
+      else if (pending.input.operation === 'goToDefinition' && parsed.refs?.length === 1) await preview(parsed.refs[0]!.rel, parsed.refs[0]!.line)
+      else await showResults(pending.input.operation === 'workspaceSymbol' ? `Symbols: ${s.query}` : `${pending.input.operation === 'goToDefinition' ? 'Definitions' : 'References'}: ${selectedNode?.name ?? ''}`, parsed.refs ?? [], true, pending.input.operation === 'findReferences' && selectedNode ? { rel: s.rel, node: selectedNode } : undefined)
     })
   }) })
   for (const k of KEYS[view]) if (/^[a-z0-9]$/.test(k.key) && k.action !== 'back') rows.push({ id: `command-${k.action}`, el: row(`command-${k.action}`, `${k.key} ${k.label}`, () => command(k.action)) })
@@ -263,13 +285,14 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
   if (s.editing) pinned.push(Input ? <Box flexDirection="row"><Text> </Text><Input key="symbols-find" placeholder="Find symbol" value={s.query} autoFocus onInput={value => act($, () => updateSymbols($, root, u => ({ ...u, query: value })) )()} onSubmit={value => act($, () => operation(async () => {
     const parsed = await exact($, root, await inputFor($, root, 'workspaceSymbol', s.rel, undefined, value))
     if (!await current()) return
-    await showResults(`Symbols: ${value}`, parsed?.refs ?? await findSymbol((await projectHost($, root)), root, value), !!parsed?.refs)
+    await showResults(`Symbols: ${value}`, parsed?.refs ?? await findSymbol((await symbolHost($, root)), root, value), !!parsed?.refs)
     if (await current()) await updateSymbols($, root, u => ({ ...u, query: value, editing: false }))
   }))()} /><Button key="symbols-cancel" plain label="Cancel" onPress={act($, () => leaveSymbolsEditor($))} /></Box> : text(`Find symbol: ${s.query} (input unavailable)`, 'symbols-find'))
   if (s.permission && frame.bodyRows > 5) pinned.push(text('Exact symbols need permission to use the LSP tool.'))
+  if (s.loading && nodes.length) pinned.push(text('Loading LSP outline…', 'symbols-loading'))
   const title = view === 'symbols' ? s.rel ? `Outline: ${fitPath(s.rel, Math.max(1, inner - 24))}` : 'Outline' : s.result?.title ?? 'Symbols'
-  const sourceLabel = view === 'symbols' ? s.source : s.result?.source ?? 'approximate'
-  const suffix = ` · ${sourceLabel === 'lsp' ? 'LSP' : 'approximate'}`, header = text(`${fitEnd(title, Math.max(0, inner - cellWidth(suffix)))}${suffix}`)
+  const sourceLabel = view === 'symbols' ? s.source : s.calls.length ? s.calls.every(c => c.source === 'lsp') ? 'lsp' : s.calls.some(c => c.source === 'lsp') ? 'mixed' : 'approximate' : s.result?.source ?? 'approximate'
+  const suffix = ` · ${sourceLabel === 'lsp' ? 'LSP' : sourceLabel === 'mixed' ? 'LSP / approximate' : 'approximate'}`, header = text(`${fitEnd(title, Math.max(0, inner - cellWidth(suffix)))}${suffix}`)
   if (e.props.scroll.bodyRows < 6 && frame.bodyRows > pinned.length) pinned.push(header)
   const top = windowTop(`${root}:${view}`, rows.map(row => row.id), selected, frame.bodyRows - pinned.length)
   return { header, body: [...pinned, ...rows.slice(top, top + Math.max(0, frame.bodyRows - pinned.length)).map(row => row.el)], actions: s.editing ? [] : KEYS[view].flatMap(k => /^[a-z0-9]$/.test(k.key) && k.action !== 'back' ? [{ key: k.key, run: act($, () => command(k.action)) }] : []) }

@@ -113,7 +113,7 @@ function listingOf(host: Host, root: string, rel: string): Promise<Listing> {
 function filesOf(host: Host, root: string): Promise<string[]> {
   let p = fileLists.get(root)
   if (p === undefined) {
-    p = allFiles(host, root).catch(() => [])
+    p = allFiles(host, root).catch(err => { fileLists.delete(root); throw err })
     fileLists.set(root, p)
   }
   return p
@@ -173,8 +173,10 @@ export function forgetFileList(root: string): void {
 
 /** Re-reads the project file list behind the filter; only the latest call lands. */
 export async function refreshFileList(host: Host, root: string): Promise<void> {
-  const r = await guardedAllFiles(host, root)
-  if (!r.stale) fileLists.set(root, Promise.resolve(r.value))
+  try {
+    const r = await guardedAllFiles(host, root)
+    if (!r.stale) fileLists.set(root, Promise.resolve(r.value))
+  } catch (err) { fileLists.delete(root); throw err }
 }
 
 // ---------------------------------------------------------------------------
@@ -322,7 +324,6 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     const target = pane.preview
     const state = target && (target.rel !== held.rel || target.line !== held.line) ? { rel: target.rel, line: target.line, source: target.line !== undefined, top: Math.max(0, (target.line ?? 1) - 1) } : held
     const rel = pane.preview?.rel ?? state.rel
-    const pv = await previewOf(await projectHost($, root), root, rel)
     const header = (
       <Box flexDirection="row">
         <Text>{inner > 0 ? ' ' : ''}</Text>
@@ -338,6 +339,9 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     ]
     const rows = Math.max(1, frame.bodyRows)
     const notice = (text: string) => ({ header, body: [line(text, { dim: true }, 'notice')], actions })
+    let pv: Preview
+    try { pv = await previewOf(await projectHost($, root), root, rel) }
+    catch (err) { return notice(firstLine(err)) }
     const sliced = (text: string) => {
       const all = text.replace(/\r?\n$/, '').split(/\r?\n/)
       lastPreviewLines = all.length
@@ -495,7 +499,10 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   let mode = 'tree'
   if (tree.filtering && tree.filter !== '') {
     mode = 'filter'
-    const hits = filterRows(await filesOf(host, root), tree.filter, FILTER_MAX)
+    let files: string[]
+    try { files = await filesOf(host, root) }
+    catch (err) { return { header, body: [line(firstLine(err), { color: color('error') }, 'notice')], actions } }
+    const hits = filterRows(files, tree.filter, FILTER_MAX)
     const sw = statusW(hits)
     for (const rel of hits) items.push({ id: rel, isRow: true, el: rowEl(rel, rel, { isDir: false, depth: 0, isExpanded: false, sw }) })
     if (hits.length === 0) items.push({ id: 'empty', isRow: false, el: line(`No files match "${tree.filter}".`, { dim: true }, 'notice') })

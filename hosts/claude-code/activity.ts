@@ -280,6 +280,7 @@ async function fileChanged($: EngineInterface, path: string): Promise<void> {
 export function registerActivity(on: On, options: Options): void {
   // Contain attribution failures; a catch around next could rerun a failed user tool.
   on('tool.call', async ($, e, next) => {
+    if (next.origin.plugin === 'jei' && !SHELL_TOOLS.has(String(e.tool))) return next(e)
     const end = SHELL_TOOLS.has(String(e.tool)) ? await agentWindow($).catch(() => null) : null
     try {
       const ran = await next(e)

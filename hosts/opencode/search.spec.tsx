@@ -6,6 +6,84 @@ import { paneMemory } from './pane.tsx'
 const batch = (id: string, text = 'load') => ({ sessionID: 'session-a', id, matches: [{ rel: 'src/app.ts', line: 2, text: `ñ ${text} 界`, ranges: [[2, 2 + text.length]] }] })
 const done = (id: string, extra: object = {}) => ({ sessionID: 'session-a', id, engine: 'rg', error: null, ms: 4, truncated: false, ...extra })
 
+for (const editor of ['query', 'globs']) test(`Esc leaves the ${editor} editor without canceling streamed Search`, async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); input(r).insertText('load'); await settle(r)
+  const id = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.emit('searchMatches', batch(id)); await r.flush()
+  if (editor === 'globs') { input(r).submit(); await r.flush(); f.key('i'); await r.flush() }
+  f.key('esc'); await r.flush()
+  f.emit('searchMatches', { ...batch(id), matches: [{ rel: 'src/save.ts', line: 7, text: 'load()', ranges: [[0, 4]] }] }); f.emit('searchDone', done(id)); await r.flush()
+  expect(f.calls.some(c => c.method === 'searchCancel' && c.input.id === id)).toBe(false)
+  expect(r.captureCharFrame()).toContain('src/save.ts'); expect(r.captureCharFrame()).toContain('2 results')
+})
+
+test('preview Back and tab remount retain an explicit canceled-search summary', async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); input(r).insertText('load'); await settle(r)
+  const id = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.emit('searchMatches', batch(id)); input(r).submit(); await r.flush(); f.key('enter'); await r.flush(); f.key('q'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Search canceled.'); expect(r.captureCharFrame()).not.toContain('Searching…')
+  input(r).focus(); input(r).insertText('x'); await settle(r); f.key('esc'); f.key('4'); await r.flush(); f.key('2'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Search canceled.'); expect(r.captureCharFrame()).not.toContain('Searching…')
+})
+
+test('changed events preserve Search results and selection while own replacement refreshes on Back', async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); input(r).insertText('load'); await settle(r)
+  const id = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.emit('searchMatches', { ...batch(id), matches: [...batch(id).matches, { rel: 'src/save.ts', line: 7, text: 'load()', ranges: [[0, 4]] }] }); f.emit('searchDone', done(id)); f.key('esc'); f.key('down'); await r.flush()
+  f.changed(); await settle(r)
+  expect(f.calls.filter(c => c.method === 'searchStart')).toHaveLength(1)
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected.search).toBe('match-1'); expect(r.captureCharFrame()).toContain('2 results')
+  f.handlers.replacePlan = async () => ({ planId: 'refresh', files: [{ rel: 'src/app.ts', before: 'load', after: 'save', count: 1 }], skipped: [] })
+  f.handlers.replaceApply = async () => ({ written: ['src/app.ts'], skipped: [] }); f.confirm(true)
+  f.key('p'); await r.flush(); input(r, 'search-replacement').insertText('save'); input(r, 'search-replacement').submit(); await r.flush(); f.key('enter'); await r.flush()
+  expect(f.calls.filter(c => c.method === 'state').length).toBeGreaterThanOrEqual(3)
+  f.key('q'); await settle(r)
+  expect(f.calls.filter(c => c.method === 'searchStart')).toHaveLength(2)
+  expect(f.calls.findLast(c => c.method === 'searchStart')!.input.query.text).toBe('load')
+})
+
+test('Search and Quick Open keep independent query text paired with their results', async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); input(r).insertText('load'); await settle(r)
+  const id = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.emit('searchMatches', batch(id)); f.emit('searchDone', done(id)); f.key('esc'); f.key('q'); await r.flush()
+  input(r).insertText('save.ts:7'); f.key('esc'); f.key('q'); await r.flush()
+  expect(input(r).value).toBe('load'); expect(r.captureCharFrame()).toContain('1 results')
+  f.key('esc'); f.key('p'); await r.flush(); f.handlers.replacePlan = async () => ({ planId: 'query', files: [], skipped: [] })
+  input(r, 'search-replacement').insertText('save'); input(r, 'search-replacement').submit(); await r.flush()
+  expect(f.calls.findLast(c => c.method === 'replacePlan')!.input.query.text).toBe('load')
+  f.key('q'); await r.flush(); f.key('q'); await r.flush()
+  expect(input(r).value).toBe('save.ts:7'); expect(r.captureCharFrame()).toContain('src/save.ts')
+})
+
+test('Replace Ask preserves complete locations and an exact omission count within the text cap', async () => {
+  const f = searchFixture(), r = await f.mount(); f.key('2'); await r.flush(); input(r).insertText('load'); await settle(r)
+  const id = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  const matches = Array.from({ length: 2000 }, (_, i) => ({ rel: `src/component-${String(i).padStart(4, '0')}.ts`, line: 123 + i, text: 'load()', ranges: [[0, 4]] }))
+  for (let i = 0; i < matches.length; i += 200) f.emit('searchMatches', { sessionID: 'session-a', id, matches: matches.slice(i, i + 200) })
+  f.emit('searchDone', done(id)); f.key('esc'); f.key('p'); await r.flush()
+  f.handlers.replacePlan = async () => ({ planId: 'ask', files: [], skipped: [] })
+  input(r, 'search-replacement').insertText('save'); input(r, 'search-replacement').submit(); await r.flush(); f.key('a'); await r.flush()
+  const text = f.prompts.at(-1).value as string, head = 'Replace "load" with "save" in: '
+  expect(text.startsWith(head)).toBe(true); expect(text.length).toBeLessThanOrEqual(12_000)
+  const [body, omitted] = text.slice(head.length).split(', …and '), locations = body!.split(', ')
+  const available = new Set(matches.map(m => `${m.rel}:${m.line}`))
+  for (const location of locations) expect(available.has(location)).toBe(true)
+  expect(omitted).toBe(`${matches.length - locations.length} more.`)
+})
+
+test('targeted preview retains user scrolling after a changed-event reload', async () => {
+  const f = searchFixture(), r = await f.mount(80, 10)
+  const text = Array.from({ length: 30 }, (_, i) => `row-${i + 1}`).join('\n')
+  f.handlers.preview = async () => ({ kind: 'code', text })
+  f.key('2'); await r.flush(); input(r).insertText('load'); await settle(r)
+  const id = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.emit('searchMatches', batch(id)); f.key('esc'); f.key('enter'); await r.flush()
+  for (let i = 0; i < 5; i++) f.key('down'); await r.flush()
+  expect(r.captureCharFrame()).toContain('row-7'); expect(r.captureCharFrame()).not.toContain('row-2')
+  f.changed(); await r.flush()
+  expect(r.captureCharFrame()).toContain('row-7'); expect(r.captureCharFrame()).not.toContain('row-2')
+})
+
 async function command(f: ReturnType<typeof searchFixture>, r: Awaited<ReturnType<typeof f.mount>>, view: 'search' | 'quickopen' | 'search.replace', id: string) {
   for (let i = 0; i < 30 && paneMemory(f.ctx)[0].panes['session-a']!.selected[view] !== id; i++) { f.key('down'); await r.flush() }
   expect(paneMemory(f.ctx)[0].panes['session-a']!.selected[view]).toBe(id)

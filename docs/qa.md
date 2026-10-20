@@ -68,17 +68,18 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 
 ## Search (both hosts, 0.3)
 
-- [ ] Search a large disposable repository and observe results arriving before completion. Change the query while it streams; stale rows and completion must not replace the new results. Check case/regex/word and include/exclude globs, invalid regex and the 2,000-result truncation notice.
+- [ ] Search a large disposable repository and observe results arriving before completion. Change the query while it streams; stale rows and completion must not replace the new results. Check case/regex/word and include/exclude globs, invalid regex and the 2,000-line/estimated-16-MiB truncation notice. OpenCode query/globs Esc leaves Search running; leaving the active view cancels it with explicit status. Ordinary file changes retain current Search selection/results.
 - [ ] Unicode before/inside matches (accented letters, emoji and CJK) keeps correct highlights and source-line previews. Hide rg from the isolated fixture PATH: repository fallback identifies Git grep's first-occurrence limit; a non-repository shows installation help.
 - [ ] One/all hand-off has exact locations and bounded omission copy. OpenCode's editable dialog cancels or sends only confirmed text; Claude inserts without sending.
 
 ## Quick Open (both hosts, 0.3)
 
-- [ ] Touched files rank before recent previews, then other fuzzy matches. File events refresh the cache. A `:42` target clamps at EOF and marks the actual source row through Back and resize, including wrapped preceding lines and Markdown/CSV/TSV.
+- [ ] Touched files rank before recent previews, then other fuzzy matches. File events refresh the cache, deleted tracked files disappear, and Search/Quick Open toggles retain coherent separate queries/results. A `:42` target clamps at EOF and marks the actual source row through Back and resize, including wrapped preceding lines and Markdown/CSV/TSV. OpenCode manual scroll survives a same-target refresh.
 
 ## Replace (both hosts, 0.3)
 
 - [ ] Inspect/collapse/scroll reviewed diffs, apply one/all only after confirmation, cancel without writes and change a file after preview: it is listed as changed and preserved. Binary, invalid UTF-8 and other skip reasons remain explicit.
+- [ ] A small edit deep in a file shows localized context; multiline/final-newline edits remain complete. Truncated searches, empty literal queries and reviews over the estimated 32 MiB budget require narrowing before any write. Git fallback whole-word replacement beside Unicode letters refuses incompatible files. Successful own replacements refresh Search/Files explicitly.
 - [ ] A later write failure reports only known successful replacements, preserves remaining review state and refreshes Files/Search. Repeated activation during confirmation/apply cannot duplicate writes. An invalid selected subset cannot authorize any write.
 
 ## Symbols (both hosts, 0.3)
@@ -104,4 +105,4 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 
 Task 4 smoke completed on Windows with OpenCode 2.0.32: the checkout loaded in an isolated private session, Graph painted a real commit, and b opened main/feature Branches. No model prompt was sent. This fixed 80-column PTY smoke does not mark the broader checklist complete.
 
-The 0.3 Task 4 final-source smoke also passed at 80 x 24 in a disposable 3,001-file repository using cached OpenCode 2.0.32: native Search frames showed matching rows and Searching before completion, targeted preview marked the first source line, Back retained results without a restart, and Symbols showed both approximate functions. The session sent no model/provider request; Ctrl-C restored modes and the isolated process exited. Live resize, themes, actual provider hand-off, other operating systems and positive Claude LSP output remain unchecked above.
+Historical 0.3 Task 4 smoke at `c9c09d6` passed at 80 x 24 in a disposable 3,001-file repository using cached OpenCode 2.0.32: native Search frames showed matching rows and Searching before completion, targeted preview marked the first source line, Back retained results without a restart, and Symbols showed both approximate functions. The session sent no model/provider request; Ctrl-C restored modes and the isolated process exited. This predates strict native event-location filtering and later lifecycle corrections, and does not certify final source. Live resize, themes, actual provider hand-off, other operating systems and positive Claude LSP output remain unchecked above.

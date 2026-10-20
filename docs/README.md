@@ -31,6 +31,7 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/decisions/0020-native-search-paths-and-zero-width-fallback.md` | Platform-aware Search filenames, conservative POSIX backslash refusal and zero-width fallback verification. |
 | `docs/decisions/0021-native-search-symbol-controls-and-path-evidence.md` | Compact native controls, fresh LSP checks, marked source previews and canonical path evidence. |
 | `docs/decisions/0022-opencode-search-symbols-and-review-state.md` | Session-scoped OpenCode streams, reviewed replacement RPC and native source targets. |
+| `docs/decisions/0023-bounded-search-and-complete-replacement-review.md` | Estimated Search/review retention budgets, incomplete-review refusal and shared replacement text. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
 
 ## Keeping docs current

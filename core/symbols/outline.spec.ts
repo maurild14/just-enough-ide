@@ -26,6 +26,13 @@ test('mixed Python indentation advances a tab to the next eight-column stop', ()
   expect(outline('store.py', text)).toEqual([n('Store', 'class', 1, 6, [n('get_user', 'method', 2, 4, [n('nested', 'function', 3, 4)]), n('save', 'method', 5, 6)])])
 })
 
+test('Python wrapped signatures keep their bodies and nested definitions in scope', () => {
+  const text = 'def load(\n    value: tuple[\n        str, int\n    ],\n) -> str:\n    def nested():\n        return "value"\n    return nested()\ndef after():\n    pass'
+  const nodes = outline('store.py', text)!
+  expect(nodes).toEqual([n('load', 'function', 1, 8, [n('nested', 'function', 6, 7)]), n('after', 'function', 9, 10)])
+  expect(enclosing(nodes, 8)?.name).toBe('load')
+})
+
 test('Go receiver functions attach to the declared type', () => {
   expect(outline('store.go', fixture('go/store.go'))).toEqual([
     n('Svc', 'type', 1, 3, [n('GetUser', 'method', 4, 6)]), n('UserID', 'type', 7, 7), n('getUser', 'function', 8, 10),
@@ -46,6 +53,11 @@ test('Rust impl waits for a delayed opening brace without making aliases capture
   expect(enclosing(rust, 7)?.name).toBe('after')
   expect(outline('store.ts', 'export type UserID = string\nexport function later() {\n}')).toEqual([n('UserID', 'type', 1, 1), n('later', 'function', 2, 3)])
   expect(outline('store.go', 'type UserID string\nfunc later() {\n}')).toEqual([n('UserID', 'type', 1, 1), n('later', 'function', 2, 3)])
+})
+
+test('Rust lifetimes preserve impl nesting while character literals hide braces', () => {
+  const text = "impl Store {\n fn name(&self) -> &'static str {\n  let brace = '}';\n  let quote = '\\'';\n }\n fn later<'a>(&'a self) {}\n}\nfn after() {}"
+  expect(outline('store.rs', text)).toEqual([n('impl Store', 'type', 1, 7, [n('name', 'method', 2, 5), n('later', 'method', 6, 6)]), n('after', 'function', 8, 8)])
 })
 
 test('Java and C# nest classes and detect generic-return methods and interface signatures', () => {

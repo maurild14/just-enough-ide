@@ -222,12 +222,12 @@ File ops live in `core/fsops.ts` as argv builders plus root checks; the host exe
 - `enter` on a result opens the preview at that line.
 - **Send to the agent:** one result, or all results, as a prompt fragment:
   `These are the 14 uses of getUser: src/api/user.ts:12, …` (paths and line numbers, with the matched line).
-- **Replace** with a preview: shows the unified diff of every replacement before applying; apply all, apply per file, or hand the change to the agent when it is not mechanical.
+- **Replace** with a preview: shows localized unified hunks with three context lines around every replacement before applying; apply all, apply per file, or hand the change to the agent when it is not mechanical. Truncated searches and reviews over the estimated 32 MiB snapshot budget must be narrowed before review; no partial plan is returned. A literal query must be nonempty; an intentional empty regex is supported.
 - **Quick Open** lives here as a mode (a query starting with nothing but a filename-like string, or a toggle): fuzzy file finder with live preview, ranked: files the agent touched this session → recently previewed → the rest. `:42` jumps to a line.
 
 **Keys:** `enter` preview · `a` add result to prompt · `s` send all to the agent · `c` case · `x` regex · `w` whole word · `i` include/exclude · `p` replace · `q` quick open mode.
 
-**Build:** ripgrep `rg --json` streamed (Claude Code: `$.process.spawn({ argv, cwd })`; OpenCode: `node:child_process` `spawn` in the server entry, results pushed to the TUI with the RPC registration's `emit`). JSON parsing and grouping in `core/`. Cancel the previous run on each new query (debounce ~150 ms); cap at 2,000 matches with "results truncated". Replace writes UTF-8 text only, so files that are not valid UTF-8 or look binary are skipped and listed as "not replaced". Quick Open's file list from `git ls-files -co --exclude-standard` (fallback `rg --files`), cached and refreshed on file events. Fuzzy ranking favors matches at word starts and in the basename. If `rg` is not found, show how to install it (and fall back to `git grep` inside a repo).
+**Build:** ripgrep `rg --json` streamed (Claude Code: `$.process.spawn({ argv, cwd })`; OpenCode: `node:child_process` `spawn` in the server entry, results pushed to the TUI with `registration.events.emit`). JSON parsing and grouping live in `core/`. Reject multiline patterns; cancel the previous run on each new query (debounce ~150 ms). Search retains at most 2,000 result lines and an estimated 16 MiB of UTF-16 strings/range data with `Results truncated.` on overflow (ADR 0023). Replace reads/writes complete UTF-8 files within 4 MiB, lists binary/invalid/changed and other skipped files, and independently verifies Unicode whole-word boundaries. Quick Open uses NUL-delimited `git ls-files -co --exclude-standard` minus deleted tracked paths (fallback `rg --files`), capped at 50,000 candidates and cached/refreshed on file events. Fuzzy ranking favors matches at word starts and in the basename. Missing rg gives installation guidance; repository fallback searches tracked files' first verified occurrence per line, with hidden/untracked coverage differences recorded.
 
 ### 6.3 Symbols tab (outline, definition, references)
 
@@ -322,7 +322,7 @@ One stack for two hosts:
 - **TypeScript + TSX** everywhere. Claude Code compiles the mod itself; OpenCode loads the TypeScript entries itself. No bundler, no build step.
 - **Zero runtime dependencies.** `@opencode/plugin` is a peer dependency that OpenCode resolves at runtime; nothing else.
 - **`core/`:** pure TypeScript, no host API, no Node/Bun/DOM (§4.1).
-- **Claude Code adapter:** the surface's own elements via `$.ui.resolve(e)`, JSX against the global `h`; `$.state` atoms declared in `types/index.d.ts`; `$.store` for per-project memory (expanded folders, last tab, LSP permission answer).
+- **Claude Code adapter:** the surface's own elements via `$.ui.resolve(e)`, JSX against the global `h`; session `$.state` atoms declared in `types/index.d.ts` retain root-scoped UI data. Search/Symbols transient operations reset on session start, and LSP permissions are checked afresh per request.
 - **OpenCode adapter:** server entry (processes via `node:child_process`, files, tool hooks, model, `ctx.rpc.register`) and TUI entry (Solid + OpenTUI views, keymap, dialogs, `context.storage`), linked by one RPC definition in `hosts/opencode/rpc.ts`.
 - **External tools:** `git` (required for the Git tab), `rg` (Search; falls back to `git grep`), language servers (optional, for exact symbols).
 - **Tests:**

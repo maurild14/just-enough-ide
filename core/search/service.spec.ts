@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { symlinkSync, writeFileSync } from 'node:fs'
+import { rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup, FakeHost, makeRepo, makeTemp, writeFiles } from '../../test/fake-host.ts'
 import type { Host, RunOptions, Stream } from '../host.ts'
@@ -98,7 +98,7 @@ test('quick open honors ignore rules in repos and rg files mode outside repos', 
 test('buffer truncation emits no unverified fallback match and caps the file list', async () => {
   const host = new NoRg()
   const root = makeTemp()
-  host.run = async (_argv) => ({ exitCode: 0, stderr: '', stdout: _argv.includes('ls-files') ? Array.from({ length: 50_010 }, (_, i) => `${i}.ts`).join('\0') + '\0' : root })
+  host.run = async (_argv) => ({ exitCode: 0, stderr: '', stdout: _argv.includes('-d') ? '' : _argv.includes('ls-files') ? Array.from({ length: 50_010 }, (_, i) => `${i}.ts`).join('\0') + '\0' : root })
   const baseStream = host.stream.bind(host)
   host.stream = (argv, options) => argv[0] === 'rg' ? baseStream(argv, options) : {
     lines: (async function* () { yield 'x'.repeat(8 * 1024 * 1024 + 1) })(),
@@ -151,7 +151,7 @@ test('POSIX literal names never read or replace an unselected slash counterpart'
   let selected = 'a\\b.txt'
   const host: Host = {
     platform: 'linux',
-    async run() { return { exitCode: 0, stderr: '', stdout: [...files.keys()].join('\0') + '\0' } },
+    async run(argv) { return { exitCode: 0, stderr: '', stdout: argv.includes('-d') ? '' : [...files.keys()].join('\0') + '\0' } },
     stream() { return { lines: (async function* () { yield JSON.stringify({ type: 'match', data: { path: { text: `./${selected}` }, lines: { text: 'target\n' }, line_number: 1, submatches: [{ start: 0, end: 6 }] } }) })(), done: Promise.resolve({ exitCode: 0, stderr: '' }), cancel() {} } },
     async list() { return [] },
     async stat(path) {
@@ -236,4 +236,111 @@ test('fallback reports an explicit error when its first match cannot be verified
   }
   const mismatch = await search(host, repo.dir, query, () => {}).done
   expect(mismatch.error).toContain('Git grep could not verify the first match')
+})
+
+test('real Git fallback basename globs include nested files and exclude nested basenames', async () => {
+  const repo = await makeRepo({ 'a.txt': 'target\n', 'nested/a.txt': 'target\n', 'nested/skip.txt': 'target\n' })
+  const seen: Match[] = []
+  const result = await search(new NoRg(), repo.dir, { ...query, include: ['*.txt'], exclude: ['skip*'] }, match => seen.push(match)).done
+  expect(result.error).toBeNull()
+  expect(seen.map(match => match.rel).sort()).toEqual(['a.txt', 'nested/a.txt'])
+})
+
+test('real Git grep.fullName config cannot rebase fallback paths outside a subdirectory root', async () => {
+  const repo = await makeRepo({ 'src/a.txt': 'target\n' })
+  const host = new NoRg(), stream = host.stream.bind(host)
+  host.stream = (argv, options) => {
+    const at = argv.indexOf('grep')
+    return stream(at < 0 ? argv : [...argv.slice(0, at), '-c', 'grep.fullName=true', ...argv.slice(at)], options)
+  }
+  const seen: Match[] = []
+  expect((await search(host, join(repo.dir, 'src'), query, match => seen.push(match)).done).error).toBeNull()
+  expect(seen.map(match => match.rel)).toEqual(['a.txt'])
+})
+
+test('real Git whole-word fallback never authorizes replacing within a Unicode word', async () => {
+  const repo = await makeRepo({ 'a.txt': 'señal\nal\n' })
+  const q = { ...query, text: 'al', wholeWord: true }
+  const seen: Match[] = []
+  expect((await search(new NoRg(), repo.dir, q, match => seen.push(match)).done).error).toBeNull()
+  expect(seen.map(match => match.line)).toEqual([1, 2])
+  expect(await buildReplacePlan(new NoRg(), repo.dir, q, 'el')).toEqual({ files: [], skipped: [{ rel: 'a.txt', reason: 'regex-differs' }] })
+  const rg: Match[] = []
+  await search(repo.host, repo.dir, q, match => rg.push(match)).done
+  expect(rg.map(match => match.line)).toEqual([2])
+})
+
+test('replacement refuses truncated results and empty literal queries before any source read', async () => {
+  const root = makeTemp()
+  writeFiles(root, { 'a.txt': 'target\n'.repeat(2001) })
+  const host = new FakeHost()
+  let reads = 0
+  host.readHead = async () => { reads++; return null }
+  await expect(buildReplacePlan(host, root, query, 'done')).rejects.toThrow('Results truncated. Narrow the search before replacing.')
+  await expect(buildReplacePlan(host, root, { ...query, text: '' }, 'done')).rejects.toThrow('Enter a search query before replacing.')
+  expect(reads).toBe(0)
+})
+
+test('multiline search patterns refuse before starting either engine', async () => {
+  const host = new FakeHost()
+  for (const text of ['one\ntwo', 'one\rtwo']) {
+    const result = await search(host, makeTemp(), { ...query, text }, () => {}).done
+    expect(result.error).toBe('Search patterns must stay on one line.')
+  }
+  expect(host.calls).toEqual([])
+})
+
+test('search cancels before retaining results beyond the aggregate string or range budget', async () => {
+  for (const dense of [false, true]) {
+    const root = makeTemp(), host = new FakeHost()
+    const stat = host.stat.bind(host)
+    host.stat = async path => path === root ? stat(path) : { kind: 'file', size: 1, realPath: path }
+    let cancelled = 0
+    const text = dense ? 'target' : 'target' + 'x'.repeat(1024 * 1024)
+    const submatches = dense ? Array.from({ length: 150_000 }, () => ({ start: 0, end: 6 })) : [{ start: 0, end: 6 }]
+    host.stream = () => ({ lines: (async function* () {
+      for (let i = 0; i < 12; i++) yield JSON.stringify({ type: 'match', data: { path: { text: 'a.txt' }, lines: { text }, line_number: i + 1, submatches } })
+    })(), done: Promise.resolve({ exitCode: 0, stderr: '' }), cancel() { cancelled++ } })
+    let count = 0
+    expect(await search(host, root, query, () => { count++ }).done).toMatchObject({ error: null, truncated: true })
+    expect(count).toBe(dense ? 3 : 7)
+    expect(cancelled).toBeGreaterThan(0)
+  }
+})
+
+test('replacement snapshot budget refuses the whole review while building it incrementally', async () => {
+  const root = makeTemp(), host = new FakeHost()
+  const text = 'target\n' + 'x'.repeat(2 * 1024 * 1024)
+  const bytes = new Uint8Array(Buffer.from(text))
+  const stat = host.stat.bind(host)
+  host.stat = async path => path === root ? stat(path) : { kind: 'file', size: bytes.length, realPath: path }
+  let reads = 0
+  host.readHead = async () => { reads++; return bytes }
+  host.stream = () => ({ lines: (async function* () {
+    for (let i = 0; i < 10; i++) yield JSON.stringify({ type: 'match', data: { path: { text: `${i}.txt` }, lines: { text: 'target' }, line_number: 1, submatches: [{ start: 0, end: 6 }] } })
+  })(), done: Promise.resolve({ exitCode: 0, stderr: '' }), cancel() {} })
+  await expect(buildReplacePlan(host, root, query, 'done')).rejects.toThrow('Replacement review exceeds 32 MiB. Narrow the search before replacing.')
+  expect(reads).toBeLessThan(10)
+})
+
+test('replacement apply compares complete bytes without depending on host text decoding', async () => {
+  const root = makeTemp(), host = new FakeHost()
+  writeFiles(root, { 'a.txt': '\ufefftarget\r\n' })
+  host.readText = async () => { throw new Error('Text-mode decoding must not control replacement safety.') }
+  expect(await applyReplace(host, root, [{ rel: 'a.txt', before: '\ufefftarget\r\n', after: '\ufeffdone\r\n', count: 1 }])).toEqual({ written: ['a.txt'], skipped: [] })
+})
+
+test('quick open excludes deleted tracked files and explains missing rg outside repositories', async () => {
+  const repo = await makeRepo({ 'deleted.txt': '', 'a.txt': '' })
+  rmSync(join(repo.dir, 'deleted.txt'))
+  expect(await quickOpenFiles(repo.host, repo.dir)).toEqual(['a.txt'])
+  for (const rejected of [false, true]) {
+    const host = new FakeHost()
+    host.run = async argv => {
+      if (argv[0] !== 'rg') return { exitCode: 128, stdout: '', stderr: '' }
+      if (rejected) throw new Error('spawn rg ENOENT')
+      return { exitCode: 127, stdout: '', stderr: '' }
+    }
+    await expect(quickOpenFiles(host, makeTemp())).rejects.toThrow(RG_MISSING)
+  }
 })

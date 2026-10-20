@@ -16,6 +16,30 @@ function fixture() {
   return f
 }
 
+test('activity and changed outline reloads cannot cancel a pending Symbols operation', async () => {
+  const f = fixture(), r = await f.mount(); f.emit('activity', { rel: 'src/app.ts', kind: 'read' }); f.key('3'); await r.flush()
+  let finish!: (value: unknown) => void, signal: AbortSignal | undefined
+  f.handlers.references = (_input, options) => { signal = options?.signal; return new Promise(resolve => { finish = resolve }) }
+  f.key('r'); await r.flush(); expect(signal?.aborted).toBe(false)
+  f.emit('activity', { rel: 'src/save.ts', kind: 'write' }); await r.flush(); f.changed(); await r.flush()
+  expect(signal?.aborted).toBe(false)
+  finish({ refs: [ref('load', 3)] }); await r.flush()
+  expect(r.captureCharFrame()).toContain('References: load'); expect(r.captureCharFrame()).toContain('3:')
+})
+
+test('background outline loading permits Find and both lifecycles abort on a tab switch', async () => {
+  const f = fixture(), r = await f.mount(); let outlineSignal: AbortSignal | undefined, findSignal: AbortSignal | undefined
+  f.handlers.outline = (_input, options) => { outlineSignal = options?.signal; return new Promise(() => {}) }
+  f.handlers.findSymbol = (_input, options) => { findSignal = options?.signal; return new Promise(() => {}) }
+  f.emit('activity', { rel: 'src/app.ts', kind: 'read' }); f.key('3'); await r.flush()
+  expect(r.captureCharFrame()).toContain('Loading…')
+  f.key('f'); await r.flush(); expect(input(r, 'symbols-find')).toBeDefined()
+  input(r, 'symbols-find').insertText('load'); input(r, 'symbols-find').submit(); await r.flush()
+  expect(findSignal?.aborted).toBe(false); expect(outlineSignal?.aborted).toBe(false)
+  f.key('4'); await r.flush()
+  expect(findSignal?.aborted).toBe(true); expect(outlineSignal?.aborted).toBe(true)
+})
+
 for (const width of [24, 40, 80, 120]) test(`Symbols displays a native approximate outline at ${width}x5`, async () => {
   const f = searchFixture()
   f.handlers.outline = async () => ({ file: true, nodes: [{ name: 'load', kind: 'function', line: 2, endLine: 2, children: [] }] })

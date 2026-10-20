@@ -34,7 +34,7 @@ export function* codeLines(text: string, lang: Language): Generator<{ line: numb
         else out.push(' ')
       } else if (lang === 'py' && ch === '#' || lang !== 'py' && ch === '/' && next === '/') break
       else if (lang !== 'py' && ch === '/' && next === '*') { block = true; out.push('  '); i++ }
-      else if (ch === '"' || ch === "'" || ch === '`') {
+      else if (ch === '"' || ch === "'" && (lang !== 'rs' || next === '\\' || raw[i + 2] === "'") || ch === '`') {
         quote = ch
         triple = lang === 'py' && raw.slice(i, i + 3) === ch.repeat(3)
         if (triple) { out.push('   '); i += 2 } else out.push(' ')
@@ -117,9 +117,13 @@ export function outline(rel: string, text: string): SymbolNode[] | null {
     } else if (lang === 'py') {
       if (!code.trim()) continue
       level = indentation(code)
-      while (stack.length && stack[stack.length - 1]!.depth >= level) stack.pop()!.node.endLine = line - 1
-      const match = /^\s*(?:async\s+)?(def|class)\s+(\w+)/.exec(code)
+      if (!depth) while (stack.length && stack[stack.length - 1]!.depth >= level) stack.pop()!.node.endLine = line - 1
+      const match = !depth && /^\s*(?:async\s+)?(def|class)\s+(\w+)/.exec(code)
       if (match) found = { name: match[2]!, kind: match[1] === 'class' ? 'class' : stack[stack.length - 1]?.node.kind === 'class' ? 'method' : 'function' }
+      for (const ch of code) {
+        if ('([{'.includes(ch)) depth++
+        else if (')]}'.includes(ch)) depth = Math.max(0, depth - 1)
+      }
     } else found = declaration(code, lang, stack[stack.length - 1]?.node)
     if (found && count < SYMBOL_CAP) {
       const node: SymbolNode = { name: found.name, kind: found.kind, line, endLine: line, children: [] }

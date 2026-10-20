@@ -1,4 +1,4 @@
-import type { Match } from './rg.ts'
+import type { Match, SearchQuery } from './rg.ts'
 
 export type FileGroup = { rel: string; matches: Match[] }
 export const MATCH_CAP = 2000
@@ -37,4 +37,21 @@ export function sendText(query: string, matches: readonly Match[], cap = 12_000)
   }
   const suffix = `…and ${matches.length - shown} more.`
   return text.slice(0, Math.max(0, max - suffix.length - 2)) + (text && max >= suffix.length + 2 ? ', ' : '') + suffix.slice(0, max)
+}
+
+export function replaceAskText(query: SearchQuery, replacement: string, matches: readonly Match[]): string {
+  const head = `Replace ${JSON.stringify(query.text)} with ${JSON.stringify(replacement)} in: `
+  const parts: string[] = []
+  let length = head.length
+  for (const match of matches) {
+    const location = `${match.rel}:${match.line}`
+    const suffix = `, …and ${matches.length - parts.length - 1} more.`
+    if (length + location.length + (parts.length ? 2 : 0) + suffix.length > 12_000) break
+    parts.push(location)
+    length += location.length + (parts.length > 1 ? 2 : 0)
+  }
+  const left = matches.length - parts.length
+  const suffix = left ? `${parts.length ? ', ' : ''}…and ${left} more.` : ''
+  const locations = parts.join(', ')
+  return head.slice(0, Math.max(0, 12_000 - locations.length - suffix.length)) + locations + suffix
 }

@@ -37,6 +37,10 @@ Use `q` or the visible Back control to return one level on both hosts; OpenCode 
 
 Search and Quick Open reserve `q` for their mode toggle. Submit or Cancel leaves query editing so list shortcuts and tab digits work again. Compact list controls keep actions reachable when their hint does not fit.
 
+Search retains at most 2,000 result lines and an estimated 16 MiB of result data. Replace requires a complete search and a review within its estimated 32 MiB snapshot budget; narrow the search when either limit is reached. Previews show the changed lines with context, and every application confirms the reviewed plan.
+
+Search and Quick Open keep separate query text. Claude Code reports an explicit retryable error when its file list exceeds the host's 4 MiB output limit; streaming file enumeration remains deferred.
+
 ## Install
 
 ### Claude Code
@@ -62,7 +66,7 @@ Add the npm package to `opencode.json` (or `opencode.jsonc`); OpenCode installs 
 
 - Claude Code 2.1.302 or newer, with `/tui fullscreen` and at least 110 columns for docking.
 - OpenCode 2.x, version 2.0.32 or newer (the 1.x line is not supported).
-- On both: `git` on your PATH. Optional: `rg` (ripgrep) for streamed Search and a Nerd Font for icons. Without rg, repository Search falls back to Git grep's first occurrence per line; outside a repository it shows installation help. Claude Code LSP is optional and permission checked; OpenCode needs no language server.
+- On both: `git` on your PATH. Optional: `rg` (ripgrep) for streamed Search and a Nerd Font for icons. Without rg, repository Search falls back to Git grep's first occurrence per line in tracked files; hidden/untracked coverage differs from rg. Outside a repository it shows installation help. Claude Code LSP is optional and permission checked; OpenCode needs no language server.
 
 ## Configuration
 

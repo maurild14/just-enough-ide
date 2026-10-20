@@ -3,7 +3,7 @@ import { KEYS } from '../../core/keys.ts'
 import { latest } from '../../core/latest.ts'
 import { currentView, reducePane } from '../../core/pane.ts'
 import { parseGlobs, type Match, type SearchQuery } from '../../core/search/rg.ts'
-import { sendText } from '../../core/search/results.ts'
+import { replaceAskText, sendText } from '../../core/search/results.ts'
 import { parseQuery, rankFiles } from '../../core/search/quickopen.ts'
 import { previewText } from '../../core/search/replace.ts'
 import { applyReplace, buildReplacePlan, quickOpenFiles, search } from '../../core/search/service.ts'
@@ -16,7 +16,7 @@ import { readActivity, readCwd, readPane, readSearch, readTick, updatePane, upda
 import { color } from './theme.ts'
 
 type SearchDone = Awaited<ReturnType<typeof search>['done']>
-type Run = { epoch: number; timer?: Timer; paint?: Timer; stream?: ReturnType<typeof search>; ids: string[]; focused?: string; files?: Promise<string[]>; diffTotal?: number; diffRows?: number; done: ReturnType<typeof latest<[Promise<SearchDone>], SearchDone>> }
+type Run = { epoch: number; timer?: Timer; paint?: Timer; stream?: ReturnType<typeof search>; ids: string[]; data?: Record<string, string>; focused?: string; files?: Promise<string[]>; diffTotal?: number; diffRows?: number; done: ReturnType<typeof latest<[Promise<SearchDone>], SearchDone>> }
 const runs = new Map<string, Run>()
 const queryOf = (s: JeiSearch): SearchQuery => ({ text: s.text, caseSensitive: s.caseSensitive, regex: s.regex, wholeWord: s.wholeWord, ...parseGlobs(s.globs) })
 async function runtime($: EngineInterface, root: string): Promise<Run> {
@@ -27,10 +27,11 @@ async function runtime($: EngineInterface, root: string): Promise<Run> {
 }
 onRefresh(() => { for (const r of runs.values()) r.files = undefined })
 function stop(r: Run): void { r.epoch++; r.timer?.cancel(); r.paint?.cancel(); r.stream?.cancel(); r.timer = r.paint = undefined; r.stream = undefined }
-export async function stopSearch($: EngineInterface): Promise<void> {
+export async function stopSearch($: EngineInterface, closing = false): Promise<void> {
   if (!runs.size) return
   const root = await readCwd($), r = await runtime($, root)
   stop(r)
+  if (closing) r.files = undefined
   await updateSearch($, root, s => s.busy ? { ...s, busy: false, summary: s.summary === 'Searching…' ? 'Search canceled.' : s.summary } : s)
 }
 
@@ -83,8 +84,9 @@ export async function focusSearch($: EngineInterface, key: string | undefined): 
   const root = await readCwd($), r = await runtime($, root)
   r.focused = key
   if (key?.startsWith('search-row-')) {
-    await updateSearch($, root, s => ({ ...s, editing: null }))
-    await updatePane($, s => reducePane(s, { type: 'select', view, id: key.slice(11) }))
+    const id = key.slice(11), s = await readSearch($, root), subject = r.data?.[id], mode = view as 'search' | 'quickopen' | 'search.replace'
+    if (s.editing || subject !== undefined && s.subject?.[mode] !== subject) await updateSearch($, root, s => ({ ...s, editing: null, ...(subject === undefined ? {} : { subject: { ...s.subject, [mode]: subject } }) }))
+    if (pane.selected[view] !== id) await updatePane($, s => reducePane(s, { type: 'select', view, id }))
   } else if (key === 'search-query' || key === 'search-globs' || key === 'search-replacement') {
     const editing = key === 'search-query' ? 'query' : key === 'search-globs' ? 'globs' : 'replacement'
     if ((await readSearch($, root)).editing !== editing) await updateSearch($, root, s => ({ ...s, editing }))
@@ -101,6 +103,9 @@ export async function scrollSearch($: EngineInterface, by: number): Promise<bool
   }
   const from = r.ids.indexOf(pane.selected[view] ?? ''), id = r.ids[Math.max(0, Math.min(r.ids.length - 1, from < 0 ? 0 : from + by))]
   if (!id) return true
+  if (pane.selected[view] === id) return true
+  const subject = r.data?.[id], mode = view as 'search' | 'quickopen' | 'search.replace'
+  if (subject !== undefined && s.subject?.[mode] !== subject) await updateSearch($, root, u => ({ ...u, subject: { ...u.subject, [mode]: subject } }))
   await updatePane($, p => reducePane(p, { type: 'select', view, id }))
   await $.ui.focus({ requestId: 'jei', key: `search-row-${id}` }).catch(() => {})
   return true
@@ -148,11 +153,13 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
   const text = (value: string, key?: string) => <Box key={key}><Text dimColor wrap="truncate-end">{inner ? ` ${fitEnd(value, inner)}` : ''}</Text></Box>
   const edit = async (editing: JeiSearch['editing']) => { await updateSearch($, root, u => ({ ...u, editing })); await $.ui.focus({ requestId: 'jei', key: editing === 'query' ? 'search-query' : `search-${editing}` }).catch(() => {}) }
   let quickError = ''
-  const files = quick ? await (r.files ??= quickOpenFiles((await projectHost($, root)), root)).catch(err => { quickError = firstLine(err); return [] }) : []
-  const ranked = quick ? rankFiles(parseQuery(s.text).name, files, { touched: new Set(Object.keys(await readActivity($))), recent: pane.recent }, 200) : []
+  const files = quick ? await (r.files ??= (async () => quickOpenFiles(await projectHost($, root), root))()).catch(err => { r.files = undefined; quickError = firstLine(err); return [] }) : []
+  const ranking = { touched: new Set(Object.keys(await readActivity($))), recent: pane.recent }
+  const quickText = s.quickText ?? ''
+  const ranked = quick ? rankFiles(parseQuery(quickText).name, files, ranking, 200) : []
   const activate = async (id: string) => {
     if (id.startsWith('command-')) { await command(id.slice(8)); return }
-    if (quick) { const rel = ranked[Number(id.slice(5))]; if (rel) { await stopSearch($); await showPreview($, rel, parseQuery(s.text).line ?? undefined) }; return }
+    if (quick) { const rel = ranked[Number(id.slice(5))]; if (rel) { await stopSearch($); await showPreview($, rel, parseQuery(quickText).line ?? undefined) }; return }
     const match = s.matches[Number(id.slice(6))]
     if (match) { await stopSearch($); await showPreview($, match.rel, match.line) }
   }
@@ -161,7 +168,7 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
     if (action === 'edit') return edit('query')
     if (action === 'quickopen' || action === 'search') {
       await stopSearch($)
-      await updateSearch($, root, u => ({ ...u, editing: 'query', text: '' }))
+      await updateSearch($, root, u => ({ ...u, editing: 'query' }))
       await updatePane($, p => reducePane(p, action === 'quickopen' ? { type: 'quickopen' } : { type: 'back' }))
       return
     }
@@ -173,26 +180,16 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
     }
     if (action === 'send-all') return fill($, sendText(s.text, s.matches))
     if (action === 'mention') {
-      if (quick) { const rel = ranked[Number((pane.selected[view] ?? 'file-0').slice(5))]; if (rel) await fill($, `@${rel} `); return }
-      const match = s.matches[Number((pane.selected[view] ?? 'match-0').slice(6))]
+      if (quick) { const rel = s.subject?.quickopen ?? ranked[0]; if (rel && files.includes(rel)) await fill($, `@${rel} `); return }
+      const match = s.matches[Number((s.subject?.search ?? 'match-0').slice(6))]
       if (match) await fill($, sendText(s.text, [match]))
     }
     if (action === 'apply-all') return requestApply($, s.plan.map(f => f.rel))
-    if (action === 'ask') {
-      const head = `Replace ${JSON.stringify(s.text)} with ${JSON.stringify(s.replacement)} in: `, parts: string[] = []
-      let length = head.length
-      for (const match of s.matches) {
-        const location = `${match.rel}:${match.line}`, suffix = `, …and ${s.matches.length - parts.length - 1} more.`
-        if (length + location.length + (parts.length ? 2 : 0) + suffix.length > 12_000) break
-        parts.push(location); length += location.length + (parts.length > 1 ? 2 : 0)
-      }
-      const left = s.matches.length - parts.length, suffix = left ? `${parts.length ? ', ' : ''}…and ${left} more.` : ''
-      return fill($, head.slice(0, Math.max(0, 12_000 - parts.join(', ').length - suffix.length)) + parts.join(', ') + suffix)
-    }
+    if (action === 'ask') return fill($, replaceAskText(queryOf(s), s.replacement, s.matches))
   }
   const input = (kind: 'query' | 'globs' | 'replacement'): RenderElement => {
-    const value = kind === 'query' ? s.text : s[kind], placeholder = kind === 'query' ? quick ? 'Go to file' : 'Search' : kind === 'globs' ? 'Include/exclude: src/** !**/*.test.ts' : 'Replace with'
-    const change = async (value: string) => { await updateSearch($, root, u => ({ ...u, [kind === 'query' ? 'text' : kind]: value, editing: kind })); if (kind !== 'replacement' && !quick) await restartSearch($) }
+    const value = kind === 'query' ? quick ? quickText : s.text : s[kind], placeholder = kind === 'query' ? quick ? 'Go to file' : 'Search' : kind === 'globs' ? 'Include/exclude: src/** !**/*.test.ts' : 'Replace with'
+    const change = async (value: string) => { await updateSearch($, root, u => ({ ...u, [kind === 'query' ? quick ? 'quickText' : 'text' : kind]: value, editing: kind })); if (kind !== 'replacement' && !quick) await restartSearch($) }
     const submit = async (value: string) => {
       await change(value); await updateSearch($, root, u => ({ ...u, editing: null }))
       if (kind === 'replacement') {
@@ -208,7 +205,7 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
         } finally { if (r.epoch === epoch) await updateSearch($, root, u => ({ ...u, busy: false })) }
         return
       }
-      if (quick && ranked[0]) { await showPreview($, ranked[0], parseQuery(value).line ?? undefined); return }
+      if (quick) { const best = rankFiles(parseQuery(value).name, files, ranking, 1)[0]; if (best) await showPreview($, best, parseQuery(value).line ?? undefined); return }
       await $.ui.focus({ requestId: 'jei', key: `search-row-${quick ? 'file-0' : 'match-0'}` }).catch(() => {})
     }
     const cancel = s.editing ? <Button key="search-cancel" plain label="Cancel" onPress={act($, async () => { await leaveSearchEditor($); await $.ui.focus({ requestId: 'jei', key: 'search-row-match-0' }).catch(() => {}) })} /> : null
@@ -238,9 +235,10 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
     }
     if (s.skipped.length) items.push({ id: 'skipped', passive: true, el: text('Not replaced') })
     for (const skip of s.skipped) items.push({ id: `skip-${skip.rel}`, el: row(`skip-${skip.rel}`, `${skip.rel}: ${skip.reason}`, async () => {}) })
-    const file = s.plan.find(f => f.rel === selected) ?? s.plan[0]
+    const file = s.plan.find(f => f.rel === s.subject?.['search.replace']) ?? s.plan[0]
     items.push({ id: 'apply', el: row('apply', 'Apply file', () => requestApply($, file ? [file.rel] : [])) })
   } else if (quick) {
+    if (quickError) items.push({ id: 'notice', passive: true, el: text(quickError, 'search-notice') })
     const touched = await readActivity($)
     ranked.forEach((rel, i) => items.push({ id: `file-${i}`, el: row(`file-${i}`, `${touched[rel] ? '•' : ' '} ${rel.slice(rel.lastIndexOf('/') + 1)}  ${fitPath(rel.slice(0, rel.lastIndexOf('/')), Math.floor(inner / 2))}`, () => activate(`file-${i}`)) }))
   } else {
@@ -268,6 +266,7 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
   if (!replacing) items.push({ id: 'command-edit', el: row('command-edit', 'Edit query', () => edit('query')) })
   for (const k of KEYS[view]) if (/^[a-z0-9]$/.test(k.key) && k.action !== 'back') items.push({ id: `command-${k.action}`, el: row(`command-${k.action}`, `${k.key} ${k.label}`, () => command(k.action)) })
   r.ids = items.filter(item => !item.passive).map(item => item.id)
+  r.data = replacing ? Object.fromEntries(s.plan.map(f => [f.rel, f.rel])) : quick ? Object.fromEntries(ranked.map((rel, i) => [`file-${i}`, rel])) : Object.fromEntries(s.matches.map((_, i) => [`match-${i}`, `match-${i}`]))
   const pinned: RenderElement[] = []
   if (!replacing) pinned.push(input(s.editing ?? 'query'))
   if (!replacing && !quick && !compact && inner >= 38) pinned.push(<Box flexDirection="row"><Text> </Text>{[[s.caseSensitive, 'Aa'], [s.regex, '.*'], [s.wholeWord, '\\b']].map(([active, label]) => <Text color={active ? color('accent') : undefined}>{active ? `[${label}]` : label}{' '}</Text>)}<Text dimColor>{fitEnd(s.globs, Math.max(0, inner - 15))}</Text></Box>)

@@ -10,6 +10,8 @@ import { decodeUtf8, gitGrepArgs, parseGitGrep, parseRgLine, searchArgs, type Ma
 export const RG_MISSING = 'ripgrep (rg) is not installed. Install it to search: https://github.com/BurntSushi/ripgrep#installation'
 const FALLBACK_CAP = 8 * 1024 * 1024
 const WRITE_CAP = 4 * 1024 * 1024
+const SEARCH_BUDGET = 16 * 1024 * 1024
+const REPLACE_BUDGET = 32 * 1024 * 1024
 const firstLine = (text: string) => text.split(/\r?\n/).find((line) => line.trim())?.trim() ?? ''
 const unsupportedPath = (host: Host, ...paths: string[]) => host.platform !== 'win32' && paths.some((path) => path.includes('\\'))
 
@@ -41,7 +43,9 @@ export function search(host: Host, root: string, q: SearchQuery, onMatch: (m: Ma
   const start = Date.now()
   const cancel = () => { cancelled = true; active?.cancel() }
   const done = (async () => {
+    if (/[\r\n]/.test(q.text)) return 'Search patterns must stay on one line.'
     const results = new ResultSet()
+    let retainedBytes = 0
     const rootReal = (await host.stat(root))?.realPath
     const paths = new Map<string, Promise<boolean>>()
     const emit = async (match: Match) => {
@@ -53,7 +57,11 @@ export function search(host: Host, root: string, q: SearchQuery, onMatch: (m: Ma
         paths.set(rel, allowed)
       }
       if (!await allowed || cancelled) return
+      // Estimated UTF-16 strings, range tuples and record overhead, not exact JS heap size.
+      const bytes = (match.text.length + rel.length) * 2 + match.ranges.length * 32 + 64
+      if (retainedBytes + bytes > SEARCH_BUDGET) { truncated = true; active?.cancel(); return }
       if (!results.add({ ...match, rel })) { truncated = true; active?.cancel(); return }
+      retainedBytes += bytes
       onMatch({ ...match, rel })
     }
     const collect = async (argv: string[]): Promise<{ text: string; complete: boolean }> => {
@@ -115,7 +123,7 @@ export function search(host: Host, root: string, q: SearchQuery, onMatch: (m: Ma
           throw new Error(`Git grep could not verify the first match in ${match.rel}:${match.line}.`)
         }
         await emit({ ...match, ranges: [[offset, offset + text.length]] })
-        if (results.truncated()) break
+        if (truncated) break
       }
       return null
     } catch (error) {
@@ -128,10 +136,22 @@ export function search(host: Host, root: string, q: SearchQuery, onMatch: (m: Ma
 export async function quickOpenFiles(host: Host, root: string): Promise<string[]> {
   const repo = (await isRepo(host, root)) !== null
   const argv = quickOpenArgs(repo)
-  const result = await host.run(repo ? gitArgv(root, argv) : argv, { cwd: root, ...(repo ? { env: GIT_ENV } : {}) })
+  let result
+  try { result = await host.run(repo ? gitArgv(root, argv) : argv, { cwd: root, ...(repo ? { env: GIT_ENV } : {}) }) }
+  catch (error) {
+    if (!repo && /ENOENT|not found|cannot find|no such file/i.test(String(error))) throw new Error(RG_MISSING)
+    throw error
+  }
+  if (!repo && result.exitCode === 127) throw new Error(RG_MISSING)
   if (result.exitCode !== 0) throw new Error(firstLine(result.stderr) || 'Could not list project files.')
+  const deleted = new Set<string>()
+  if (repo) {
+    const gone = await host.run(gitArgv(root, ['ls-files', '-d', '-z']), { env: GIT_ENV })
+    if (gone.exitCode !== 0) throw new Error(firstLine(gone.stderr) || 'Could not list deleted project files.')
+    for (const path of gone.stdout.split('\0')) deleted.add(path)
+  }
   return [...new Set(result.stdout.split('\0').flatMap((path) => {
-    const rel = path ? nativeRel(root, path, host.platform) : null
+    const rel = path && !deleted.has(path) ? nativeRel(root, path, host.platform) : null
     return rel ? [rel] : []
   }))].slice(0, 50_000)
 }
@@ -156,23 +176,28 @@ async function readForReplace(host: Host, root: string, rel: string): Promise<{ 
 }
 
 export async function buildReplacePlan(host: Host, root: string, q: SearchQuery, replacement: string): Promise<{ files: ReplaceFile[]; skipped: Skipped[] }> {
+  if (!q.regex && q.text === '') throw new Error('Enter a search query before replacing.')
   const groups = new ResultSet()
   const result = await search(host, root, q, (match) => { groups.add(match) }).done
   if (result.error) throw new Error(result.error)
-  const files: { rel: string; text: string; matches: Match[] }[] = []
+  if (result.truncated) throw new Error('Results truncated. Narrow the search before replacing.')
+  const files: ReplaceFile[] = []
   const skipped: Skipped[] = []
+  let retainedBytes = 0
   for (const group of groups.groups()) {
     const read = await readForReplace(host, root, group.rel)
-    if ('reason' in read) skipped.push({ rel: group.rel, reason: read.reason })
-    else files.push({ ...group, text: read.text })
+    if ('reason' in read) { skipped.push({ rel: group.rel, reason: read.reason }); continue }
+    const plan = planReplace(q, replacement, [{ ...group, text: read.text }])
+    skipped.push(...plan.skipped)
+    for (const file of plan.files) {
+      if (exceedsWriteCap(file.after)) { skipped.push({ rel: file.rel, reason: 'too-large' }); continue }
+      const bytes = (file.before.length + file.after.length + file.rel.length) * 2 + 64
+      if (retainedBytes + bytes > REPLACE_BUDGET) throw new Error('Replacement review exceeds 32 MiB. Narrow the search before replacing.')
+      retainedBytes += bytes
+      files.push(file)
+    }
   }
-  const plan = planReplace(q, replacement, files)
-  const accepted: ReplaceFile[] = []
-  for (const file of plan.files) {
-    if (exceedsWriteCap(file.after)) skipped.push({ rel: file.rel, reason: 'too-large' })
-    else accepted.push(file)
-  }
-  return { files: accepted, skipped: [...skipped, ...plan.skipped] }
+  return { files, skipped }
 }
 
 export async function applyReplace(host: Host, root: string, plan: ReplaceFile[]): Promise<{ written: string[]; skipped: Skipped[] }> {
@@ -182,8 +207,7 @@ export async function applyReplace(host: Host, root: string, plan: ReplaceFile[]
     if (exceedsWriteCap(file.after)) { skipped.push({ rel: file.rel, reason: 'too-large' }); continue }
     const read = await readForReplace(host, root, file.rel)
     if ('reason' in read) { skipped.push({ rel: file.rel, reason: read.reason }); continue }
-    const fresh = await host.readText(read.path)
-    if (read.text !== file.before || fresh !== file.before) { skipped.push({ rel: file.rel, reason: 'changed' }); continue }
+    if (read.text !== file.before) { skipped.push({ rel: file.rel, reason: 'changed' }); continue }
     // Resolve again after reads so a replaced symlink cannot redirect the write unnoticed.
     const [rootInfo, info] = await Promise.all([host.stat(root), host.stat(read.path)])
     if (rootInfo && info && unsupportedPath(host, rootInfo.realPath, info.realPath)) { skipped.push({ rel: file.rel, reason: 'unsupported-path' }); continue }
