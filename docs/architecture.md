@@ -1,5 +1,7 @@
 # Architecture
 
+Resolved filesystem metadata uses pure `canonicalRel` in `core/shared/paths.ts` (ADR 0029); lexical input/RPC paths retain `nativeRel`. Exact canonical components guard Files validation/postconditions/results, preview reads, Search admission and replacement reads/final writes. Windows separator and ASCII drive-letter normalization never folds directory or Unicode identity.
+
 > Purpose: how JEI is split between a host-independent core and two thin host adapters, and how data moves · Status: current · Last reviewed: 2026-10-21
 
 The layout is fixed; modules appear as plan Tasks 3-17 are built (see `docs/quality.md`). Source: `PRD.md` §4.1 and §8.

@@ -25,6 +25,8 @@ Windows PowerShell 5.1 and 7 declare LiteralPath for Move-Item/Remove-Item, but 
 
 ## Consequences and limits
 
+ADR 0029 separates exact canonical metadata identity from lexical path aliases. Static Unicode/case-distinct Windows sibling escapes are refused by the shared canonical guard; they are not part of the external-writer window below.
+
 The final checks enforce refusal against observed state, not atomic protection from an unrelated concurrent writer. Claude write has no exclusive flag; Node rename can replace a newly appearing target, and a new directory can redirect mv/Move-Item. Root/parent links can change between checks and effects. Eliminating those windows requires different host primitives, including directory-handle-relative effects and no-replace rename. Existing-target checks, canonical checks and postconditions remain mandatory.
 
 Native renderer/kit tests prove measured trees, input routing and public flows at the required sizes; SDK dialog mocks are not layout evidence. Physical host paint/focus, other operating systems and Windows file symlinks (EPERM in this environment) remain explicit QA limits. Disposable Windows junction tests preserve outside child contents during recursive deletion.

@@ -43,3 +43,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0026 | [Separate filename and content search](0026-filename-and-content-search.md) | Live filename search, content Search tab, spaced controls and Symbols retirement. |
 | 0027 | [Remove Symbols and exact replacement](0027-remove-symbols-and-exact-replacement.md) | Remove compatibility, use ordinary unknown-value defaults, replace exact literal text and correct minimum history-editor heights. |
 | 0028 | [Safe Files operations](0028-safe-files-operations.md) | Literal mutations, captured canonical evidence, fixed PowerShell programs, server-owned plans and native confirmation. |
+| 0029 | [Canonical filesystem identity](0029-canonical-path-identity.md) | Separate lexical aliases from exact canonical metadata containment across Files, preview, Search and Replace. |

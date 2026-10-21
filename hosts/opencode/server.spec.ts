@@ -224,11 +224,23 @@ test.skipIf(process.platform !== 'win32')('Windows Files results use real entry 
     const plan = await call('fsPrepare', { sessionID: 'a', kind: 'move', source })
     return call('fsApply', { sessionID: 'a', planId: plan.planId, value, confirmed: false })
   }
-  expect(await move('src/source.txt', 'SRC/renamed.txt')).toMatchObject({ ok: true, rel: 'src/renamed.txt' })
+  expect(await move('SRC/SOURCE.txt', 'SRC/renamed.txt')).toMatchObject({ ok: true, rel: 'src/renamed.txt' })
   expect(await move('src/renamed.txt', '.GIT/after.txt')).toMatchObject({ ok: true, rel: '.git/after.txt' })
   const deletion = await call('fsPrepare', { sessionID: 'a', kind: 'delete', source: '.GIT/after.txt' })
   expect(await call('fsApply', { sessionID: 'a', planId: deletion.planId, confirmed: true })).toMatchObject({ ok: true, rel: '.git' })
   expect(readFileSync(join(root, '.git/keep'), 'utf8')).toBe('keep')
+})
+
+test.skipIf(process.platform !== 'win32')('Windows canonical Unicode sibling junction cannot escape Files or preview RPC', async () => {
+  const base = makeTemp('acme-app'), root = join(base, 'k'), outside = join(base, 'K')
+  writeFiles(root, { 'own.txt': 'inside' }); writeFiles(outside, { 'keep.txt': 'outside sentinel' })
+  symlinkSync(outside, join(root, 'link'), 'junction')
+  const server = await start(root), call = (name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>
+  await expect(call('fsPrepare', { sessionID: 'a', kind: 'delete', source: 'link/keep.txt' })).rejects.toThrow()
+  expect(await call('preview', { rel: 'link/keep.txt' })).toMatchObject({ kind: 'empty' })
+  const plan = await call('fsPrepare', { sessionID: 'a', kind: 'move', source: 'own.txt' })
+  await expect(call('fsApply', { sessionID: 'a', planId: plan.planId, value: 'link/new.txt', confirmed: false })).rejects.toThrow()
+  expect(readFileSync(join(outside, 'keep.txt'), 'utf8')).toBe('outside sentinel'); expect(readFileSync(join(root, 'own.txt'), 'utf8')).toBe('inside')
 })
 
 test('Files tokens from an old server instance cannot authorize a different restarted plan', async () => {

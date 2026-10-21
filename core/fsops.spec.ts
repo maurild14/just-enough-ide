@@ -3,6 +3,26 @@ import type { DirEntry, FileStat, Host, Platform } from './host.ts'
 
 import * as fsops from './fsops.ts'
 
+test('canonical Windows siblings cannot authorize source or destination effects', async () => {
+  for (const sibling of ['K', 'K']) {
+    const f = fixture('win32'), real = 'C:/fixture/k'
+    for (const stat of f.nodes.values()) stat.realPath = stat.realPath.replace(f.root, real)
+    f.add('link', 'dir', `C:/fixture/${sibling}`); f.add('link/keep.txt', 'file', `C:/fixture/${sibling}/keep.txt`)
+    await expect(fsops.prepareFsOp(f.host, f.root, { kind: 'delete', source: 'link/keep.txt' })).rejects.toThrow()
+    const move = await fsops.prepareFsOp(f.host, f.root, { kind: 'move', source: 'keep.txt' })
+    await expect(fsops.planFsOp(f.host, move, 'link/new.txt')).rejects.toThrow()
+  }
+})
+
+test('canonical basename and exact Windows postcondition cannot fold distinct entries together', async () => {
+  const f = fixture('win32')
+  f.add('src/first.txt', 'file', `${f.root}/src/second.txt`)
+  await expect(fsops.prepareFsOp(f.host, f.root, { kind: 'delete', source: 'src/first.txt' })).rejects.toThrow()
+  const prepared = await fsops.prepareFsOp(f.host, f.root, { kind: 'move', source: 'src/file.txt' }), plan = await fsops.planFsOp(f.host, prepared, 'other/new.txt')
+  f.nodes.delete(`${f.root}/src/file.txt`); f.add('other/new.txt', 'file', `${f.root}/OTHER/new.txt`)
+  await expect(fsops.verifyFsOp(f.host, plan)).rejects.toThrow()
+})
+
 function fixture(platform: Platform = 'linux') {
   const root = platform === 'win32' ? 'C:/acme-app' : '/acme-app'
   const nodes = new Map<string, FileStat>([[root, { kind: 'dir', size: 0, realPath: root }]])

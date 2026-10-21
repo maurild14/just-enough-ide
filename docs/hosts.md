@@ -1,5 +1,7 @@
 # Hosts
 
+Canonical metadata is compared through `canonicalRel`, separate from lexical `nativeRel` (ADR 0029). Host-resolved actual casing permits typed parent aliases and linked roots; ambiguous metadata fails closed. Actual Windows sibling/junction server tests preserve outside contents; Claude kit tests simulate resolved Windows metadata and refuse before confirmation/effects. These checks use no platform settings and do not claim real UNC or case-sensitive-directory execution.
+
 > Purpose: verified API facts, limits and version floors for Claude Code mods and OpenCode 2.x plugins · Status: current · Last reviewed: 2026-10-21
 
 Source: `PRD.md` §4.2 to §4.4, verified in October 2026. Both APIs are young; a host's exported types are the contract. If a fact here turns out wrong, fix this file and say so in the commit.

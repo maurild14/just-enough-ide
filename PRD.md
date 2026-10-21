@@ -190,6 +190,8 @@ Each feature lists behavior, keys and how it is built. Keys in `code` are the sa
 
 ### 6.1 Files tab
 
+Resolved filesystem metadata must retain exact component identity. Static Windows Unicode or case-distinct sibling paths are outside the canonical project, including junction targets; typed casing aliases remain valid only through consistent actual canonical evidence. Ambiguous identities refuse conservatively. This applies to Files effects, previews, Search publication and replacement reads/writes, separately from the external-writer window (ADR 0029).
+
 **Behavior**
 - Collapsible tree of the working directory, respecting `.gitignore` (toggle to show ignored/hidden).
 - Git status per file and rolled up per folder (modified, added, untracked, deleted, conflicted), with color and letter.

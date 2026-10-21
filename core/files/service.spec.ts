@@ -8,6 +8,14 @@ import type { Host } from '../host.ts'
 
 afterEach(cleanup)
 
+test('preview never reads through canonical Windows Unicode or case-distinct siblings', async () => {
+  for (const sibling of ['K', 'K']) {
+    const root = 'C:/fixture/k'; let reads = 0
+    const host = { platform: 'win32', stat: async (path: string) => ({ kind: path === root ? 'dir' : 'file', size: 7, realPath: path === root ? root : `C:/fixture/${sibling}/keep.txt` }), readHead: async () => { reads++; return new TextEncoder().encode('target\n') } } as unknown as Host
+    expect(await loadPreview(host, root, 'link/keep.txt')).toEqual({ kind: 'empty' }); expect(reads).toBe(0)
+  }
+})
+
 test('preview uses native lexical and realpath confinement without POSIX backslash or UNC case aliases', async () => {
   for (const [root, rel, real] of [
     ['/work/acme-app', 'link.txt', '/work/acme-app\\outside.txt'],

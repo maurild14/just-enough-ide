@@ -1,5 +1,5 @@
 import type { FileStat, Host, Platform } from './host.ts'
-import { joinPath, nativePath, nativeRel, parentDirs, toPosix } from './shared/paths.ts'
+import { canonicalRel, joinPath, nativePath, nativeRel, parentDirs, toPosix } from './shared/paths.ts'
 
 export type FsOp = 'new' | 'rename' | 'move' | 'delete'
 export type FsRequest = { kind: FsOp; source: string }
@@ -33,8 +33,7 @@ function relative(value: string, platform: Platform, empty = false): string {
 function metadata(stat: FileStat | null, platform: Platform): FileStat {
   if (!stat || !stat.realPath || !Number.isFinite(stat.size) || stat.size < 0 || (stat.kind !== 'file' && stat.kind !== 'dir')) fail('Cannot verify filesystem metadata.')
   const real = platform === 'win32' ? toPosix(stat!.realPath) : stat!.realPath
-  const absolute = platform === 'win32' ? /^[A-Za-z]:\//.test(real) || /^\/\/[^/?]+\/[^/]+/.test(real) : real.startsWith('/') && !real.startsWith('//') && !real.includes('\\')
-  if (!absolute || /\/(?:\.|\.\.)(?:\/|$)/.test(real)) fail('Cannot verify a canonical filesystem path.')
+  if (canonicalRel(real, real, platform) === null) fail('Cannot verify a canonical filesystem path.')
   return { ...stat!, realPath: real }
 }
 
@@ -46,16 +45,18 @@ async function rootStat(host: Host, root: string): Promise<FileStat> {
 
 async function checked(host: Host, root: string, realRoot: string, rel: string, kind?: 'dir' | 'file'): Promise<FileStat> {
   const stat = metadata(await host.stat(full(root, rel)), host.platform)
-  if (kind && stat.kind !== kind || nativeRel(realRoot, stat.realPath, host.platform) === null) fail('That path is outside the project or has changed.')
+  if (kind && stat.kind !== kind || canonicalRel(realRoot, stat.realPath, host.platform) === null) fail('That path is outside the project or has changed.')
   return stat
 }
 
 async function entry(host: Host, root: string, rel: string): Promise<FileStat> {
   const entries = await host.list(full(root, parent(rel)))
-  const found = entries.filter(e => sameName(e.name, name(rel), host.platform))
+  const literal = entries.filter(e => e.name === name(rel))
+  const ascii = (value: string) => value.replace(/[A-Z]/g, ch => ch.toLowerCase())
+  const found = literal.length ? literal : entries.filter(e => host.platform === 'win32' && ascii(e.name) === ascii(name(rel)))
   if (found.length !== 1 || found[0]!.kind !== 'file' && found[0]!.kind !== 'dir') fail('Select an existing regular file or folder.')
   const stat = metadata(await host.stat(full(root, rel)), host.platform)
-  if (stat.kind !== found[0]!.kind) fail('That path has changed.')
+  if (stat.kind !== found[0]!.kind || name(stat.realPath) !== found[0]!.name) fail('That path has changed.')
   return stat
 }
 
@@ -66,7 +67,7 @@ export async function prepareFsOp(host: Host, root: string, request: FsRequest):
   let sourceStat: FileStat | null = null
   if (source) {
     sourceStat = await entry(host, root, source)
-    if (nativeRel(realRoot, sourceStat.realPath, host.platform) === null || nativeRel(realRoot, sourceStat.realPath, host.platform) === '') fail('The project root and outside paths cannot be changed.')
+    if (canonicalRel(realRoot, sourceStat.realPath, host.platform) === null || canonicalRel(realRoot, sourceStat.realPath, host.platform) === '') fail('The project root and outside paths cannot be changed.')
   }
   const sourceParent = source ? parent(source) : ''
   const destinationParent = request.kind === 'new' && sourceStat?.kind === 'dir' ? source : sourceParent
@@ -101,7 +102,7 @@ export async function planFsOp(host: Host, prepared: FsPreparation, value?: stri
     for (const ancestor of [...parentDirs(rel), parent(rel)]) await checked(host, prepared.root, prepared.realRoot, ancestor, 'dir')
     const stat = await checked(host, prepared.root, prepared.realRoot, parent(rel), 'dir')
     destinationParentReal = stat.realPath
-    if (prepared.kind !== 'new' && prepared.sourceKind === 'dir' && prepared.sourceReal && (nativeRel(full(prepared.root, prepared.source), full(prepared.root, rel), host.platform) !== null || nativeRel(prepared.sourceReal, stat.realPath, host.platform) !== null)) fail('A folder cannot be moved into itself or a descendant.')
+    if (prepared.kind !== 'new' && prepared.sourceKind === 'dir' && prepared.sourceReal && (nativeRel(full(prepared.root, prepared.source), full(prepared.root, rel), host.platform) !== null || canonicalRel(prepared.sourceReal, stat.realPath, host.platform) !== null)) fail('A folder cannot be moved into itself or a descendant.')
     const entries = await host.list(full(prepared.root, parent(rel)))
     if (entries.some(e => sameName(e.name, name(rel), host.platform)) || await host.stat(full(prepared.root, rel))) fail('That destination already exists.')
   }
@@ -124,15 +125,19 @@ export function fsOpCommand(plan: FsPlan, platform: Platform): { argv: string[];
 
 /** Exit zero can mean mv -n skipped. Require the exact result before reporting success. */
 export async function verifyFsOp(host: Host, plan: FsPlan): Promise<string> {
-  if ((await rootStat(host, plan.root)).realPath !== plan.realRoot) fail('The project root changed during the operation.')
+  if (canonicalRel(plan.realRoot, (await rootStat(host, plan.root)).realPath, host.platform) !== '') fail('The project root changed during the operation.')
   if (plan.kind !== 'new') {
     const entries = await host.list(full(plan.root, parent(plan.source)))
-    if (entries.some(e => sameName(e.name, name(plan.source), host.platform)) || await host.stat(full(plan.root, plan.source))) fail('The filesystem operation did not complete.')
+    if (entries.some(e => e.name === name(plan.sourceReal!)) || await host.stat(full(plan.root, plan.source))) fail('The filesystem operation did not complete.')
   }
   if (plan.destination !== null) {
     const stat = await entry(host, plan.root, plan.destination)
-    if (stat.kind !== plan.targetKind || !plan.destinationParentReal || nativeRel(full(plan.destinationParentReal, name(plan.destination)), stat.realPath, host.platform) !== '') fail('The filesystem operation did not reach its exact destination.')
-    return nativeRel(plan.realRoot, stat.realPath, host.platform)!
+    if (stat.kind !== plan.targetKind || !plan.destinationParentReal || canonicalRel(full(plan.destinationParentReal, name(plan.destination)), stat.realPath, host.platform) !== '') fail('The filesystem operation did not reach its exact destination.')
+    const result = canonicalRel(plan.realRoot, stat.realPath, host.platform)
+    if (result === null) fail('The filesystem operation left the project.')
+    return result!
   }
-  return nativeRel(plan.realRoot, plan.parentReal, host.platform)!
+  const result = canonicalRel(plan.realRoot, plan.parentReal, host.platform)
+  if (result === null) fail('The filesystem operation left the project.')
+  return result!
 }

@@ -44,6 +44,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 | Live filename search, content Search tab, control spacing or retained tree navigation | `docs/decisions/0026-filename-and-content-search.md` |
 | Symbols removal, exact Replace, unknown retained values or minimum history-editor height | `docs/decisions/0027-remove-symbols-and-exact-replacement.md` |
 | Files mutations, canonical evidence, native confirmations or fixed PowerShell programs | `docs/decisions/0028-safe-files-operations.md` |
+| Canonical metadata identity versus lexical Windows path aliases | `docs/decisions/0029-canonical-path-identity.md` |
 | Commit mode, input blur or repeated focus/arrow navigation | `docs/decisions/0024-focus-and-arrow-navigation.md` |
 | Checking what is built and known debt | `docs/quality.md` |
 | Preparing a release (manual QA, release pipeline) | `docs/qa.md`, `CONTRIBUTING.md` |

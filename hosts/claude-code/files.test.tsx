@@ -33,6 +33,18 @@ const posix = (p: string) => p.replaceAll('\\', '/').replace(/^[A-Za-z]:/, '')
 
 const FILES = ['README.md', 'people.csv', 'logo.bin', 'big.log', 'empty.txt', 'src/index.ts', 'src/api/user.ts']
 
+test('Files native Windows confirmation refuses a canonical Unicode sibling before effects', async ($, on) => {
+  on('ui.focus', () => ({}))
+  const seen = await world($, on, true, undefined, path => path.replace(ROOT, path.includes('/src') ? 'C:/fixture/K' : 'C:/fixture/k'))
+  await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: `C:${ROOT}` })
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+  await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src/api/user.ts', origin: { kind: 'person' } })
+  await ui.press({ key: 'key-d' })
+  expect(await ui.find({ key: 'files-operation-confirm' })).toBeUndefined()
+  expect(seen.toasts.at(-1)).toContain('outside'); expect(seen.effects).toEqual([])
+  await ui.unmount()
+})
+
 test('Files operations stay reachable, own typed input, cancel and always confirm deletion at five rows', { timeoutMs: 60_000 }, async ($, on) => {
   on('ui.focus', () => ({}))
   const seen = await world($, on)
@@ -274,7 +286,7 @@ function jei(args: string) {
 }
 
 /** Answers the files, git and the session beneath the plugin. Returns the calls it saw. */
-async function world($: Engine, on: On, operations = false, onRun?: (argv: readonly string[]) => Promise<void>) {
+async function world($: Engine, on: On, operations = false, onRun?: (argv: readonly string[]) => Promise<void>, canonical?: (path: string) => string) {
   on('session.id', () => ({ value: 'files-test-session' }))
   const lists: string[] = []
   const runs: string[][] = []
@@ -311,7 +323,7 @@ async function world($: Engine, on: On, operations = false, onRun?: (argv: reado
     const name = path.slice(path.lastIndexOf('/') + 1)
     const hit = TREE[path] ? dir(name) : TREE[parent]?.find((x) => x.name === name)
     if (!hit) return { deny: `ENOENT: ${path}` }
-    return { value: { kind: hit.kind, size: hit.size, mtimeMs: 0, isLink: false, realPath: path } }
+    return { value: { kind: hit.kind, size: hit.size, mtimeMs: 0, isLink: false, realPath: canonical?.(path) ?? path } }
   })
   on('fs.read', (_$, e) => {
     const path = posix(e.path)

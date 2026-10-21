@@ -115,6 +115,28 @@ export function nativeRel(root: string, path: string, platform: 'win32' | 'darwi
   return count < 0 ? null : normalize(full, false).segs.slice(count).join('/')
 }
 
+/** Resolved metadata only: exact canonical components, never lexical Windows case folding (ADR 0029). */
+export function canonicalRel(root: string, path: string, platform: 'win32' | 'darwin' | 'linux'): string | null {
+  const parse = (value: string): Norm | null => {
+    if (typeof value !== 'string' || !value || value.includes('\0') || platform === 'win32' && /[\x00-\x1f]/.test(value)) return null
+    const p = platform === 'win32' ? toPosix(value) : value
+    let prefix: string, rest: string
+    if (platform === 'win32' && /^[A-Za-z]:\//.test(p)) { prefix = p.slice(0, 2).toUpperCase(); rest = p.slice(3) }
+    else if (platform === 'win32' && p.startsWith('//')) { prefix = '//'; rest = p.slice(2) }
+    else if (platform !== 'win32' && p.startsWith('/') && !p.startsWith('//') && !p.includes('\\')) { prefix = '/'; rest = p.slice(1) }
+    else return null
+    if (rest.startsWith('/')) return null
+    if (rest.endsWith('/')) rest = rest.slice(0, -1)
+    const segs = rest ? rest.split('/') : []
+    if (prefix === '//' && segs.length < 2) return null
+    if (segs.some(s => !s || s === '.' || s === '..' || platform === 'win32' && (/[<>:"|?*]/.test(s) || /[. ]$/.test(s)))) return null
+    return { prefix, segs }
+  }
+  const r = parse(root), p = parse(path)
+  if (!r || !p || r.prefix !== p.prefix || r.segs.length > p.segs.length || r.segs.some((s, i) => s !== p.segs[i])) return null
+  return p.segs.slice(r.segs.length).join('/')
+}
+
 /**
  * The platform a path's shape points to, for hosts that do not say: a drive
  * letter or a UNC prefix is Windows, `/Users/` is macOS, anything else Linux.

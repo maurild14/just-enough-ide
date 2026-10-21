@@ -2,7 +2,7 @@ import type { DirEntry, Host } from '../host.ts'
 import { GIT_ENV, gitArgv } from '../git/run.ts'
 import { isRepo } from '../git/status.ts'
 import type { Options } from '../options.ts'
-import { isInside, joinPath, nativePath, nativeRel } from '../shared/paths.ts'
+import { canonicalRel, isInside, joinPath, nativePath, nativeRel } from '../shared/paths.ts'
 import { parseDelimited } from './csv.ts'
 import { openArgv, openRefusal } from './open.ts'
 import { PREVIEW_MAX_BYTES, languageOf, previewKind } from './preview.ts'
@@ -49,7 +49,7 @@ export async function loadPreview(
   if (info === null || info.kind !== 'file') return { kind: 'empty' }
   // A symlink may point outside the project: compare real paths.
   const rootReal = (await host.stat(root))?.realPath
-  if (rootReal === undefined || nativeRel(rootReal, info.realPath, host.platform) === null) return { kind: 'empty' }
+  if (rootReal === undefined || canonicalRel(rootReal, info.realPath, host.platform) === null) return { kind: 'empty' }
   // Size alone settles empty, image and too-large: those files are never read.
   const early = previewKind(name, info.size, new Uint8Array(0))
   if (early === 'empty' || early === 'image' || early === 'too-large') return { kind: early }

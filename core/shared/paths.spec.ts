@@ -1,5 +1,18 @@
 import { expect, test } from 'bun:test'
 import { insideRel, isInside, joinPath, nativePath, nativeRel, parentDirs, platformOf, projectRel, relativeTo, toPosix } from './paths.ts'
+import * as paths from './paths.ts'
+
+test('canonical containment preserves exact Windows component identity and refuses ambiguous metadata', () => {
+  expect(paths).toHaveProperty('canonicalRel')
+  for (const outside of ['C:/fixture/K/keep.txt', 'C:/fixture/K/keep.txt', 'C:/fixture/k-extra/keep.txt', 'keep.txt', 'C:keep.txt', 'C:/fixture/k/../keep.txt', 'C:/fixture/k//keep.txt']) expect(paths.canonicalRel('C:/fixture/k', outside, 'win32')).toBeNull()
+  expect(paths.canonicalRel('C:\\fixture\\k', 'C:/fixture/k/src/K.txt', 'win32')).toBe('src/K.txt')
+  expect(paths.canonicalRel('//files.example/share/k', '//files.example/share/k/a', 'win32')).toBe('a')
+  expect(paths.canonicalRel('//files.example/share/k', '//files.example/share/K/a', 'win32')).toBeNull()
+  expect(paths.canonicalRel('/acme-app', '/acme-app/a:b', 'linux')).toBe('a:b')
+  expect(paths.canonicalRel('/acme-app', '/acme-app/a\nb.txt', 'linux')).toBe('a\nb.txt')
+  expect(paths.canonicalRel('C:/acme-app', 'C:/acme-app/a\nb.txt', 'win32')).toBeNull()
+  expect(paths.canonicalRel('/acme-app', '/acme-app', 'linux')).toBe('')
+})
 
 test('toPosix', () => expect(toPosix('a\\b\\c')).toBe('a/b/c'))
 

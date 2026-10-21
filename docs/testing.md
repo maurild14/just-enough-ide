@@ -1,5 +1,7 @@
 # Testing
 
+ADR 0029 regressions distinguish lexical aliases from exact canonical metadata: pure Windows Unicode/case-distinct sibling and malformed-path cases, Files source/destination/postcondition refusals, preview zero reads, Search zero outside publication and replacement read/final-write refusals. Public OpenCode server tests use actual disposable Windows `k`/`K` siblings and a junction; outside contents remain unchanged. A native Claude test supplies the same resolved Windows metadata and requires refusal before Delete confirmation/effects. Existing actual parent-case aliases and linked-root positives remain covered. Case-sensitive roots are simulated with distinct canonical components; no OS settings or real UNC filesystem are changed/exercised.
+
 > Purpose: which tests exist, which runner runs them, and what every view must prove · Status: current · Last reviewed: 2026-10-21
 
 The test suite requires `rg` (ripgrep) on PATH, alongside Bun and Git. Runtime Search still supports the documented Git grep fallback.

@@ -1,7 +1,7 @@
 import type { Host, Stream } from '../host.ts'
 import { GIT_ENV, gitArgv } from '../git/run.ts'
 import { isRepo } from '../git/status.ts'
-import { nativeRel, joinPath } from '../shared/paths.ts'
+import { canonicalRel, nativeRel, joinPath } from '../shared/paths.ts'
 import { quickOpenArgs } from './quickopen.ts'
 import { planReplace, type ReplaceFile, type Skipped } from './replace.ts'
 import { ResultSet } from './results.ts'
@@ -53,7 +53,7 @@ export function search(host: Host, root: string, q: SearchQuery, onMatch: (m: Ma
       if (cancelled || !rootReal || !rel) return
       let allowed = paths.get(rel)
       if (!allowed) {
-        allowed = host.stat(joinPath(root, rel)).then((info) => info?.kind === 'file' && nativeRel(rootReal, info.realPath, host.platform) !== null)
+        allowed = host.stat(joinPath(root, rel)).then((info) => info?.kind === 'file' && canonicalRel(rootReal, info.realPath, host.platform) !== null)
         paths.set(rel, allowed)
       }
       if (!await allowed || cancelled) return
@@ -163,7 +163,7 @@ async function readForReplace(host: Host, root: string, rel: string): Promise<{ 
   const path = joinPath(root, safe)
   const [info, rootInfo] = await Promise.all([host.stat(path), host.stat(root)])
   if (rootInfo && unsupportedPath(host, rootInfo.realPath, info?.realPath ?? '')) return { reason: 'unsupported-path' }
-  if (!rootInfo || info && nativeRel(rootInfo.realPath, info.realPath, host.platform) === null) return { reason: 'outside-root' }
+  if (!rootInfo || info && canonicalRel(rootInfo.realPath, info.realPath, host.platform) === null) return { reason: 'outside-root' }
   if (!info || info.kind !== 'file') return { reason: 'unreadable' }
   if (info.size > WRITE_CAP) return { reason: 'too-large' }
   const bytes = await host.readHead(path, info.size + 1)
@@ -211,7 +211,7 @@ export async function applyReplace(host: Host, root: string, plan: ReplaceFile[]
     // Resolve again after reads so a replaced symlink cannot redirect the write unnoticed.
     const [rootInfo, info] = await Promise.all([host.stat(root), host.stat(read.path)])
     if (rootInfo && info && unsupportedPath(host, rootInfo.realPath, info.realPath)) { skipped.push({ rel: file.rel, reason: 'unsupported-path' }); continue }
-    if (!rootInfo || !info || nativeRel(rootInfo.realPath, info.realPath, host.platform) === null) { skipped.push({ rel: file.rel, reason: 'outside-root' }); continue }
+    if (!rootInfo || !info || canonicalRel(rootInfo.realPath, info.realPath, host.platform) === null) { skipped.push({ rel: file.rel, reason: 'outside-root' }); continue }
     // shortcut: Host has no atomic compare-and-swap; add one if concurrent writer isolation is required.
     await host.writeText(read.path, file.after)
     written.push(file.rel)

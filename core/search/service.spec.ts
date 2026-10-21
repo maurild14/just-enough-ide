@@ -8,6 +8,27 @@ import type { Match, SearchQuery } from './rg.ts'
 
 afterEach(cleanup)
 const query: SearchQuery = { text: 'target', caseSensitive: true, regex: false, wholeWord: false, include: [], exclude: [] }
+
+for (const phase of ['search', 'replace-read', 'replace-write'] as const) test(`${phase} refuses canonical Windows sibling aliases`, async () => {
+  for (const sibling of ['K', 'K']) {
+    const root = 'C:/fixture/k', rel = 'link/keep.txt'; let reads = 0, writes = 0, redirected = true
+    const host = { platform: 'win32',
+      stat: async (path: string) => ({ kind: path === root ? 'dir' : 'file', size: 7, realPath: path === root ? root : `${redirected ? `C:/fixture/${sibling}` : root}/keep.txt` }),
+      readHead: async () => { reads++; redirected = true; return new TextEncoder().encode('target\n') }, writeText: async () => { writes++ },
+      stream: () => ({ lines: (async function* () { yield JSON.stringify({ type: 'match', data: { path: { text: rel }, lines: { text: 'target\n' }, line_number: 1, submatches: [{ start: 0, end: 6 }] } }) })(), done: Promise.resolve({ exitCode: 0, stderr: '' }), cancel() {} }),
+    } as unknown as Host
+    const plan = [{ rel, before: 'target\n', after: 'done\n', count: 1 }]
+    if (phase === 'search') {
+      const matches: Match[] = []; await search(host, root, query, m => matches.push(m)).done
+      expect(matches).toEqual([]); expect((await buildReplacePlan(host, root, query, 'done')).files).toEqual([])
+    } else {
+      redirected = phase === 'replace-read'
+      expect((await applyReplace(host, root, plan)).written).toEqual([])
+      expect(reads).toBe(phase === 'replace-read' ? 0 : 1)
+    }
+    expect(writes).toBe(0)
+  }
+})
 class NoRg extends FakeHost {
   override stream(argv: readonly string[], options?: RunOptions): Stream {
     return super.stream(argv[0] === 'rg' ? ['jei-missing-executable'] : argv, options)
@@ -141,16 +162,16 @@ test('replacement reports large and unreadable files without writing', async () 
 })
 
 test('fallback framing preserves literal newline names and exact first match length', async () => {
-  const root = makeTemp()
-  const host: Host = new NoRg()
-  const realStat = host.stat.bind(host)
-  host.stat = async (path) => path.endsWith('a\nb.txt') ? { kind: 'file', size: 10, realPath: join(root, 'a\nb.txt') } : realStat(path)
-  host.run = async () => ({ exitCode: 0, stdout: root, stderr: '' })
-  const baseStream = host.stream.bind(host)
-  host.stream = (argv, options) => argv[0] === 'rg' ? baseStream(argv, options) : {
-    lines: (async function* () { yield 'a'; yield `b.txt\0${'1'}\0${'4'}\0${argv.includes('--only-matching') ? 'target' : 'ñ target target'}` })(),
-    done: Promise.resolve({ exitCode: 0, stderr: '' }), cancel() {},
-  }
+  // A newline component is a POSIX filename, not valid Windows canonical metadata.
+  const root = '/work/acme-app'
+  const host = { platform: 'linux',
+    stat: async (path: string) => ({ kind: path === root ? 'dir' : 'file', size: 10, realPath: path }),
+    run: async () => ({ exitCode: 0, stdout: root, stderr: '' }),
+    stream(argv: readonly string[]) {
+      if (argv[0] === 'rg') throw new Error('ENOENT: rg')
+      return { lines: (async function* () { yield 'a'; yield `b.txt\0${'1'}\0${'4'}\0${argv.includes('--only-matching') ? 'target' : 'ñ target target'}` })(), done: Promise.resolve({ exitCode: 0, stderr: '' }), cancel() {} }
+    },
+  } as unknown as Host
   const seen: Match[] = []
   await search(host, root, query, (m) => seen.push(m)).done
   expect(seen).toEqual([{ rel: 'a\nb.txt', line: 1, text: 'ñ target target', ranges: [[2, 8]] }])
