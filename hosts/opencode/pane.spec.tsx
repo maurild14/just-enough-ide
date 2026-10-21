@@ -24,12 +24,13 @@ test('clicking tabs out of an editor keeps every tab shortcut and arrow route us
     await r.mockMouse.click(r.captureCharFrame().split('\n')[0]!.indexOf(key) + 1, 0)
     await r.flush()
     if (key === '1') {
-      const field = r.renderer.root.findDescendantById('search-query') as InputRenderable
+      const field = r.renderer.root.findDescendantById('files-query') as InputRenderable
       field.focus(); field.insertText('load4q'); await r.flush()
     }
-    const tab = ({ '1': 'files', '2': 'symbols', '3': 'git' } as const)[key]
+    const tab = ({ '1': 'files', '2': 'search', '3': 'git' } as const)[key]
     expect(paneMemory(f.ctx)[0].panes['session-a']!.tab).toBe(tab)
     if (key !== '1') {
+      f.key('esc'); await r.flush()
       for (const digit of ['1', '2', '3']) {
         const command = f.layers.flatMap(layer => layer().commands ?? []).findLast(command => command.bind === digit)!
         expect(typeof command.enabled === 'function' ? command.enabled() : command.enabled !== false).toBe(true)
@@ -42,7 +43,7 @@ test('clicking tabs out of an editor keeps every tab shortcut and arrow route us
 
 for (const width of [24, 40, 80, 120]) test(`Files keeps its old hint threshold and Search/Symbols retain five-row hints at ${width} columns`, async () => {
   const f = fixture(); const r = await f.mount(width, 5)
-  for (const [key, view] of [['1', 'files'], ['2', 'symbols']] as const) {
+  for (const [key, view] of [['1', 'files'], ['2', 'search']] as const) {
     f.key('esc'); f.key(key); await r.flush()
     const hint = hintLine(view, width)
     if (view === 'files') expect(r.captureCharFrame().trimEnd().split('\n').at(-1)).not.toBe(hint)
@@ -144,7 +145,7 @@ function fixture(options: Record<string, unknown> = {}) {
 test('the panel renders shared tabs and focused digit bindings switch views', async () => {
   const f = fixture()
   const r = await f.mount()
-  expect(r.captureCharFrame()).toContain('1 Files  2 Symbols  3 Git')
+  expect(r.captureCharFrame()).toContain('1 Files  2 Search  3 Git')
   f.key('3')
   await r.flush()
   expect(r.captureCharFrame()).toContain('Git')
@@ -155,7 +156,7 @@ test('the panel renders shared tabs and focused digit bindings switch views', as
   expect(r.captureCharFrame()).toContain('Type to search the project.')
   f.key('esc'); f.key('2')
   await r.flush()
-  expect(r.captureCharFrame()).toContain('approximate')
+  expect(r.captureCharFrame()).toContain('Type to search the project.')
 })
 
 test('/jei opens the requested tab or path and toggles without losing selection', async () => {
@@ -188,7 +189,7 @@ test('bindings follow focus and the current view, including Esc at short heights
   f.command('jei.toggle', 'search')
   await r.flush()
   const layer = f.layers.map((l) => l()).find((l) => l.commands?.some((c) => c.bind === 'esc'))!
-  expect(layer.commands?.map((c) => c.bind)).toEqual(['1', '2', '3', 'up', 'down', 'enter', 'a', 's', 'c', 'x', 'w', 'i', 'p', 'q', 'f', 'b', 'esc'])
+  expect(layer.commands?.map((c) => c.bind)).toEqual(['1', '2', '3', 'up', 'down', 'enter', 'a', 's', 'i', 'p', 'q', 'f', 'b', 'esc'])
   expect(f.layers.flatMap((l) => l().commands ?? []).some((c) => c.bind === 'ctrl+n' || c.bind === 'ctrl+p')).toBe(false)
   expect(r.captureCharFrame()).toContain('esc')
 })

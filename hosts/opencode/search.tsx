@@ -45,18 +45,17 @@ export function Search(props: {
     update(d => { delete d.quickRevision })
     props.quickCacheScopes.add(scope)
   }
-  const [editing, setEditing] = createSignal<'query' | 'globs' | 'replacement' | null>(currentView(props.state) === 'files' || s.text ? null : 'query')
+  const [editing, setEditing] = createSignal<'query' | 'globs' | 'replacement' | null>(s.text ? null : 'query')
   const [quickError, setQuickError] = createSignal('')
   const [quickLoading, setQuickLoading] = createSignal(false)
   const [expanded, setExpanded] = createSignal<string[]>(s.files.map(f => f.rel))
   const [top, setTop] = createSignal(0)
   let stopped = false, epoch = 0, runId = '', listTop = 0
   let timer: ReturnType<typeof setTimeout> | undefined, pending: AbortController | undefined
-  const browsing = () => currentView(props.state) === 'files'
-  const view = createMemo(() => browsing() ? 'search' as const : currentView(props.state)), quick = createMemo(() => view() === 'quickopen'), replacing = createMemo(() => view() === 'search.replace')
+  const view = createMemo(() => currentView(props.state)), quick = createMemo(() => view() === 'quickopen'), replacing = createMemo(() => view() === 'search.replace')
   const theme = () => props.ctx.theme, inner = () => Math.max(0, props.width - 2)
   const compact = () => props.height <= 3
-  const query = (): SearchQuery => ({ text: s.text, caseSensitive: s.caseSensitive, regex: s.regex, wholeWord: s.wholeWord, ...parseGlobs(s.globs) })
+  const query = (): SearchQuery => ({ text: s.text, caseSensitive: false, regex: false, wholeWord: false, ...parseGlobs(s.globs) })
   const selected = () => props.state.selected[view()]
   function select(id: string) {
     const row = rows().find(row => row.id === id)
@@ -78,7 +77,7 @@ export function Search(props: {
     if (quick() || replacing()) return
     const generation = epoch
     update(d => { d.matches = []; d.summary = ''; if (d.subject) delete d.subject.match })
-    if (!s.text && !s.regex) return
+    if (!s.text) return
     timer = setTimeout(() => {
       if (stopped || generation !== epoch) return
       update(d => { d.serial++; d.busy = true; d.summary = 'Searching…' })
@@ -135,9 +134,9 @@ export function Search(props: {
     return all
   })
   const selectable = () => rows().filter(r => !r.passive)
-  createEffect(() => { if (quick() && quickLoading()) return; if (!browsing() && !selectable().some(r => r.id === selected())) { const first = selectable()[0]; if (first) select(first.id) } })
-  const fieldRows = () => props.height >= (browsing() ? 3 : 6) ? 3 : 1
-  const pinned = () => !replacing() ? fieldRows() + (props.header && !browsing() ? 1 : 0) + (!compact() && !quick() ? 1 : 0) : props.header ? 1 : 0
+  createEffect(() => { if (quick() && quickLoading()) return; if (!selectable().some(r => r.id === selected())) { const first = selectable()[0]; if (first) select(first.id) } })
+  const fieldRows = () => props.height >= 6 ? 3 : 1
+  const pinned = () => !replacing() ? fieldRows() + (props.header ? 1 : 0) + (!compact() && !quick() && s.globs ? 1 : 0) : props.header ? 1 : 0
   const room = () => Math.max(0, props.height - pinned() - (!compact() && !quick() && !replacing() && s.summary ? 1 : 0))
   const window = createMemo(() => { const all = rows(), at = all.findIndex(r => r.id === selected()); if (at >= 0) listTop = Math.min(Math.max(listTop, at - room() + 1), at); listTop = Math.max(0, Math.min(listTop, all.length - room())); return all.slice(listTop, listTop + room()) })
   const preview = (path: string, line?: number) => { stop(); props.dispatch({ type: 'preview', rel: path, ...(line ? { line } : {}) }) }
@@ -162,8 +161,7 @@ export function Search(props: {
     if (quick()) { const path = ranked()[0]; if (path) preview(path, parseQuery(s.quickText ?? '').line ?? undefined); return }
     if (field !== 'replacement') {
       if (field === 'query') update(d => { d.text = d.draft ?? d.text })
-      if (!s.text && !s.regex) { clear(); return }
-      if (browsing()) props.dispatch({ type: 'search' })
+      if (!s.text) { clear(); return }
       restart(true); return
     }
     if (s.busy) stop()
@@ -179,7 +177,7 @@ export function Search(props: {
   }
   function clear() {
     stop(); setEditing(null); update(d => { d.draft = ''; d.text = ''; d.matches = []; d.summary = '' })
-    props.dispatch({ type: 'tab', tab: 'files' })
+    props.dispatch({ type: 'tab', tab: 'search' })
   }
   async function run(action: string): Promise<void> {
     if (action === 'blur') { setEditing(null); return }
@@ -198,7 +196,6 @@ export function Search(props: {
     if ((action === 'activate' || action === 'apply-file') && command) action = id.slice(8)
     if (action === 'edit') { setEditing('query'); return }
     if (action === 'include' || action === 'replace') { setEditing(action === 'include' ? 'globs' : 'replacement'); return }
-    if (action.startsWith('toggle-')) { const field = action === 'toggle-case' ? 'caseSensitive' : action === 'toggle-regex' ? 'regex' : 'wholeWord'; update(d => { d[field] = !d[field] }); restart(); return }
     if (action === 'quickopen' || action === 'search') { stop(); setEditing('query'); props.dispatch(action === 'quickopen' ? { type: 'quickopen' } : { type: 'back' }); return }
     if (action === 'apply-file') {
       if (id.startsWith('toggle:')) { const path = id.slice(7); setExpanded(old => old.includes(path) ? old.filter(p => p !== path) : [...old, path]); return }
@@ -216,7 +213,6 @@ export function Search(props: {
   onCleanup(() => { stopped = true; stop(); offMatches(); offDone(); props.bind(() => {}, () => false) })
   const field = () => editing() ?? 'query'
   const fieldValue = () => field() === 'query' ? quick() ? s.quickText ?? '' : s.draft ?? s.text : field() === 'globs' ? s.globs : s.replacement
-  const markers = () => compact() && !quick() && field() === 'query' ? [s.caseSensitive ? '[Aa]' : '', s.regex ? '[.*]' : '', s.wholeWord ? '[\\b]' : '', s.engine === 'git grep' ? 'git grep' : '', s.summary === 'Results truncated.' ? 'truncated' : ''].filter(Boolean).join(' ') : ''
   const change = (value: string) => { const key = field() === 'query' ? quick() ? 'quickText' : 'draft' : field() === 'globs' ? 'globs' : 'replacement'; if (s[key] === value) return; update(d => { d[key] = value }) }
   function matchSpans(m: Match) {
     const prefix = `${m.line}: `, width = Math.max(0, inner() - cellWidth(prefix)), first = m.ranges[0]?.[0] ?? 0
@@ -226,22 +222,19 @@ export function Search(props: {
     for (const [start, end] of m.ranges) { const a = Math.max(at, start - from), b = Math.min(visible.length, end - from); if (a > visible.length) break; if (b < a) continue; pieces.push({ text: visible.slice(at, a) }, { text: visible.slice(a, b), hit: true }); at = b }
     pieces.push({ text: visible.slice(at) + (visible !== text ? '…' : '') }); return pieces.map(p => ({ ...p, text: printable(p.text) }))
   }
-  return <box flexDirection="column" flexGrow={browsing() ? 0 : 1} height={browsing() ? props.height : undefined} flexShrink={0} minHeight={0} overflow="hidden">
+  return <box flexDirection="column" flexGrow={1} flexShrink={0} minHeight={0} overflow="hidden">
     <Show when={!replacing()} fallback={<Show when={props.header}><text height={1}>{' Replace preview'}</text></Show>}>
       <box id="search-field" height={fieldRows()} flexShrink={0} flexDirection="row" border={fieldRows() === 3 ? true : ['left', 'right']} borderColor={theme().text.action.primary.base}>
-        <Show when={markers()}><text fg={theme().text.muted}>{fitEnd(markers(), Math.max(0, props.width - 12)) + ' '}</text></Show>
-        <input id={`search-${field()}`} width={Math.max(1, props.width - 2 - (editing() ? 8 : 0) - 6 - (markers() ? Math.min(cellWidth(markers()), Math.max(0, props.width - 12)) + 1 : 0))} focused={props.focused && editing() !== null} value={fieldValue()} placeholder={field() === 'replacement' ? 'Replace with' : field() === 'globs' ? 'Include/exclude: src/** !**/*.test.ts' : quick() ? 'Go to file' : 'Search · Enter'} onInput={change} onSubmit={() => { void submit().catch(fail) }} onMouseDown={() => setEditing(field())} on:focused={() => setEditing(field())} on:blurred={() => setEditing(null)} />
-        <text fg={theme().text.action.primary.base} onMouseDown={clear}> Clear</text>
-        <Show when={editing()}><text fg={theme().text.action.primary.base} onMouseDown={() => invoke('back')}> Cancel</text></Show>
+        <input id={`search-${field()}`} width={Math.max(1, props.width - 2 - (editing() ? 16 : 7))} focused={props.focused && editing() !== null} value={fieldValue()} placeholder={field() === 'replacement' ? 'Replace with' : field() === 'globs' ? 'Include/exclude: src/** !**/*.test.ts' : quick() ? 'Go to file' : 'Search · Enter'} onInput={change} onSubmit={() => { void submit().catch(fail) }} onMouseDown={() => setEditing(field())} on:focused={() => setEditing(field())} on:blurred={() => setEditing(null)} />
+        <text fg={theme().text.action.primary.base} onMouseDown={clear}> Clear </text>
+        <Show when={editing()}><text fg={theme().text.muted}>·</text><text fg={theme().text.action.primary.base} onMouseDown={() => invoke('back')}> Cancel </text></Show>
       </box>
-      <Show when={props.header && !browsing()}><text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitEnd(quick() ? 'Quick Open' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text></Show>
-      <Show when={!browsing() && !compact() && !quick()}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(` ${s.caseSensitive ? '[Aa]' : 'Aa'} ${s.regex ? '[.*]' : '.*'} ${s.wholeWord ? '[\\b]' : '\\b'} ${s.globs}${s.engine === 'git grep' ? ' · git grep (first match per line)' : ''}`, props.width)}</text></Show>
+      <Show when={props.header}><text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitEnd(quick() ? 'Quick Open' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text></Show>
+      <Show when={!compact() && !quick() && s.globs}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(' ' + s.globs, props.width)}</text></Show>
     </Show>
-    <Show when={!browsing()}>
     <For each={window()}>{row => <text id={`search-row-${row.id}`} height={1} flexShrink={0} bg={row.id === selected() ? theme().background?.action.primary.base : undefined} onMouseDown={() => { if (!row.passive) { setEditing(null); select(row.id); invoke(replacing() ? 'apply-file' : 'activate') } }}>
       {' '}<Show when={row.match} fallback={<span style={{ fg: row.diff ? row.diff.startsWith('+') ? theme().diff?.text.added : row.diff.startsWith('-') ? theme().diff?.text.removed : theme().diff?.text.hunkHeader : row.passive ? theme().text.muted : theme().text.base }}>{row.diff ? fitEnd(row.diff, inner()) : row.label?.includes('/') ? fitPath(row.label, inner()) : fitEnd(row.label ?? '', inner())}</span>}>{(m: () => Match) => <For each={matchSpans(m())}>{p => <span style={{ fg: p.hit ? theme().text.action.primary.base : theme().text.base }}>{p.text}</span>}</For>}</Show>
     </text>}</For>
     <Show when={!compact() && !quick() && !replacing() && s.summary}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(s.summary + (s.engine === 'git grep' ? ' · git grep' : ''), props.width)}</text></Show>
-    </Show>
   </box>
 }

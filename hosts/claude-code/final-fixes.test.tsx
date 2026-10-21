@@ -3,7 +3,7 @@ import { ROOT, command, props, world } from '../../test/claude-search.ts'
 
 const focus = (element: string) => ({ component: 'Pane' as const, requestId: 'jei', plugin: 'jei', element, origin: { kind: 'person' as const } })
 
-test('leaving a Search or Symbols input restores tab hotkeys without submitting', async ($, on) => {
+test('leaving a Search or Files input restores tab hotkeys without submitting', async ($, on) => {
   const seen = await world($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
     await $.command.run(command('search'))
@@ -13,10 +13,9 @@ test('leaving a Search or Symbols input restores tab hotkeys without submitting'
     expect((await ui.find({ key: 'tab-3' }))?.props.hotkey).toBeUndefined()
     await $.ui.focus(focus('tab-3'))
     expect((await ui.find({ key: 'tab-3' }))?.props.hotkey).toBe('3')
-    await ui.press({ key: 'tab-2' }); await seen.clock.settle()
-    await ui.press({ key: 'key-f' })
-    await $.ui.focus(focus('symbols-find'))
-    expect((await ui.find({ key: 'tab-1' }))?.props.hotkey).toBeUndefined()
+    await ui.press({ key: 'tab-1' }); await ui.press({ key: 'key-f' })
+    await $.ui.focus(focus('filter'))
+    expect((await ui.find({ key: 'tab-2' }))?.props.hotkey).toBeUndefined()
     await $.ui.focus(focus('tab-1'))
     expect((await ui.find({ key: 'tab-1' }))?.props.hotkey).toBe('1')
     await ui.press({ key: 'tab-1' })
@@ -61,17 +60,6 @@ test('Search retains its query/results across Quick Open and quick submit ranks 
   await ui.unmount()
 })
 
-test('own allowed LSP calls keep trusted plugin origin and do not touch activity or follow Files', async ($, on) => {
-  const seen = await world($, on)
-  await $.command.run(command(`${ROOT}/src/account.ts`))
-  seen.permission('allow', 'Document symbols:\nload (function) src/account.ts:1:17-3:1\n')
-  await $.command.run(command('symbols')); await seen.clock.settle()
-  expect(seen.origins).toContain('jei')
-  expect(seen.states.activity ?? {}).toEqual({})
-  await $.tool.call({ tool: 'Read', file_path: `${ROOT}/src/other.ts` } as never); await seen.clock.settle()
-  expect(Object.keys(seen.states.activity ?? {})).toContain('src/other.ts')
-})
-
 test('a closed Quick Open cache refreshes and a rejected listing is visible at compact sizes and retries', async ($, on) => {
   const seen = await world($, on)
   seen.settings.largeList = true
@@ -105,67 +93,7 @@ test('native hot reload resets Search and Symbols transient flags while retainin
   await ui.unmount()
 })
 
-test('Symbols fallback work cancels its actual stream when leaving the tab', async ($, on) => {
-  const seen = await world($, on)
-  await $.command.run(command(`${ROOT}/src/account.ts`)); await $.command.run(command('symbols'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
-  seen.settings.slow = true
-  await ui.press({ key: 'key-r' }); await seen.clock.advance(100)
-  const before = seen.settings.closed
-  await ui.press({ key: 'tab-1' }); await seen.clock.advance(1200)
-  expect(seen.settings.closed).toBeGreaterThan(before)
-  expect((await ui.find({ key: 'header' }))?.text).not.toContain('References')
-  await ui.unmount()
-})
-
-test('Symbols cancellation stops the next sequential callee search', async ($, on) => {
-  const seen = await world($, on)
-  seen.files['src/account.ts'] = 'export function load() {\n return save() + finish()\n}\nexport function save() { return 1 }\nexport function finish() { return 2 }\n'
-  await $.command.run(command(`${ROOT}/src/account.ts`)); await $.command.run(command('symbols'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
-  seen.settings.slow = true; seen.settings.slowQuery = 'save'
-  await ui.press({ key: 'key-c' }); await ui.press({ key: 'symbols-row-calls' }); await seen.clock.advance(100)
-  await ui.press({ key: 'tab-1' }); await seen.clock.advance(1200)
-  expect(seen.settings.closed).toBeGreaterThan(0)
-  expect(seen.runs.filter(a => a[0] === 'rg' && a[a.indexOf('-e') + 1]?.includes('finish'))).toHaveLength(0)
-  await ui.unmount()
-})
-
-test('opening Symbols publishes its approximate outline before a slow LSP check and re-enters after cwd change', async ($, on) => {
-  const seen = await world($, on)
-  await $.command.run(command(`${ROOT}/src/account.ts`))
-  seen.settings.holdOutline = true
-  seen.permission('allow', 'Document symbols:\nload (function) src/account.ts:1:17-3:1\n')
-  expect((await $.command.run(command('symbols'))).text).toBe('JEI opened on Symbols.')
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
-  expect(await ui.find({ key: 'symbols-row-node-0' })).toBeDefined()
-  expect(await ui.find({ key: 'symbols-loading' })).toBeDefined()
-  expect(seen.calls).toHaveLength(0)
-  await seen.clock.advance(1200)
-  expect((await ui.find({ key: 'header' }))?.text).toContain('LSP')
-  await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: '/work/another-app' }); await seen.clock.settle()
-  expect(await ui.find({ type: 'Text', text: /Select a file/ })).toBeDefined()
-  await ui.unmount()
-})
-
-test('deliberate LSP definitions open one target and refusals report feedback', async ($, on) => {
-  const seen = await world($, on)
-  seen.files['src/other.ts'] += 'export function load() { return 2 }\n'
-  await $.command.run(command(`${ROOT}/src/account.ts`)); await $.command.run(command('symbols'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
-  seen.permission('ask', 'Definitions:\nsrc/other.ts:1:17 - other\n')
-  await ui.press({ key: 'key-d' })
-  await ui.press({ key: 'symbols-row-permission' })
-  expect((await ui.find({ key: 'preview-title' }))?.text).toContain('other.ts')
-  await ui.press({ key: 'back' }); await ui.press({ key: 'back' })
-  seen.permission('ask', 'References:\nsrc/account.ts:1:17 - load\n')
-  await ui.press({ key: 'key-r' })
-  seen.permission('deny'); await ui.press({ key: 'symbols-row-permission' })
-  expect(seen.toasts.some(text => text.includes('LSP request refused'))).toBe(true)
-  await ui.unmount()
-})
-
-test('repeated focus and boundary scroll do not write Search or Symbols state', async ($, on) => {
+test('repeated focus and boundary scroll do not write Search state', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
@@ -175,13 +103,6 @@ test('repeated focus and boundary scroll do not write Search or Symbols state', 
   await $.ui.focus(focus('search-row-match-0'))
   await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: -1, bodyRows: 24, contentRows: 20, origin: { kind: 'person' } })
   expect(seen.writes.slice(before).filter(key => key === 'searches' || key === 'pane')).toEqual([])
-  await $.command.run(command(`${ROOT}/src/account.ts`)); await $.command.run(command('symbols'))
-  await seen.clock.settle()
-  await $.ui.focus(focus('symbols-row-node-0'))
-  const symbolsBefore = seen.writes.length
-  await $.ui.focus(focus('symbols-row-node-0'))
-  await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: -1, bodyRows: 24, contentRows: 20, origin: { kind: 'person' } })
-  expect(seen.writes.slice(symbolsBefore).filter(key => key === 'symbols' || key === 'pane')).toEqual([])
   await ui.unmount()
 })
 

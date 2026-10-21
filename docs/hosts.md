@@ -1,6 +1,6 @@
 # Hosts
 
-> Purpose: verified API facts, limits and version floors for Claude Code mods and OpenCode 2.x plugins · Status: current · Last reviewed: 2026-10-20
+> Purpose: verified API facts, limits and version floors for Claude Code mods and OpenCode 2.x plugins · Status: current · Last reviewed: 2026-10-21
 
 Source: `PRD.md` §4.2 to §4.4, verified in October 2026. Both APIs are young; a host's exported types are the contract. If a fact here turns out wrong, fix this file and say so in the commit.
 
@@ -141,7 +141,9 @@ The installed OpenTUI 0.5.17 input strips CR/LF and defaults to 1,000 characters
 
 Every view renders at 40 columns; git always runs with `--no-optional-locks` and `GIT_OPTIONAL_LOCKS=0`; no shell strings; agent labels use the host's name (Ask Claude, Ask OpenCode). Behavior differences are limited to those listed above and are recorded in `PRD.md` §13.
 
-## OpenCode Search and Symbols (0.3)
+## Historical OpenCode Search and Symbols (0.3)
+
+ADR 0026 retires the Symbols views described in this section. Core/RPC facts remain relevant; current entry points are described below.
 
 Rechecked installed `@opencode/plugin` 2.0.32 `dist/promise/plugin.d.ts`, `tool.d.ts`, client and protocol declarations: no supported LSP/symbol query API is exported. Client `generated/types.d.ts` has LSP configuration only. Symbols is approximate throughout.
 
@@ -176,3 +178,8 @@ Both hosts render shared `graphLine` spans with sanitized display fields, semant
 Pane shells own the visible Back action; Claude's shared `navigation.ts` resolves editor/question/filter cancellation before the pane stack. OpenCode delegates both mouse Back and keyboard Back to the active view, falling back to the pane reducer if an error has unmounted that view. `git.compare` preserves separate branch/comparison selections through diff returns, labels its header `Comparison` on both hosts and validates retained selection against the current comparison files. Stage/unstage/discard fall back to a working file/group when a working selection disappears, preserving working hints and selection paint; Graph remains the initial default when history exists. Short panes retain tab and hint keys. Claude hides its extra Back row below four total rows; Files pins an editable filter input when the normal header is hidden and omits results when no body row remains, with `f` still available to close filtering. Five-row panes retain Back, tabs, hints and a result. Inline editors and confirms keep their Cancel control. See ADR 0017.
 
 A Windows OpenCode 2.0.32 smoke at 80 × 24 with six commits and two merges verified colored lanes/refs, all six hashes at the same final column, Graph before Changes, `b`/`q`, a real terminal mouse click on Back and Files preview/`q`. It made no model request and used isolated runtime directories. Other themes, live resize, clipboard acceptance, real-agent attribution and another OS remain release QA.
+
+
+## Current search entry points
+
+ADR 0026 replaces the Symbols tab with content Search on both hosts. Files uses its native filename filter in a permanent outlined field above the project name, updating on every input change. Separate Cancel and Clear controls have explicit spacing. OpenCode retains the Files query, expansion and viewport in session/project memory across tab remounts; Claude retains them in session state. Symbols native views no longer issue LSP or outline requests; the underlying core and RPC contracts remain for compatibility.

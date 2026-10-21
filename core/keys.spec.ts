@@ -37,7 +37,7 @@ test('required keys per view', () => {
   has('git.diff', ['n', 'p', 'j', 'k', 'a', 'o', 'esc'])
 })
 
-test('q toggles search modes and every other view keeps shared Back', () => {
+test('q toggles find file modes and every other view keeps shared Back', () => {
   for (const view of views) {
     expect(KEYS[view].find(key => key.key === 'q')?.action).toBe(view === 'search' ? 'quickopen' : view === 'quickopen' ? 'search' : 'back')
     expect(KEYS[view].find(key => key.key === 'esc')?.action).toBe('back')
@@ -45,7 +45,7 @@ test('q toggles search modes and every other view keeps shared Back', () => {
 })
 
 test('Search, Replace, Quick Open and Symbols expose their milestone actions', () => {
-  has('search', ['up', 'down', 'enter', 'a', 's', 'c', 'x', 'w', 'i', 'p', 'q', 'esc'])
+  has('search', ['up', 'down', 'enter', 'a', 's', 'i', 'p', 'q', 'esc'])
   has('search.replace', ['up', 'down', 'enter', 'y', 'a', 'q', 'esc'])
   has('quickopen', ['up', 'down', 'enter', 'a', 'q', 'esc'])
   has('symbols', ['up', 'down', 'enter', 'd', 'r', 'c', 'a', 'f', 'q', 'esc'])
@@ -53,7 +53,7 @@ test('Search, Replace, Quick Open and Symbols expose their milestone actions', (
 })
 
 test('tab keys', () => {
-  expect(TAB_KEYS).toEqual({ '1': 'files', '2': 'symbols', '3': 'git' })
+  expect(TAB_KEYS).toEqual({ '1': 'files', '2': 'search', '3': 'git' })
 })
 
 test('hint line fits every width and has no help key', () => {
@@ -70,8 +70,8 @@ test('hint line at 24, 40, 80 and 10', () => {
   expect(hintLine('git', 24)).toBe('↑↓ s u d c y a b f t esc')
   expect(hintLine('files', 24)).toBe('↑↓ enter s a o f h q esc')
   expect(hintLine('files', 40)).toBe('↑↓ move · enter open · s a o f h q esc')
-  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · s search · a mention · o open in editor · f h q esc')
-  expect(hintLine('files', 120)).toBe('↑↓ move · enter open · s search · a mention · o open in editor · f filter · h hidden · q back · esc back')
+  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · s find file · a mention · o open in editor · f h q esc')
+  expect(hintLine('files', 120)).toBe('↑↓ move · enter open · s find file · a mention · o open in editor · f filter · h hidden · q back · esc back')
   expect(hintLine('git.diff', 10)).toBe('↑↓ n p esc')
   expect(hintLine('git', 10)).toBe('↑↓ s u esc')
 })

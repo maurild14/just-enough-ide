@@ -1,6 +1,6 @@
 # JEI — agent guide
 
-JEI ("Just Enough IDE") is a pane docked beside a Claude Code or OpenCode session with three tabs: Files, Symbols and Git, with project Search inside Files (a file tree, project search, symbols and a Source Control panel). Both hosts ship the same features, keys and behavior from one repository. The repo root is the Claude Code plugin and the `opencode-jei` npm package. Layout: `core/` (pure TypeScript logic), `hosts/claude-code/` (a Claude Code mod drawn with `$.ui`), `hosts/opencode/` (an OpenCode 2.x plugin: server entry, RPC, Solid + OpenTUI views).
+JEI ("Just Enough IDE") is a pane docked beside a Claude Code or OpenCode session with three tabs: Files, Search and Git (live filename search above the file tree, content search and a Source Control panel). Both hosts ship the same features, keys and behavior from one repository. The repo root is the Claude Code plugin and the `opencode-jei` npm package. Layout: `core/` (pure TypeScript logic), `hosts/claude-code/` (a Claude Code mod drawn with `$.ui`), `hosts/opencode/` (an OpenCode 2.x plugin: server entry, RPC, Solid + OpenTUI views).
 
 ## Commands
 
@@ -41,7 +41,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 | Native Search/Symbols controls, LSP permission checks or ambiguous roots | `docs/decisions/0021-native-search-symbol-controls-and-path-evidence.md` |
 | OpenCode Search/Symbols RPC, stored replacement plans or source targets | `docs/decisions/0022-opencode-search-symbols-and-review-state.md` |
 | Search retention budgets, complete replacement review or shared replacement Ask text | `docs/decisions/0023-bounded-search-and-complete-replacement-review.md` |
-| Files Search, submitted queries or retained tree navigation | `docs/decisions/0025-search-inside-files.md` |
+| Live filename search, content Search tab, control spacing or retained tree navigation | `docs/decisions/0026-filename-and-content-search.md` |
 | Commit mode, input blur or repeated focus/arrow navigation | `docs/decisions/0024-focus-and-arrow-navigation.md` |
 | Checking what is built and known debt | `docs/quality.md` |
 | Preparing a release (manual QA, release pipeline) | `docs/qa.md`, `CONTRIBUTING.md` |

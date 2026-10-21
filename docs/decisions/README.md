@@ -40,3 +40,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0023 | `0023-bounded-search-and-complete-replacement-review.md` | Estimated retention budgets and complete replacement review |
 | 0024 | `0024-focus-and-arrow-navigation.md` | Arrow-safe commit mode, input blur and unchanged selection handling |
 | 0025 | [Search inside Files](0025-search-inside-files.md) | Three tabs, submitted query drafts and retained Files navigation. |
+| 0026 | [Separate filename and content search](0026-filename-and-content-search.md) | Live filename search, content Search tab, spaced controls and Symbols retirement. |

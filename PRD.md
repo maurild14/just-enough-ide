@@ -2,7 +2,7 @@
 
 **Product requirements and technical spec · v0.1 draft**
 
-> The parts of an IDE you still need when the AI writes the code: a file tree, project search, symbols and a full Git panel, docked beside your Claude Code or OpenCode session.
+> The parts of an IDE you still need when the AI writes the code: a file tree, project search and a full Git panel, docked beside your Claude Code or OpenCode session.
 
 ---
 
@@ -12,7 +12,6 @@ More and more developers work through an agent in the terminal: the agent writes
 
 - a **file explorer** to see the project's shape and what is changing,
 - **project-wide search** to find things without asking the model (and paying tokens for it),
-- **symbols**: a file's outline, go to definition, find references,
 - the **Source Control panel**: branch, graph of commits, changed files, diffs, a commit button.
 
 Today that means keeping VS Code open *only* for its sidebar. JEI brings exactly that sidebar into the agent's terminal UI, as a pane docked beside the conversation, and makes it aware of what the agent is doing.
@@ -36,7 +35,7 @@ JEI is written **from scratch**; no code from other projects is copied. If a fra
 ## 2. Goals, non-goals, anti-goals
 
 ### Goals
-1. One pane, three tabs, **Files · Symbols · Git**, with Search inside Files, that replace the VS Code sidebar for a developer who works through an agent.
+1. One pane, three tabs, **Files · Search · Git**, with live filename search in Files, that replace the VS Code sidebar for a developer who works through an agent.
 2. The **Git tab mirrors VS Code's Source Control panel** (repository row, Graph, Changes, branches), adapted to a terminal pane.
 3. **Agent-aware:** the pane shows what the agent reads, writes and commits, and every view can hand context to the agent in one key ("Ask", "mention").
 4. **Two hosts, one core:** Claude Code and OpenCode get the same features at the same time. All logic lives in a host-independent core; each host is a thin adapter.
@@ -65,7 +64,7 @@ JEI is written **from scratch**; no code from other projects is copied. If a fra
 
 Moments JEI is designed around:
 1. *"What did the agent just touch?"* → Files tab shimmers it; Git → Changes lists it with +/−.
-2. *"Where is `getUser` used?"* → Search or Symbols → references, then **send them to the agent** in one key.
+2. *"Where is `getUser` used?"* → Search, then **send them to the agent** in one key.
 3. *"What changed in that commit?"* → Git → Graph → expand commit → open a file's diff.
 4. *"Commit this."* → Git → Changes → ✦ generate message → Commit (or Commit & Push).
 5. *"Start a branch for this."* → Git → Branches → create & switch.
@@ -127,7 +126,7 @@ An OpenCode plugin package has a **server entry** (`@opencode/plugin`, `Plugin.d
 | Put text into the prompt | **No API in 2.x** to insert into the user's prompt (`tui.prompt.append` exists only as an event type). JEI uses `ui.dialog.prompt({ value })` prefilled with the text, then `client.session.prompt({ sessionID, text })` to send it | ✅ Different UX, see §5.3 |
 | AI commit message | `ctx.generate.text({ prompt, model? })` → `{ text }`; prompt is a string and model is `{ providerID, id }` | ✅ |
 | State | Solid signals in the TUI; `context.storage` in the TUI; `ctx.storage` on the server | ✅ |
-| Symbols | No LSP or symbol call in the 2.x client | ❌ Approximate level only (§6.3) |
+| Symbols | No LSP or symbol call in the 2.x client | ❌ Symbols UI retired (ADR 0026) |
 | Git hooks | Git runs as a normal process: repo hooks fire | ✅ |
 
 - **Keyboard:** `keymap` allows chords and modifiers, but JEI uses the **same single-letter/digit keys as on Claude Code** (one key map in `core/keys.ts`, the stricter host's rules). Never bind `ctrl+n`/`ctrl+p` (reserved by OpenCode's dialogs).
@@ -150,7 +149,7 @@ An OpenCode plugin package has a **server entry** (`@opencode/plugin`, `Plugin.d
 
 ```
 ┌ conversation ─────────────────────────────┬ JEI ──────────────────────────────┐
-│ > add zod validation to the users endpoint│ 1 Files  2 Symbols  3 Git│
+│ > add zod validation to the users endpoint│ 1 Files  2 Search  3 Git│
 │                                           │───────────────────────────────────│
 │ ● Update(src/api/user.ts)                 │  (active tab content)             │
 │   ⎿ 12 additions, 3 removals              │                                   │
@@ -162,7 +161,7 @@ An OpenCode plugin package has a **server entry** (`@opencode/plugin`, `Plugin.d
 - **All UI text is English.**
 - Tabs switch with `1`–`3` while the pane holds the keyboard; clicking a tab works where the host supports the mouse.
 - The last line of the pane is always a **hint line** listing the keys of the current view.
-- `/jei` toggles the pane; `/jei files|search|symbols|git` opens it on a tab; `/jei <path>` opens Files revealing a path. Same command on both hosts.
+- `/jei` toggles the pane; `/jei files|search|git` opens it on a tab; `/jei <path>` opens Files revealing a path. Same command on both hosts.
 - Colors follow the host's theme (dark/light); Nerd Font icons when available, plain Unicode otherwise.
 
 ### 5.2 Activity shimmer (shared by Files and Git)
@@ -214,40 +213,15 @@ File ops live in `core/fsops.ts` as argv builders plus root checks; the host exe
 - **OpenCode:** the server entry uses `node:fs/promises` (`mkdir`, `rename`, `rm`) for the same operations; no OS argv needed.
 - On both, every path must resolve inside the project root. Tests cover both argv shapes.
 
-### 6.2 Search inside Files (project-wide find, like `Ctrl+Shift+F`)
+### 6.2 Search tab (text inside files)
 
-**Behavior**
-- Query field with toggles: match case, regex, whole word; include and exclude globs.
-- Results stream in as you type, grouped by file with counts and the matched line, match highlighted; total and timing shown.
-- `enter` on a result opens the preview at that line.
-- **Send to the agent:** one result, or all results, as a prompt fragment:
-  `These are the 14 uses of getUser: src/api/user.ts:12, …` (paths and line numbers, with the matched line).
-- **Replace** with a preview: shows localized unified hunks with three context lines around every replacement before applying; apply all, apply per file, or hand the change to the agent when it is not mechanical. Truncated searches and reviews over the estimated 32 MiB snapshot budget must be narrowed before review; no partial plan is returned. A literal query must be nonempty; an intentional empty regex is supported.
-- **Quick Open** lives here as a mode (a query starting with nothing but a filename-like string, or a toggle): fuzzy file finder with live preview, ranked: files the agent touched this session → recently previewed → the rest. `:42` jumps to a line.
+Tab 2 is Search; Symbols is retired from both native interfaces. Content search is literal and case-insensitive, submitted with Enter. The outlined query field has separate Cancel and Clear controls. Include/exclude globs, result grouping, one/all hand-off, Quick Open, reviewed replacement and changed-file refusal remain available. Case, regex and word controls and shortcuts are removed.
 
-**Keys:** `enter` preview · `a` add result to prompt · `s` send all to the agent · `c` case · `x` regex · `w` whole word · `i` include/exclude · `p` replace · `q` quick open mode.
+Results stream from the existing bounded ripgrep service, with the verified Git grep fallback when needed. Search retains at most 2,000 result lines and an estimated 16 MiB. Replacement requires complete bounded review and fresh UTF-8 byte comparison before writes (ADR 0023). Arrow navigation keeps the selected result visible; preview and Back retain its exact selection. Clear stays in Search; b returns to Files.
 
-**Build:** ripgrep `rg --json` streamed (Claude Code: `$.process.spawn({ argv, cwd })`; OpenCode: `node:child_process` `spawn` in the server entry, results pushed to the TUI with `registration.events.emit`). JSON parsing and grouping live in `core/`. Reject multiline patterns; keep typing in a draft and cancel the previous run when Enter submits a new query. Search retains at most 2,000 result lines and an estimated 16 MiB of UTF-16 strings/range data with `Results truncated.` on overflow (ADR 0023). Replace reads/writes complete UTF-8 files within 4 MiB, lists binary/invalid/changed and other skipped files, and independently verifies Unicode whole-word boundaries. Quick Open uses NUL-delimited `git ls-files -co --exclude-standard` minus deleted tracked paths (fallback `rg --files`), capped at 50,000 candidates and cached/refreshed on file events. Fuzzy ranking favors matches at word starts and in the basename. Missing rg gives installation guidance; repository fallback searches tracked files' first verified occurrence per line, with hidden/untracked coverage differences recorded.
+### 6.3 Filename search in Files
 
-### 6.3 Symbols tab (outline, definition, references)
-
-**Behavior**
-- **Outline** of the file selected in Files (or the last one the agent touched): functions, classes, methods, types, exported constants, nested, with line numbers. `enter` previews at the symbol.
-- **Workspace symbol search:** type a name, get matches across the project.
-- **Go to definition** and **find references** for the selected symbol; references list grouped by file.
-- **Call hierarchy:** who calls this, what this calls, as an expandable tree.
-- **Send to the agent:** a symbol with all its references (`change the signature of getUser and update these 5 call sites: …`).
-- Each list says where its data came from: **LSP** (exact) or **approximate** (see below).
-
-**Keys:** `enter` preview · `d` definition · `r` references · `c` call hierarchy · `a` send to the agent · `f` find symbol.
-
-**Build — two levels, decided:**
-1. **Exact (LSP)** where the host exposes it:
-   - **Claude Code:** `$.tool.call({ tool: 'LSP', operation, filePath, line, character, query? })` with `documentSymbol`, `workspaceSymbol` (still needs `filePath`/`line`/`character`, plus `query`), `goToDefinition`, `findReferences`, and `prepareCallHierarchy` → `incomingCalls` / `outgoingCalls`. The result is formatted text: `core/` parses it with a tolerant parser and keeps a fixture-based test suite per operation so a format change fails CI rather than users. Permission: before the first call JEI asks `$.tool.check({ tool: 'LSP', … })`, which returns the verdict without a dialog. If it is `ask`, the tab shows one row ("Exact symbols need permission to use the LSP tool") with a button that makes the first call on purpose; until then it uses the approximate level. Never a surprise dialog.
-   - **OpenCode:** the 2.x client has no LSP or symbol call, so the Symbols tab uses the approximate level and says so. Re-checked at the 0.3 milestone (none in 2.0.32); if OpenCode adds one, JEI uses it.
-2. **Approximate** everywhere else: per-language regex outlines for the common languages (TypeScript/JavaScript, Python, Go, Rust, Java, C#, Markdown headings), and references as a word-boundary `rg` search for the name, labeled *approximate*. All of it lives in `core/`.
-
-tree-sitter is out for v1 (no WebAssembly in Claude Code mods; a native sidecar binary would add a download per platform). Revisit if the regex outlines prove too weak.
+An accent outline above the project name contains the filename query. s or f focuses it. Every input change updates results without Enter; basename prefixes rank first, then existing fuzzy path matches. An empty query shows the tree. Arrows leave editing and navigate results; Enter previews. Back from preview retains query and result selection. Clear restores the original tree selection and expansion; Cancel only leaves editing. All controls fit at 24/40/80/120 columns and compact heights. See ADR 0026.
 
 ### 6.4 Git tab (Source Control, like VS Code)
 
@@ -302,7 +276,7 @@ Same keys on both hosts. Claude Code: `userConfig` in `plugin.json`, where on/of
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `startOpen` | boolean | `true` | Open the pane when a session starts (where it can dock) |
-| `defaultTab` | `files` \| `symbols` \| `git` | `files` | Tab shown on open |
+| `defaultTab` | `files` \| `search` \| `git` | `files` | Tab shown on open |
 | `activity` | `reads and writes` \| `writes` \| `reads` \| `none` | `reads and writes` | What the shimmer shows |
 | `followAgent` | boolean | `true` | Tree follows what the agent touches |
 | `glyphs` | `auto` \| `nerd` \| `plain` | `auto` | Icon set |
@@ -322,9 +296,9 @@ One stack for two hosts:
 - **TypeScript + TSX** everywhere. Claude Code compiles the mod itself; OpenCode loads the TypeScript entries itself. No bundler, no build step.
 - **Zero runtime dependencies.** `@opencode/plugin` is a peer dependency that OpenCode resolves at runtime; nothing else.
 - **`core/`:** pure TypeScript, no host API, no Node/Bun/DOM (§4.1).
-- **Claude Code adapter:** the surface's own elements via `$.ui.resolve(e)`, JSX against the global `h`; session `$.state` atoms declared in `types/index.d.ts` retain root-scoped UI data. Search/Symbols transient operations reset on session start, and LSP permissions are checked afresh per request.
+- **Claude Code adapter:** the surface's own elements via `$.ui.resolve(e)`, JSX against the global `h`; session `$.state` atoms declared in `types/index.d.ts` retain root-scoped UI data. Search transient operations reset on session start.
 - **OpenCode adapter:** server entry (processes via `node:child_process`, files, tool hooks, model, `ctx.rpc.register`) and TUI entry (Solid + OpenTUI views, keymap, dialogs, `context.storage`), linked by one RPC definition in `hosts/opencode/rpc.ts`.
-- **External tools:** `git` (required for the Git tab), `rg` (Search; falls back to `git grep`), language servers (optional, for exact symbols).
+- **External tools:** `git` (required for the Git tab), `rg` (Search; falls back to `git grep`), the retired symbol core remains compatibility code.
 - **Tests:**
   - `bun test` for everything in `core/` (parsers, graph layout, fuzzy ranking, shell parsing, key map, fsops argv), named `*.spec.ts`. This is where most tests live.
   - `claude plugin test` for the Claude Code adapter (mounting the pane on `terminal` and `desktop`).
@@ -449,7 +423,7 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - Name: **JEI — Just Enough IDE**. Everything (UI, docs, repo) in English. Open source.
 - **Two hosts from the first release: Claude Code and OpenCode, in one repository.**
 - Built from scratch.
-- Three tabs: Files, Symbols, Git, with Search inside Files. Search, Quick Open and Symbols (outline + definition/references) are in.
+- Three tabs: Files, Search, Git. Live filename search, content search and Quick Open are in; the Symbols UI is retired (ADR 0026).
 - Git tab follows VS Code's Source Control layout (option A): repository row, Graph, Changes, branches; switch and create branches.
 - Clicking a commit expands it inline with its files; clicking a file shows its diff **replacing the pane content** (unified, one column).
 - Git extras accepted: Ask on commits/diffs, ✦ markers for the agent's commits, commit actions (copy hash, checkout, revert, open on GitHub), graph filter, compare branch with main.
@@ -472,7 +446,7 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - OpenCode tools are classified by id from `ctx.tool.list()` with an input-shape fallback.
 - On OpenCode, Symbols is approximate only until OpenCode exposes an LSP API.
 - `commitModel` empty by default = the host's small model.
-- Quick Open is nested under Search inside Files.
+- Quick Open is nested under the Search tab.
 - File operations (new, rename, move, delete with confirmation) are included, in 0.4.
 - Symbols moved into 0.3 next to Search and Quick Open; the first public release moved from 0.5 to 0.4.
 - Symbols use LSP when available and regex outlines otherwise; no tree-sitter in v1.

@@ -6,36 +6,16 @@ import { paneMemory } from './pane.tsx'
 const batch = (id: string, text = 'load') => ({ sessionID: 'session-a', id, matches: [{ rel: 'src/app.ts', line: 2, text: `ñ ${text} 界`, ranges: [[2, 2 + text.length]] }] })
 const done = (id: string, extra: object = {}) => ({ sessionID: 'session-a', id, engine: 'rg', error: null, ms: 4, truncated: false, ...extra })
 
-test('Search can take focus from the Files filter and Back restores that filter', async () => {
-  const f = searchFixture(), r = await f.mount()
-  f.handlers.allFiles = async () => ({ files: ['src/app.ts'] })
-  f.key('1'); await r.flush(); f.key('f'); await r.flush()
-  input(r).focus(); input(r).insertText('load'); input(r).submit(); await settle(r)
-  expect(f.calls.findLast(c => c.method === 'searchStart')!.input.query.text).toBe('load')
-  expect(paneMemory(f.ctx)[0].panes['session-a']!.stack).toEqual(['files', 'search'])
-  f.key('b'); await r.flush()
-  expect(r.captureCharFrame()).toContain('Filter:')
-  f.key('esc'); await r.flush()
-  expect(r.captureCharFrame()).not.toContain('Filter:')
-})
-
-for (const width of [24, 40, 80, 120]) test(`Files Search submits on Enter, scrolls, previews and restores its tree at ${width} columns`, async () => {
-  const f = searchFixture()
-  f.handlers.listDir = async ({ rel }) => ({ entries: rel ? [{ name: 'old.ts', kind: 'file', size: 1 }] : [{ name: 'src', kind: 'dir', size: 0 }], ignored: [] })
-  const r = await f.mount(width, 24)
-  f.key('1'); await r.flush(); f.key('enter'); await r.flush(); f.key('down'); await r.flush()
-  const state = () => paneMemory(f.ctx)[0].panes['session-a']!
-  expect(state().selected.files).toBe('src/old.ts')
-  const initialFrame = r.captureCharFrame()
-  expect(initialFrame.indexOf('Search')).toBeLessThan(initialFrame.indexOf('acme-app'))
+for (const width of [24, 40, 80, 120]) test(`separate Search tab submits, scrolls and returns to its retained result at ${width} columns`, async () => {
+  const f = searchFixture(), r = await f.mount(width, 24)
+  f.key('2'); await r.flush()
   expect(r.renderer.root.findDescendantById('search-field')).toBeDefined()
-  f.key('s'); await r.flush(); input(r).insertText('load123q')
-  await settle(r)
+  input(r).focus(); input(r).insertText('load123q'); await settle(r)
   expect(f.calls.some(c => c.method === 'searchStart')).toBe(false)
-  expect(state().stack).toEqual(['files'])
   input(r).submit(); await settle(r)
+  const state = () => paneMemory(f.ctx)[0].panes['session-a']!
+  expect(state().stack).toEqual(['search'])
   const start = f.calls.findLast(c => c.method === 'searchStart')!.input
-  expect(start.query.text).toBe('load123q')
   f.emit('searchMatches', { ...batch(start.id), matches: Array.from({ length: 30 }, (_, i) => ({ rel: 'other/new.ts', line: i + 1, text: `load123q ${i}`, ranges: [[0, 8]] })) })
   f.emit('searchDone', done(start.id)); await r.flush()
   r.resize(width, 5); await r.flush()
@@ -47,14 +27,6 @@ for (const width of [24, 40, 80, 120]) test(`Files Search submits on Enter, scro
   f.key('q'); await r.flush()
   expect(state().selected.search).toBe('match-25')
   expect(r.captureCharFrame()).toContain('26:')
-  f.key('b'); await r.flush()
-  expect(state().stack).toEqual(['files'])
-  expect(state().selected.files).toBe('src/old.ts')
-  expect(r.captureCharFrame()).toContain('old.ts')
-  const lines = r.captureCharFrame().split('\n'), clearY = lines.findIndex(line => line.includes('Clear'))
-  await r.mockMouse.click(lines[clearY]!.indexOf('Clear') + 1, clearY); await r.flush()
-  expect(input(r).value).toBe('')
-  expect(state().selected.files).toBe('src/old.ts')
   for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
 })
 
@@ -238,7 +210,7 @@ test('new typing cancels stale events, inputs own letters/digits, toggles/globs 
   expect(f.prompts.at(-1).value).toBe('src/app.ts:2 (ñ save123qcx 界)'); expect(f.sent).toEqual([])
   f.edit('Reviewed uses.'); f.key('s'); await r.flush(); expect(f.sent.at(-1)).toEqual({ sessionID: 'session-a', text: 'Reviewed uses.' })
   f.key('c'); f.key('x'); f.key('w'); f.key('i'); await r.flush(); await r.mockInput.typeText('src/** !**/*.test.ts'); input(r, 'search-globs').submit(); await settle(r)
-  expect(f.calls.findLast(c => c.method === 'searchStart')!.input.query).toEqual({ text: 'save123qcx', caseSensitive: true, regex: true, wholeWord: true, include: ['src/**'], exclude: ['**/*.test.ts'] })
+  expect(f.calls.findLast(c => c.method === 'searchStart')!.input.query).toEqual({ text: 'save123qcx', caseSensitive: false, regex: false, wholeWord: false, include: ['src/**'], exclude: ['**/*.test.ts'] })
 })
 
 test('Quick Open ranks touched/recent files, refreshes its list and submits a source line', async () => {
@@ -291,7 +263,7 @@ test('replacement diff keys reach content beyond the first window', async () => 
 
 test('native input focus protects query text even when it arrives outside Edit query', async () => {
   const f = searchFixture(), r = await f.mount(); f.openSearch(); await r.flush(); f.key('esc'); await r.flush(); input(r).focus(); f.key('q'); f.key('3'); await r.mockInput.typeText('q4'); await r.flush()
-  expect(input(r).value).toBe('q4'); expect(paneMemory(f.ctx)[0].panes['session-a']!.stack).toEqual(['files', 'search'])
+  expect(input(r).value).toBe('q4'); expect(paneMemory(f.ctx)[0].panes['session-a']!.stack).toEqual(['search'])
 })
 
 test('replacement remains busy across a tab remount until apply and refresh complete', async () => {

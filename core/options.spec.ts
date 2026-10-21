@@ -51,3 +51,8 @@ test('enums are trimmed and case-insensitive', () => {
   expect(o.glyphs).toBe('plain')
   expect(o.activity).toBe('reads')
 })
+
+test('Search replaces the old Symbols default tab', () => {
+  expect(parseOptions({ defaultTab: 'symbols' }).defaultTab).toBe('search')
+  expect(parseOptions({ defaultTab: 'search' }).defaultTab).toBe('search')
+})

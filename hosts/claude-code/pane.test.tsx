@@ -37,7 +37,7 @@ test('pane shell: tabs, headers, native tabs and hint on every surface', async (
     await ui.press({ key: 'tab-1' })
     expect((await ui.find({ key: 'header' }))?.text.trim()).toBe('Files')
     await ui.press({ key: 'tab-2' })
-    expect(await ui.find({ type: 'Text', text: /Select a file in Files/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Type to search the project/ })).toBeDefined()
 
     await ui.press({ key: 'tab-1' })
     expect(await ui.find({ type: 'Text', text: LATER })).toBeUndefined()

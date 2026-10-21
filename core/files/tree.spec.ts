@@ -98,3 +98,9 @@ test('reveal adds parent dirs without mutating', () => {
 })
 
 test('IGNORED_ARGS', () => expect([...IGNORED_ARGS]).toEqual(['check-ignore', '--stdin', '-z']))
+
+
+test('file search prefers basename prefixes and keeps forgiving path matches', () => {
+  expect(filterRows(['src/data.ts', 'src/Alpha.ts', 'src/another.ts'], 'a', 3)).toEqual(['src/Alpha.ts', 'src/another.ts', 'src/data.ts'])
+  expect(filterRows(['src/api/user.ts'], 'usr', 5)).toEqual(['src/api/user.ts'])
+})

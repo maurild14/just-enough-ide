@@ -74,12 +74,13 @@ export function treeRows(input: TreeInput): TreeRow[] {
 /** Fuzzy filter over every known path, best first, at most `max`. */
 export function filterRows(all: readonly string[], query: string, max: number): string[] {
   if (max <= 0) return []
-  const scored: { path: string; score: number; index: number }[] = []
+  const prefix = query.toLowerCase()
+  const scored: { path: string; score: number; index: number; prefix: boolean }[] = []
   all.forEach((path, index) => {
     const score = fuzzyScore(query, path)
-    if (score !== null) scored.push({ path, score, index })
+    if (score !== null) scored.push({ path, score, index, prefix: path.slice(path.lastIndexOf('/') + 1).toLowerCase().startsWith(prefix) })
   })
-  scored.sort((a, b) => b.score - a.score || a.index - b.index)
+  scored.sort((a, b) => Number(b.prefix) - Number(a.prefix) || b.score - a.score || a.index - b.index)
   return scored.slice(0, max).map((s) => s.path)
 }
 

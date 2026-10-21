@@ -4,7 +4,7 @@
 // adapter checks at compile time that they stay identical
 // (hosts/claude-code/state.ts). Every value is JSON data.
 
-export type JeiTab = 'files' | 'symbols' | 'git'
+export type JeiTab = 'files' | 'search' | 'git'
 export type JeiView = 'files' | 'files.preview' | 'search' | 'search.replace' | 'quickopen' | 'symbols' | 'symbols.results' | 'git' | 'git.diff' | 'git.branches' | 'git.compare'
 
 export type JeiDiffSource =
@@ -35,6 +35,8 @@ export type JeiTree = {
   /** The filter Input is open (`f`). */
   filtering: boolean
   filter: string
+  editing?: boolean
+  origin?: string
 }
 
 /** The Files preview: the file shown, markdown source shown (`m`) and the first line in view. */

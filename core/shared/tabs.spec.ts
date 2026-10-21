@@ -5,8 +5,8 @@ const text = (b: ReturnType<typeof tabBar>) => b.labels.map((l) => l.label).join
 
 test('wide panes name every tab with a 2-space gap', () => {
   const b = tabBar(80, 79, 'files')
-  expect(text(b)).toBe('1 Files  2 Symbols  3 Git')
-  expect(b.width).toBe(25)
+  expect(text(b)).toBe('1 Files  2 Search  3 Git')
+  expect(b.width).toBe(24)
 })
 
 test('32-59 columns name only the active tab', () => {
@@ -28,7 +28,7 @@ test('chrome is budgeted: the gap shrinks before the labels', () => {
 })
 
 test('labels shorten when even a zero gap does not fit', () => {
-  const b = tabBar(100, 17, 'symbols', 4)
+  const b = tabBar(100, 17, 'search', 4)
   expect(b.labels.map((l) => l.label)).toEqual(['1', '2', '3'])
   expect(b.width).toBeLessThanOrEqual(30)
 })
@@ -36,7 +36,7 @@ test('labels shorten when even a zero gap does not fit', () => {
 test('width never exceeds room while any form fits, at every width', () => {
   for (let columns = 1; columns <= 200; columns++) {
     for (const chrome of [0, 4]) {
-      const b = tabBar(columns, columns - 1, 'symbols', chrome)
+      const b = tabBar(columns, columns - 1, 'search', chrome)
       const minimum = 3 * (1 + chrome)
       if (columns - 1 >= minimum) expect(b.width).toBeLessThanOrEqual(columns - 1)
       expect(b.width).toBe(b.labels.reduce((n, l) => n + l.label.length + chrome, 0) + b.gap * 2)
@@ -45,5 +45,5 @@ test('width never exceeds room while any form fits, at every width', () => {
 })
 
 test('the active tab is always named when it fits', () => {
-  expect(tabBar(50, 49, 'symbols', 4).labels[1]!.label).toBe(`2 ${TAB_NAMES.symbols}`)
+  expect(tabBar(50, 49, 'search', 4).labels[1]!.label).toBe(`2 ${TAB_NAMES.search}`)
 })

@@ -11,8 +11,7 @@ import { renderGit } from './git.tsx'
 import { renderBranches } from './branches.tsx'
 import { readCwd, readPane, readTree, updatePane, updateSearch } from './state.ts'
 import { backContext, goBack } from './navigation.ts'
-import { renderSearch, searchEditing, stopSearch } from './search.tsx'
-import { enterSymbols, renderSymbols, stopSymbols } from './symbols.tsx'
+import { renderSearch, stopSearch } from './search.tsx'
 
 export type PaneRender = RenderInput<'Pane'>
 
@@ -28,7 +27,7 @@ function rootName(dir: string): string {
 function headerOf(view: View, root: string): string {
   if (view === 'files' || view === 'files.preview') return rootName(root)
   if (view === 'git' || view === 'git.diff' || view === 'git.branches' || view === 'git.compare') return TAB_NAMES.git
-  return view === 'quickopen' || view.startsWith('search') ? TAB_NAMES.files : TAB_NAMES.symbols
+  return view === 'quickopen' || view.startsWith('search') ? TAB_NAMES.files : TAB_NAMES.search
 }
 
 const SEP = ' · '
@@ -120,12 +119,12 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const showRule = rows >= 8
   const showHeader = rows >= 6
   const showBar = rows >= 3
-  const compactEditor = view === 'files' ? await searchEditing($) : view === 'search' || view === 'quickopen' || view === 'symbols' || view === 'symbols.results'
+  const compactEditor = view === 'files' ? (await readTree($)).editing === true : view === 'search' || view === 'quickopen'
   const showBack = back.active && !back.inline && rows >= 4 && !(compactEditor && back.editing)
 
   const pinned = (showBar ? 1 : 0) + (showRule ? 1 : 0) + (showHeader ? 1 : 0) + (showHint ? 1 : 0) + (showBack ? 1 : 0)
-  const searchRows = root && ['files', 'search', 'quickopen'].includes(view) && !(view === 'files' && rows < 10 && (await readTree($)).filtering) ? rows >= 10 ? 3 : Math.min(1, Math.max(0, rows - pinned - 1)) : 0
-  const frame = { columns, inner, bodyRows: Math.max(0, rows - pinned - searchRows), isFocused: e.props.isFocused }
+  const searchRows = root && ['files', 'search', 'quickopen'].includes(view) ? rows >= 10 ? 3 : Math.min(1, Math.max(0, rows - pinned)) : 0
+  const frame = { columns, inner, bodyRows: Math.max(0, rows - pinned - searchRows), isFocused: e.props.isFocused, searchRows }
   // Tabs that draw their own header, body and letter actions.
   const content = isFiles
     ? await renderFiles($, e, frame, options)
@@ -135,13 +134,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
         ? await renderDiff($, e, frame, options)
         : view === 'git.branches' || view === 'git.compare' ? await renderBranches($, e, frame)
           : view === 'search' || view === 'quickopen' || view === 'search.replace' ? await renderSearch($, e, frame, searchRows)
-            : view === 'symbols' || view === 'symbols.results' ? await renderSymbols($, e, frame) : null
-  if (view === 'files' && content && searchRows) {
-    content.above = (await renderSearch($, e, frame, searchRows)).above
-    content.actions.unshift({ key: 's', run: () => { void (async () => { await updateSearch($, root, s => ({ ...s, editing: 'query' })); await $.ui.focus({ requestId: 'jei', key: 'search-query' }) })().catch(err => $.ui.log(`jei: ${String(err)}`)) } })
-    if (await searchEditing($)) content.actions = []
-  }
-
+            : null
   const hintRow = (): RenderElement => {
     if (content === null) {
       return (
@@ -169,7 +162,7 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   }
 
   const select = (tab: Tab) => () => {
-    void (async () => { await stopSearch($); await stopSymbols($); await updatePane($, (s) => reducePane(s, { type: 'tab', tab })); if (tab === 'symbols') await enterSymbols($) })().catch((err: unknown) => {
+    void (async () => { await stopSearch($); await updateSearch($, root, s => ({ ...s, editing: tab === 'search' && !s.text ? 'query' : null })); await updatePane($, (s) => reducePane(s, { type: 'tab', tab })) })().catch((err: unknown) => {
       $.ui.log(`jei: tab switch failed: ${err instanceof Error ? err.message : String(err)}`)
     })
   }

@@ -21,7 +21,6 @@ import {
   readGit,
   readPane,
   readPreview,
-  readSearch,
   readTick,
   readTree,
   updatePane,
@@ -34,6 +33,7 @@ export type PaneRender = RenderInput<'Pane'>
 
 /** What the pane gives the Files tab: the room it draws in. */
 export type FilesFrame = {
+  searchRows?: number
   /** The pane's body width. */
   columns: number
   /** Cells between the gutter (column 0) and the empty last column. */
@@ -210,6 +210,9 @@ export async function focusFiles($: EngineInterface, element: string | undefined
   focused = element
   const pane = await readPane($)
   if (currentView(pane) !== 'files') return
+  if (element === 'filter') {
+    if (!(await readTree($)).editing) await updateTree($, t => ({ ...t, editing: true }))
+  } else if ((await readTree($)).editing) await updateTree($, t => ({ ...t, editing: false }))
   if (element === undefined || !element.startsWith(ROW_PREFIX) || pane.selected.files === element.slice(ROW_PREFIX.length)) {
     if (changed) await bumpTick($)
     return
@@ -227,6 +230,7 @@ export async function scrollFiles($: EngineInterface, by: number): Promise<boole
     return true
   }
   if (view !== 'files' || lastIds.length === 0) return false
+  if ((await readTree($)).editing) await updateTree($, t => ({ ...t, editing: false }))
   const sel = (await readPane($)).selected.files
   const from = sel === undefined ? -1 : lastIds.indexOf(sel)
   const to = Math.max(0, Math.min(lastIds.length - 1, from < 0 ? 0 : from + Math.sign(by) * Math.max(1, Math.abs(by))))
@@ -412,7 +416,6 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
 
   // Tree, or the filter's results.
   const tree = await readTree($)
-  const searchEditing = (await readSearch($, root)).editing !== null
   const activity = await readActivity($)
   const log = ActivityLog.from(activity)
   const now = Object.keys(activity).length > 0 ? await $.clock.now() : 0
@@ -420,32 +423,33 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   const glyphs = frame.columns >= 60 ? options.glyphs : 'plain'
   const selected = pane.selected.files
 
-  const filterHeader = Input === undefined ? line(`Filter: ${tree.filter}`) : (
-    <Box flexDirection="row">
-      <Text>{inner > 0 ? ' ' : ''}</Text>
-      <Input
-        key="filter"
-        autoFocus={searchEditing ? undefined : true}
-        label="Filter"
-        placeholder="file name"
-        value={tree.filter}
-        onInput={(value: string) => act($, () => updateTree($, (t) => ({ ...t, filter: value })))()}
-        onSubmit={(value: string) =>
-          act($, async () => {
-            await updateTree($, (t) => ({ ...t, filter: value }))
-            const best = filterRows(await filesOf(host, root), value, 1)[0]
-            if (best !== undefined) await showPreview($, best)
-          })()
-        }
-      />
-    </Box>
-  )
+  const begin = async () => {
+    await updateTree($, t => ({ ...t, editing: true, origin: t.filtering ? t.origin : pane.selected.files }))
+    await $.ui.focus({ requestId: 'jei', key: 'filter' }).catch(() => {})
+  }
+  const change = async (value: string) => {
+    await updateTree($, t => ({ ...t, filter: value, filtering: value !== '', editing: true, origin: t.filtering ? t.origin : pane.selected.files }))
+    if (!value) { if (tree.origin) await updatePane($, p => reducePane(p, { type: 'select', view: 'files', id: tree.origin! })); return }
+    const best = filterRows(await filesOf(host, root), value, 1)[0]
+    if (best && await readCwd($) === root && currentView(await readPane($)) === 'files' && (await readTree($)).filter === value) await updatePane($, p => reducePane(p, { type: 'select', view: 'files', id: best }))
+  }
+  const cancel = tree.editing ? <Button key="files-cancel" plain label="Cancel" onPress={act($, async () => { await updateTree($, t => ({ ...t, editing: false })); await $.ui.focus({ requestId: 'jei', key: `row-${selected ?? ''}` }).catch(() => {}) })} /> : null
+  const filterHeader = <Box key="files-search-field" flexDirection="column">
+    {(frame.searchRows ?? 0) >= 3 && line('┌' + '─'.repeat(Math.max(0, inner - 2)) + '┐', { color: color('accent') })}
+    <Box flexDirection="row" width={Math.max(0, frame.columns - 1)}><Text> </Text><Text color={color('accent')}>│ </Text><Box flexGrow={1}>
+      {Input ? <Input key="filter" submitLabel="open" placeholder="Find files by name" value={tree.filter} autoFocus={tree.editing ? true : undefined}
+        onInput={value => act($, () => change(value))()} onSubmit={value => act($, async () => { await change(value); const best = filterRows(await filesOf(host, root), value, 1)[0]; await updateTree($, t => ({ ...t, editing: false })); if (best && value && await readCwd($) === root && currentView(await readPane($)) === 'files') await showPreview($, best) })()} /> : <Text>{fitEnd(tree.filter || 'Find files by name', Math.max(0, inner - 18))}</Text>}
+    </Box><Text> </Text>{cancel}{cancel && <Text> · </Text>}<Button key="files-clear" plain label="Clear" onPress={act($, () => clearFileSearch($))} /><Text color={color('accent')}> │</Text></Box>
+    {(frame.searchRows ?? 0) >= 3 && line('└' + '─'.repeat(Math.max(0, inner - 2)) + '┘', { color: color('accent') })}
+  </Box>
+  const above = (frame.searchRows ?? 0) > 0 ? [filterHeader] : []
   const rootName = toPosix(root).replace(/\/+$/, '').split('/').pop() || 'Files'
-  const header = tree.filtering ? filterHeader : line(rootName)
-  const actions: FilesAction[] = [
+  const header = line(rootName)
+  const actions: FilesAction[] = tree.editing ? [] : [
+    { key: 's', run: act($, begin) },
     { key: 'a', run: act($, () => mention($, selected)) },
     { key: 'o', run: act($, () => openRel($, options, root, selected)) },
-    { key: 'f', run: act($, () => updateTree($, (t) => (t.filtering ? { ...t, filtering: false, filter: '' } : { ...t, filtering: true }))) },
+    { key: 'f', run: act($, begin) },
     { key: 'h', run: act($, () => updateTree($, (t) => ({ ...t, showHidden: !t.showHidden }))) },
   ]
 
@@ -508,7 +512,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     mode = 'filter'
     let files: string[]
     try { files = await filesOf(host, root) }
-    catch (err) { return { header, body: [line(firstLine(err), { color: color('error') }, 'notice')], actions } }
+    catch (err) { return { header, above, body: [line(firstLine(err), { color: color('error') }, 'notice')], actions } }
     const hits = filterRows(files, tree.filter, FILTER_MAX)
     const sw = statusW(hits)
     for (const rel of hits) items.push({ id: rel, isRow: true, el: rowEl(rel, rel, { isDir: false, depth: 0, isExpanded: false, sw }) })
@@ -563,8 +567,14 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
 
   const ids = items.map((i) => i.id)
   lastIds = items.filter((i) => i.isRow).map((i) => i.id)
-  const filterPinned = tree.filtering && e.props.scroll.bodyRows < 6 ? [filterHeader] : []
-  const rows = Math.max(0, frame.bodyRows - filterPinned.length)
+  const rows = Math.max(0, frame.bodyRows)
   const top = windowTop(mode, ids, selected, rows)
-  return { header, body: [...filterPinned, ...items.slice(top, top + rows).map((i) => i.el)], actions, scrollable: items.length > rows }
+  return { header, above, body: items.slice(top, top + rows).map((i) => i.el), actions, scrollable: items.length > rows }
+}
+
+export async function clearFileSearch($: EngineInterface): Promise<void> {
+  const tree = await readTree($)
+  await updateTree($, t => ({ ...t, filter: '', filtering: false, editing: false, origin: undefined }))
+  if (tree.origin) await updatePane($, p => reducePane(p, { type: 'select', view: 'files', id: tree.origin! }))
+  await $.ui.focus({ requestId: 'jei', key: `row-${tree.origin ?? (await readPane($)).selected.files ?? ''}` }).catch(() => {})
 }

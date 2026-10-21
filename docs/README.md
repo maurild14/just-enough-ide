@@ -1,6 +1,6 @@
 # JEI docs index
 
-> Purpose: the map of everything written down about JEI; start here · Status: current · Last reviewed: 2026-10-20
+> Purpose: the map of everything written down about JEI; start here · Status: current · Last reviewed: 2026-10-21
 
 These docs are JEI's persistent memory. `AGENTS.md` (identical to `CLAUDE.md`) is the short entry point; everything in depth lives here. If code and docs disagree, fix one of them in the same change. `bun run check:docs` verifies links, this index and the headers.
 
@@ -34,6 +34,7 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/decisions/0023-bounded-search-and-complete-replacement-review.md` | Estimated Search/review retention budgets, incomplete-review refusal and shared replacement text. |
 | `docs/decisions/0024-focus-and-arrow-navigation.md` | Arrow-safe commit mode, input blur and unchanged list-selection handling. |
 | `docs/decisions/0025-search-inside-files.md` | Three tabs, outlined Files Search, Enter submission and retained tree navigation. |
+| `docs/decisions/0026-filename-and-content-search.md` | Live filename search in Files, content Search in tab 2, spacing and Symbols retirement. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
 
 ## Keeping docs current

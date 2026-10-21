@@ -12,7 +12,7 @@ export type Options = {
   graphLimit: number
 }
 
-const TABS: readonly Tab[] = ['files', 'symbols', 'git']
+const TABS: readonly Tab[] = ['files', 'search', 'git']
 const ACTIVITIES: readonly Options['activity'][] = ['reads and writes', 'writes', 'reads', 'none']
 const GLYPHS: readonly Options['glyphs'][] = ['auto', 'nerd', 'plain']
 
@@ -56,7 +56,7 @@ function positiveInt(value: unknown, fallback: number): number {
 export function parseOptions(raw: Record<string, unknown>): Options {
   return {
     startOpen: bool(raw.startOpen, DEFAULTS.startOpen),
-    defaultTab: oneOf(raw.defaultTab, TABS, DEFAULTS.defaultTab),
+    defaultTab: oneOf(raw.defaultTab === 'symbols' ? 'search' : raw.defaultTab, TABS, DEFAULTS.defaultTab),
     activity: oneOf(raw.activity, ACTIVITIES, DEFAULTS.activity),
     followAgent: bool(raw.followAgent, DEFAULTS.followAgent),
     glyphs: oneOf(raw.glyphs, GLYPHS, DEFAULTS.glyphs),

@@ -14,12 +14,15 @@ export type PaneState = {
   diff?: { source: DiffSource; path: string }
 }
 
-type LegacyPaneState = Omit<PaneState, 'tab' | 'diff' | 'recent'> & { tab: Tab | 'search'; recent?: string[]; diff?: PaneState['diff'] | { path: string; staged: boolean; untracked: boolean } }
+type LegacyPaneState = Omit<PaneState, 'tab' | 'diff' | 'recent'> & { tab: Tab | 'symbols'; recent?: string[]; diff?: PaneState['diff'] | { path: string; staged: boolean; untracked: boolean } }
 
 /** Session state survives plugin reloads, including v0.1's working-diff shape. */
 export function normalizePane(state: PaneState | LegacyPaneState): PaneState {
   const diff = state.diff
-  const base: LegacyPaneState & { tab: Tab } = state.tab === 'search' ? { ...state, tab: 'files' as const, stack: ['files' as const, ...state.stack], recent: state.recent ?? [] } : state.recent === undefined ? { ...state, tab: state.tab, recent: [] } : state as LegacyPaneState & { tab: Tab }
+  if (state.tab !== 'symbols' && !(state.tab === 'files' && state.stack.includes('search')) && state.recent !== undefined && (!diff || 'source' in diff)) return state as PaneState
+  const tab = state.tab === 'symbols' ? 'search' : state.tab
+  const legacySearch = state.tab === 'symbols' || state.tab === 'files' && state.stack.includes('search')
+  const base = { ...state, tab: legacySearch ? 'search' as const : tab, stack: state.tab === 'symbols' ? ['search' as const] : legacySearch ? state.stack.slice(state.stack.indexOf('search')) : state.stack, recent: state.recent ?? [] }
   if (diff && !('source' in diff)) {
     return { ...base, recent: state.recent ?? [], diff: { path: diff.path, source: { kind: 'working', staged: diff.staged, untracked: diff.untracked } } }
   }
@@ -27,7 +30,7 @@ export function normalizePane(state: PaneState | LegacyPaneState): PaneState {
 }
 
 export type PaneAction =
-  | { type: 'tab'; tab: Tab | 'search' }
+  | { type: 'tab'; tab: Tab | 'symbols' }
   | { type: 'open-diff'; source: DiffSource; path: string }
   | { type: 'branches' }
   | { type: 'compare' }
@@ -36,8 +39,9 @@ export type PaneAction =
   | { type: 'back' }
   | { type: 'select'; view: View; id: string }
 
-export function initialPane(tab: Tab | 'search'): PaneState {
-  return { tab: tab === 'search' ? 'files' : tab, stack: tab === 'search' ? ['files', 'search'] : [tab], selected: {}, recent: [] }
+export function initialPane(tab: Tab | 'symbols'): PaneState {
+  const current = tab === 'symbols' ? 'search' : tab
+  return { tab: current, stack: [current], selected: {}, recent: [] }
 }
 
 export function currentView(s: PaneState): View {
@@ -61,10 +65,9 @@ export function reducePane(s: PaneState, a: PaneAction): PaneState {
     case 'quickopen':
     case 'replace':
     case 'symbol-results': {
-      const tab = a.type === 'symbol-results' ? 'symbols' : 'files'
+      const tab = 'search'
       const view = a.type === 'symbol-results' ? 'symbols.results' : a.type === 'replace' ? 'search.replace' : a.type === 'search' ? 'search' : 'quickopen'
-      const origin = tab === 'files' && !s.stack.includes('search') ? { ...s, tab: 'files' as const, stack: ['files', 'search'] as View[] } : s
-      return { tab, stack: push(origin, tab, view), selected: s.selected, recent: s.recent }
+      return { tab, stack: push(s, tab, view), selected: s.selected, recent: s.recent }
     }
     case 'preview':
       return {
@@ -87,7 +90,7 @@ export function reducePane(s: PaneState, a: PaneAction): PaneState {
     case 'compare':
       return { tab: 'git', stack: push(s, 'git', 'git.compare'), selected: s.selected, recent: s.recent }
     case 'back': {
-      if (s.stack.length <= 1) return s
+      if (s.stack.length <= 1) return s.tab === 'search' ? { ...initialPane('files'), selected: s.selected, recent: s.recent } : s
       const stack = s.stack.slice(0, -1)
       const next: PaneState = { tab: s.tab, stack, selected: s.selected, recent: s.recent }
       if (s.diff && stack.includes('git.diff')) next.diff = s.diff

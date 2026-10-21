@@ -1,12 +1,12 @@
 {
   "name": "jei",
   "version": "0.1.0",
-  "description": "The parts of an IDE you still need when the AI writes the code: a file tree, project search, symbols and a full Git panel, docked beside your Claude Code or OpenCode session.",
+  "description": "The parts of an IDE you still need when the AI writes the code: a file tree, project search and a full Git panel, docked beside your Claude Code or OpenCode session.",
   "types": "./types/index.d.ts",
   "author": { "name": "The JEI contributors" },
   "repository": "https://github.com/maurild14/just-enough-ide",
   "license": "MIT",
-  "keywords": ["file-tree", "git", "search", "symbols", "pane"],
+  "keywords": ["file-tree", "git", "search", "pane"],
   "userConfig": {
     "startOpen": {
       "type": "string",
@@ -19,7 +19,7 @@
       "type": "string",
       "title": "Default tab",
       "description": "Tab shown when the pane opens.",
-      "options": ["files", "symbols", "git"],
+      "options": ["files", "search", "git"],
       "default": "files"
     },
     "activity": {

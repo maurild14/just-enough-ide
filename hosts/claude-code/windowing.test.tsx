@@ -43,7 +43,7 @@ test('Branches, comparison and diff retain native arrow scrolling at five rows',
   await ui.unmount()
 })
 
-for (const surface of ['terminal', 'desktop'] as const) test(`Search, Quick Open, source preview and Symbols keep native arrow scrolling on ${surface}`, async ($, on) => {
+for (const surface of ['terminal', 'desktop'] as const) test(`Search, Quick Open, source preview keep native arrow scrolling on ${surface}`, async ($, on) => {
   let passedScrolls = 0
   on('ui.scroll', () => { passedScrolls++; return {} })
   const seen = await world($, on)
@@ -65,9 +65,6 @@ for (const surface of ['terminal', 'desktop'] as const) test(`Search, Quick Open
   await ui.press({ key: 'back' }); await ui.press({ key: 'key-q' }); await scrollRange(ui, 10)
   await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 1, by: 1, bodyRows: 10, contentRows: 11, origin: { kind: 'person' } })
   expect(passedScrolls).toBe(0)
-  await $.command.run(command(`${ROOT}/src/account.ts`)); await $.command.run(command('symbols')); await seen.clock.settle()
-  await scrollRange(ui, 10)
-  await ui.redraw({ ...historyProps(40, 5), isFocused: true }); await scrollRange(ui, 5)
   await ui.unmount()
 })
 

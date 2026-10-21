@@ -1,6 +1,6 @@
 # Manual QA checklist
 
-> Purpose: the hand checks run on both hosts before every release, for what the test kits cannot see · Status: current · Last reviewed: 2026-10-20
+> Purpose: the hand checks run on both hosts before every release, for what the test kits cannot see · Status: current · Last reviewed: 2026-10-21
 
 The specs cover logic and rendered frames (`docs/testing.md`). They cannot see real paint, real terminals, a real agent or a real model. Before each release, run this list on **Claude Code** and on **OpenCode 2.0.32+**, on **Windows** and on **one of macOS or Linux**. Use a disposable copy of the sample repo `acme-app` (fictional authors, a bare repo as `origin`), never a real project. Load the working copy as described in `CONTRIBUTING.md` ("Running each host from the working copy").
 
@@ -10,12 +10,9 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 
 - [ ] Claude Code: `claude --plugin-dir <path to jei>`, then `/tui fullscreen` in a terminal of at least 110 columns; the pane docks beside the transcript.
 - [ ] OpenCode: the checkout is listed as a local plugin in `opencode.json`; after a restart the panel opens once on session start (`startOpen: on`) and not again in the same session.
-- [ ] `/jei` toggles the pane; `/jei files`, `/jei search`, `/jei symbols`, `/jei git` open on that tab; `/jei <path>` opens Files revealing the path.
+- [ ] `/jei` toggles the pane; `/jei files`, `/jei search`, `/jei git` open on that tab; `/jei symbols` migrates to Search; `/jei <path>` opens Files revealing the path.
 - [ ] Keys `1` to `3` switch tabs while the pane is focused; clicking a tab works where the host has a mouse.
 - [ ] Claude: enter Git with `3`, reach the mode Button with Tab, cycle all modes with Enter, then hold Down to reach Graph and Changes. Returning with Up, clicking tabs and using `1`–`3` still work. Mode changes perform no Git operation.
-- [ ] Search/Symbols: type letters and digits, then leave the input with Tab or click a tab. Tab shortcuts and arrows recover without resetting the pane. Repeated focus or scrolling at the first/last row does not freeze the pane.
-- [ ] With more data than fits, hold Down past the last drawn row in Files, Search/Quick Open, Symbols and Graph, including merge connector rows. New rows appear and focus stays off footer actions. Reverse with Up, cross a second window and reach both ends. Tabs/hints stay visible and still accept Tab, clicks and shortcuts; repeat at five rows and after resize.
-- [ ] Both hosts: Search, Quick Open and Symbols open their native views.
 - [ ] OpenCode: `q`, visible Back and `Esc` go back one level from a nested view; host `Ctrl-N` / `Ctrl-P` still work; clicking the panel focuses it.
 - [ ] Claude Code: `Esc` stays the host's (back to the prompt); nested views use `q` or visible Back without losing tab access at five rows (ADRs 0009 and 0017).
 - [ ] Claude Code: arrow keys either scroll the pane or walk the focus ring when the tree fits; both paths move the selection sensibly.
@@ -52,11 +49,9 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 
 ## 5. Sizes and themes
 
-- [ ] Claude Search: type successive queries during a large streaming search, then toggle case/regex/word/globs. Check cancellation, batched paint, errors, fallback first-occurrence labels and exact one/all prompt hand-off.
+- [ ] Claude Search: type successive queries during a large streaming search, then edit include/exclude globs. Check cancellation, batched paint, errors, fallback first-occurrence labels and exact one/all prompt hand-off.
 - [ ] Claude Replace: inspect/collapse/scroll each diff, confirm one/all, cancel, edit a file after preview and verify skipped reasons, partial-write counts and immediate Files/Search refresh in a disposable repo.
 - [ ] Claude Quick Open: check touched/recent ranking, file-event cache refresh, `:line` targeting and Back retaining the query/results. Test code, Markdown, CSV and TSV markers through resize.
-- [ ] Claude Symbols: outline/find/definition/references, lazy Callers/Calls children and send; configured LSP allow/ask/deny/error/unknown formats must preserve actual source labels and never ask automatically. Record real positive outputs separately from synthetic parser fixtures.
-- [ ] At 24 columns and five rows, navigate every Search/Symbols command through the list when its hint shortcut is omitted; editor letters/digits remain text, Submit returns to the list, and Cancel stays visible.
 
 - [ ] Live-resize the pane through 120, 80, 40 and 24 columns and through 24, 10, 5 and 2 rows: no line wider than the pane, the selected row stays visible, the hint line adapts.
 - [ ] Dark and light host themes: every state stays readable.
@@ -71,7 +66,7 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 
 ## Search (both hosts, 0.3)
 
-- [ ] Search a large disposable repository and observe results arriving before completion. Change the query while it streams; stale rows and completion must not replace the new results. Check case/regex/word and include/exclude globs, invalid regex and the 2,000-line/estimated-16-MiB truncation notice. OpenCode query/globs Esc leaves Search running; leaving the active view cancels it with explicit status. Ordinary file changes retain current Search selection/results.
+- [ ] Search a large disposable repository and observe results arriving before completion. Change the query while it streams; stale rows and completion must not replace the new results. Check literal case-insensitive matching, include/exclude globs and the 2,000-line/estimated-16-MiB truncation notice. OpenCode query/globs Esc leaves Search running; leaving the active view cancels it with explicit status. Ordinary file changes retain current Search selection/results.
 - [ ] Unicode before/inside matches (accented letters, emoji and CJK) keeps correct highlights and source-line previews. Hide rg from the isolated fixture PATH: repository fallback identifies Git grep's first-occurrence limit; a non-repository shows installation help.
 - [ ] One/all hand-off has exact locations and bounded omission copy. OpenCode's editable dialog cancels or sends only confirmed text; Claude inserts without sending.
 
@@ -88,7 +83,6 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 ## Symbols (both hosts, 0.3)
 
 - [ ] Outline, workspace find, direct/multiple definitions, grouped references, lazy Callers/Calls and selected-child Send use the actual selected symbol. Unknown languages show the unsupported notice; a selected directory falls back to the latest touched file.
-- [ ] Claude Code: configured LSP ask keeps approximate data without a surprise dialog, deliberate Use LSP continues the requested node, allow performs freshly checked operations, and deny/error/unknown formats fall back. Record real output separately from synthetic fixtures. OpenCode: every list/call section says approximate; no LSP setup is required.
 - [ ] At 24/40/80/120 columns and five rows, retain the active editor, focused result, source marker/header and fitted hints. Type letters/digits/q, Submit and Cancel, navigate compact controls, preview/Back and resize without losing selection. Cancel pending work or leave/close/reopen; late replies cannot navigate and new actions remain usable. Repeat in light/dark themes and another OS.
 
 ## 7. Graph and Branches (both hosts, 0.2)
@@ -112,4 +106,4 @@ Historical 0.3 Task 4 smoke at `c9c09d6` passed at 80 x 24 in a disposable 3,001
 
 The final fix-wave smoke verified source commit `6a9c5967a2e7aee346bcf6272d30e0bbb2535db8` with cached OpenCode 2.0.32 on Windows at 80 x 24, using a fresh isolated 3,001-file `acme-app`. A synchronized native paint showed `getAccount` result rows with `Searching…`, followed chronologically by `Results truncated.`. Enter opened marked `src/account.ts:1`; Back retained the query, grouped results and completed status without restarting. Symbols showed the approximate `getAccount`/`describeAccount` outline. Ctrl-C deliberately exited 1, restored terminal modes and removed both added client/server processes while preserving the baseline process set. The checkout and fixture stayed clean, with no provider/model request. This verifies the strict event-location/current-source path for that run; it does not count RPC batches or establish live mid-stream cancellation, resize, other dimensions/themes/OS, provider hand-off, clipboard or positive LSP compatibility.
 
-- [ ] Files Search: field above project name, accent border, Enter-only queries, typing/digit ownership, arrows across multiple result windows, preview Back, b to retained expanded tree, Clear and empty query. Repeat at 24/40/80/120 columns and five rows; verify both hosts.
+- [ ] Files: live filename results above the project name, basename prefixes first, accent border, typing/digit ownership, arrows across result windows, preview Back, Clear to the original expanded tree and Cancel leaving the query. Search tab 2: content queries on Enter, no case/regex/word controls, retained preview result and Clear staying on Search. Repeat at 24/40/80/120 columns and five rows; verify both hosts.

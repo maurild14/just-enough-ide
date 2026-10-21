@@ -8,7 +8,7 @@
     {
       "name": "jei",
       "source": "./",
-      "description": "A file tree, project search, symbols and a full Git panel, docked beside your Claude Code session."
+      "description": "A file tree, project search and a full Git panel, docked beside your Claude Code session."
     }
   ]
 }

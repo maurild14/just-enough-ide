@@ -11,7 +11,6 @@ import { focusFiles, forgetFileList, scrollFiles } from '../hosts/claude-code/fi
 import { focusGit, scrollGitList } from '../hosts/claude-code/git.tsx'
 import { focusBranches, scrollBranches } from '../hosts/claude-code/branches.tsx'
 import { focusSearch, scrollSearch, stopSearch } from '../hosts/claude-code/search.tsx'
-import { enterSymbols, focusSymbols, scrollSymbols, stopSymbols } from '../hosts/claude-code/symbols.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
 import { initPane, PANE_ID, readCwd, readPane, resetGitUi, resetSearchSymbols, setCwd, updatePane, updateTree, updateSearch } from '../hosts/claude-code/state.ts'
 
@@ -38,15 +37,13 @@ export const register: Register = (on, raw) => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'jei',
-      description: 'Toggle the JEI pane: /jei [files|search|symbols|git|<path>]',
+      description: 'Toggle the JEI pane: /jei [files|search|git|<path>]',
     })
     await stopSearch($, true)
-    await stopSymbols($)
     await setCwd($, e.cwd)
     autoOpenArmed = (await initPane($, options.defaultTab)) && options.startOpen
     await resetGitUi($)
     await resetSearchSymbols($)
-    if ((await readPane($)).tab === 'symbols') void enterSymbols($).catch(err => $.ui.log(`jei: ${reason(err)}`))
     void refreshGit($).catch(() => undefined)
     return next(e)
   })
@@ -82,7 +79,6 @@ export const register: Register = (on, raw) => {
     }
     const tab = arg.tab ?? 'files'
     await stopSearch($)
-    await stopSymbols($)
     await updatePane($, (s) => reducePane(s, { type: 'tab', tab }))
     if (tab === 'search') await updateSearch($, await readCwd($), s => ({ ...s, editing: 'query' }))
     if (rel) {
@@ -91,16 +87,13 @@ export const register: Register = (on, raw) => {
       await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id }))
     }
     const opened = await openPane($)
-    if (tab === 'symbols') void enterSymbols($).catch(err => $.ui.log(`jei: ${reason(err)}`))
-    return { text: opened ?? `JEI opened on ${TAB_NAMES[tab === 'search' ? 'files' : tab]}.` }
+    return { text: opened ?? `JEI opened on ${TAB_NAMES[tab]}.` }
   })
 
   // Observes only: a failure must never hold up the cd, so the catch passes it on.
   on('classic.CwdChanged', async ($, e, next) => {
     await stopSearch($)
-    await stopSymbols($)
     await setCwd($, e.new_cwd)
-    if ((await readPane($)).tab === 'symbols') void enterSymbols($).catch(err => $.ui.log(`jei: ${reason(err)}`))
     void refreshGit($).catch(() => undefined) // never holds up the cd
     return next(e)
   }).catch(($, e, next) => next(e))
@@ -117,18 +110,17 @@ export const register: Register = (on, raw) => {
     await focusGit($, e.element)
     await focusBranches($, e.element)
     await focusSearch($, e.element)
-    await focusSymbols($, e.element)
     return next(e)
   }).catch(($, e, next) => next(e))
 
   // Each view owns its window; ignored scrolls must leave the pinned frame in place.
   on('ui.scroll', { requestId: 'jei' }, async ($, e) => {
-    (await scrollFiles($, e.by)) || (await scrollGitList($, e.by)) || (await scrollBranches($, e.by)) || (await scrollDiff($, e.by)) || (await scrollSearch($, e.by)) || (await scrollSymbols($, e.by))
+    (await scrollFiles($, e.by)) || (await scrollGitList($, e.by)) || (await scrollBranches($, e.by)) || (await scrollDiff($, e.by)) || (await scrollSearch($, e.by))
     return {}
   },
   ).catch(
     ($, e, next) => next(e),
   )
-  on('ui.close', async ($, e, next) => { if (e.id === 'jei') { await stopSearch($, true); await stopSymbols($); forgetFileList(await readCwd($)) }; return next(e) }).catch(($, e, next) => next(e))
-  on('session.end', async ($, e, next) => { await stopSearch($, true); await stopSymbols($); return next(e) }).catch(($, e, next) => next(e))
+  on('ui.close', async ($, e, next) => { if (e.id === 'jei') { await stopSearch($, true); forgetFileList(await readCwd($)) }; return next(e) }).catch(($, e, next) => next(e))
+  on('session.end', async ($, e, next) => { await stopSearch($, true); return next(e) }).catch(($, e, next) => next(e))
 }

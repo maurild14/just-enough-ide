@@ -164,8 +164,8 @@ test('f opens the filter and typing ranks the best file first', async ($, on) =>
     expect((await rowKeys(ui))[0]).toBe('row-src/api/user.ts')
     await ui.input({ key: 'filter', text: 'zzzz', kind: 'change' })
     expect(await ui.find({ type: 'Text', text: 'No files match "zzzz".' })).toBeDefined()
-    await ui.press({ key: 'key-f' })
-    expect(await ui.find({ type: 'Input', key: 'filter' })).toBeUndefined()
+    await ui.press({ key: 'files-clear' })
+    expect((await ui.find({ type: 'Input', key: 'filter' }))?.props.value).toBe('')
     expect(await rowKeys(ui)).toContain('row-src')
     await ui.unmount()
   }
@@ -183,8 +183,8 @@ for (const width of WIDTHS) test(`Back retains the Files filter and q remains ed
     expect((await ui.find({ key: 'filter' }))?.props.value).toBe('usr')
     await ui.input({ key: 'filter', text: 'usrq', kind: 'change' })
     expect((await ui.find({ key: 'filter' }))?.props.value).toBe('usrq')
-    await ui.press({ key: 'back' })
-    expect(await ui.find({ key: 'filter' })).toBeUndefined()
+    await ui.press({ key: 'files-clear' })
+    expect((await ui.find({ key: 'filter' }))?.props.value).toBe('')
     for (const cells of lineWidths(await ui.drawn() as Node)) expect(cells).toBeLessThanOrEqual(width)
     await ui.unmount()
   }
@@ -350,7 +350,7 @@ test('no line is wider than the pane, and the selection survives a resize', asyn
       await ui.press({ key: 'key-f' })
       await ui.input({ key: 'filter', text: 'user', kind: 'change' })
       for (const w of lineWidths((await ui.drawn()) as Node)) expect(w, `filter ${surface} ${width}`).toBeLessThanOrEqual(width)
-      await ui.press({ key: 'key-f' })
+      await ui.press({ key: 'files-cancel' })
       await ui.press({ key: 'row-src/api/user.ts' })
       for (const w of lineWidths((await ui.drawn()) as Node)) expect(w, `preview ${surface} ${width}`).toBeLessThanOrEqual(width)
       await ui.press({ key: 'back' })
@@ -546,30 +546,22 @@ test('the Files and preview hints keep every key within 24, 40, 80 and 120 colum
   }
 })
 
-test('Files filtering fits three, four and five rows and retains editable cancellation', async ($, on) => {
+test('Files field stays editable, bounded and cancelable at three, four and five rows', async ($, on) => {
   await world($, on)
   for (const surface of SURFACES) for (const width of WIDTHS) {
     const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
-    await ui.press({ key: 'key-f' })
     for (const rows of [3, 4, 5]) {
-      await ui.redraw(paneProps(width, rows))
+      await ui.redraw(paneProps(width, rows)); await ui.press({ key: 'key-f' })
       await ui.input({ key: 'filter', text: 'user', kind: 'change' })
       const widths = lineWidths(await ui.drawn() as Node)
       expect(widths.length).toBeLessThanOrEqual(rows)
       for (const drawn of widths) expect(drawn).toBeLessThanOrEqual(width)
       expect((await ui.find({ key: 'filter' }))?.props.value).toBe('user')
-      expect(await ui.find({ key: 'key-f' })).toBeDefined()
-      for (const tab of [1, 2, 3]) expect(await ui.find({ key: `tab-${tab}` })).toBeDefined()
-      if (rows >= 4) {
-        expect((await ui.find({ key: 'back' }))?.props.hotkey).toBeUndefined()
-        await ui.press({ key: 'back' })
-      } else await ui.press({ key: 'key-f' })
-      expect(await ui.find({ key: 'filter' })).toBeUndefined()
-      await ui.press({ key: 'key-f' })
-      await ui.input({ key: 'filter', text: 'user', kind: 'change' })
-      if (rows === 5) expect(await ui.find({ key: 'row-src/api/user.ts' })).toBeDefined()
+      expect((await ui.find({ key: 'tab-2' }))?.props.hotkey).toBeUndefined()
+      await ui.press({ key: 'files-clear' })
+      expect((await ui.find({ key: 'filter' }))?.props.value).toBe('')
     }
-    await ui.press({ key: 'back' }); await ui.unmount()
+    await ui.unmount()
   }
 })
 
@@ -577,7 +569,7 @@ test('on mobile, which draws no Input, the filter shows as text', async ($, on) 
   await world($, on)
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'mobile', component: 'Pane', props: paneProps(40), requestId: 'jei' })
   await ui.press({ key: 'key-f' })
-  expect((await ui.find({ key: 'header' }))?.text).toContain('Filter:')
-  await ui.press({ key: 'key-f' })
+  expect((await ui.find({ key: 'files-search-field' }))?.text).toContain('Find files by name')
+  await ui.press({ key: 'files-clear' })
   await ui.unmount()
 })
