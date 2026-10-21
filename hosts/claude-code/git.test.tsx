@@ -1,4 +1,4 @@
-import { expect, test, type Engine, type Mounted } from 'claude-code/testing'
+import { expect, mock, test, type Engine, type Mounted } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { JeiGit } from '../../types/index.d.ts'
 import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
@@ -178,9 +178,18 @@ function paneProps(bodyColumns: number, bodyRows = 30) {
 
 type Ui = Mounted<'terminal' | 'desktop', 'Pane'>
 
+async function chooseMode(ui: Ui, mode: string) {
+  const label = ({ commit: 'Only', 'commit-push': '& Push', amend: 'Amend' } as Record<string, string>)[mode]
+  for (let i = 0; i < 3; i++) {
+    if ((await ui.find({ type: 'Button', key: 'commit-mode' }))?.props.label === label) return
+    await ui.press({ key: 'commit-mode' })
+  }
+  expect((await ui.find({ key: 'commit-mode' }))?.props.label).toBe(label)
+}
+
 async function gitPane($: Engine, surface: (typeof SURFACES)[number], width = 120, rows = 30): Promise<Ui> {
   const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, rows), requestId: 'jei' })
-  await ui.press({ key: 'tab-4' })
+  await ui.press({ key: 'tab-3' })
   return ui
 }
 
@@ -393,7 +402,7 @@ test('a failed recovery root check retains the question and never fills or repla
 test('missing review on a Commit and Push push retains its existing Push failure label', async ($, on) => {
   const calls = await world($, on, repo({ hooks: true, denial: { channel: 'deny', text: NO_REVIEW(), step: 'push' } }))
   const ui = await gitPane($, 'terminal')
-  await ui.select({ key: 'commit-mode', value: 'commit-push' })
+  await chooseMode(ui, 'commit-push')
   await ui.input({ key: 'message', text: 'feat: update', kind: 'submit' })
   expect(calls.toasts.at(-1)).toBe('Push failed: Claude auto mode could not review this Git operation.')
   expect(calls.tools).toHaveLength(2)
@@ -529,22 +538,73 @@ test('g fills the message from the model; an empty message disables Commit', asy
   }
 })
 
-test('commit: modes in the menu; plain commit runs git directly', async ($, on) => {
+test('commit mode is an arrow-safe Button and cycling it never commits', async ($, on) => {
+  const calls = await world($, on, repo())
+  for (const surface of SURFACES) {
+    const ui = await gitPane($, surface)
+    expect(await ui.find({ type: 'Select', key: 'commit-mode' })).toBeUndefined()
+    for (const label of ['& Push', 'Amend', 'Only']) {
+      await ui.press({ key: 'commit-mode' })
+      expect((await ui.find({ type: 'Button', key: 'commit-mode' }))?.props.label).toBe(label)
+    }
+    expect(gitRuns(calls, 'commit')).toHaveLength(0)
+    await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'commit-mode', origin: { kind: 'person' } })
+    await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: 100, bodyRows: 30, contentRows: 60, origin: { kind: 'person' } })
+    expect(await ui.find({ key: 'change-src/api/user.ts' })).toBeDefined()
+    await ui.press({ key: 'tab-1' }); await ui.press({ key: 'tab-3' })
+    expect(await ui.find({ key: 'change-src/api/user.ts' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('repeated Git focus and boundary scroll do not rewrite the pane', async ($, on) => {
+  const writes: string[] = []
+  on('state.set', (_$, e, next) => { writes.push(e.key); return next(e) })
+  await world($, on, repo())
+  const ui = await gitPane($, 'terminal')
+  const focus = { component: 'Pane' as const, requestId: 'jei', plugin: 'jei', element: 'change-src/api/user.ts', origin: { kind: 'person' as const } }
+  await $.ui.focus(focus)
+  const before = writes.length
+  await $.ui.focus(focus)
+  await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: 1, bodyRows: 30, contentRows: 60, origin: { kind: 'person' } })
+  expect(writes.slice(before).filter(key => key === 'pane')).toEqual([])
+  await ui.unmount()
+})
+
+test('Git arrows keep the displayed working selection after its old file disappears', async ($, on) => {
+  const clock = mock.clock(on)
+  let selected: string | undefined
+  on('state.set', (_$, e, next) => { if (e.key === 'pane') selected = (e.value as { selected: { git?: string } }).selected.git; return next(e) })
+  const r = repo()
+  await world($, on, r)
+  const ui = await gitPane($, 'terminal')
+  await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'change-src/api/user.ts', origin: { kind: 'person' } })
+  r.records = [STAGED_INDEX]
+  await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: ROOT })
+  await clock.settle()
+  await ui.redraw()
+  expect(await ui.find({ key: 'change-src/api/user.ts' })).toBeUndefined()
+  expect(await ui.find({ key: 'staged-src/index.ts' })).toBeDefined()
+  await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: 1, bodyRows: 30, contentRows: 60, origin: { kind: 'person' } })
+  expect(selected).toBe('staged-src/index.ts')
+  await ui.unmount()
+})
+
+test('commit: mode cycling; plain commit runs git directly', async ($, on) => {
   const calls = await world($, on, repo())
   const ui = await gitPane($, 'terminal')
-  const menu = await ui.find({ type: 'Select', key: 'commit-mode' })
-  expect((menu?.props.options as { label: string }[]).map((o) => o.label)).toEqual(['Only', '& Push', 'Amend'])
+  await chooseMode(ui, 'commit')
   await ui.input({ key: 'message', text: "fix: don't drop the name", kind: 'change' })
   await ui.press({ key: 'commit' })
   expect(gitRuns(calls, 'commit')).toEqual([['git', '--no-optional-locks', '-C', ROOT, 'commit', '-m', "fix: don't drop the name"]])
   expect(calls.tools).toHaveLength(0)
   expect((await ui.find({ type: 'Input', key: 'message' }))?.props.value ?? '').toBe('')
 
-  await ui.select({ key: 'commit-mode', value: 'commit-push' })
+  await chooseMode(ui, 'commit-push')
   await ui.input({ key: 'message', text: 'feat: push it', kind: 'submit' })
   expect(gitRuns(calls, 'commit', 'feat: push it')).toHaveLength(1)
   expect(gitRuns(calls, 'push')).toHaveLength(1)
-  await ui.select({ key: 'commit-mode', value: 'commit' })
+  await chooseMode(ui, 'commit')
   await ui.unmount()
 })
 
@@ -555,7 +615,7 @@ test('the commit row is one Commit control and a mode chooser at every width', a
     for (const message of ['', 'feat: one control']) {
       await ui.input({ key: 'message', text: message, kind: 'change' })
       for (const mode of ['commit', 'commit-push', 'amend']) {
-        await ui.select({ key: 'commit-mode', value: mode })
+        await chooseMode(ui, mode)
         const tree = (await ui.drawn()) as Node
         const text = [0, 1, 2]
           .map((i) => findKey(tree, `commit-row-${i}`))
@@ -567,7 +627,7 @@ test('the commit row is one Commit control and a mode chooser at every width', a
         for (const w of lineWidths(tree)) expect(w).toBeLessThanOrEqual(width)
       }
     }
-    await ui.select({ key: 'commit-mode', value: 'commit' })
+    await chooseMode(ui, 'commit')
     await ui.input({ key: 'message', text: '', kind: 'change' })
     await ui.unmount()
   }
@@ -576,10 +636,10 @@ test('the commit row is one Commit control and a mode chooser at every width', a
 test('commit-push with no upstream publishes the branch', async ($, on) => {
   const calls = await world($, on, repo({ upstream: null }))
   const ui = await gitPane($, 'terminal')
-  await ui.select({ key: 'commit-mode', value: 'commit-push' })
+  await chooseMode(ui, 'commit-push')
   await ui.input({ key: 'message', text: 'feat: first push', kind: 'submit' })
   expect(gitRuns(calls, 'push')).toEqual([['git', '--no-optional-locks', '-C', ROOT, 'push', '-u', 'origin', 'main']])
-  await ui.select({ key: 'commit-mode', value: 'commit' })
+  await chooseMode(ui, 'commit')
   await ui.unmount()
 })
 
@@ -889,11 +949,11 @@ test('a merge conflict stops the commit with a toast and runs nothing', async ($
   const calls = await world($, on, repo({ records: [CONFLICT, CHANGED_USER] }))
   for (const mode of ['commit', 'commit-push', 'amend'] as const) {
     const ui = await gitPane($, 'terminal')
-    await ui.select({ key: 'commit-mode', value: mode })
+    await chooseMode(ui, mode)
     await ui.input({ key: 'message', text: 'fix: merge', kind: 'submit' })
     expect(calls.toasts.at(-1)).toBe('Resolve conflicts first.')
     expect((await ui.find({ type: 'Input', key: 'message' }))?.props.value).toBe('fix: merge')
-    await ui.select({ key: 'commit-mode', value: 'commit' })
+    await chooseMode(ui, 'commit')
     await ui.input({ key: 'message', text: '', kind: 'change' })
     await ui.unmount()
   }
@@ -905,20 +965,20 @@ test('Amend never claims it stages all changes', async ($, on) => {
   await world($, on, repo({ records: [CHANGED_USER] }))
   const ui = await gitPane($, 'terminal')
   expect(await ui.find({ type: 'Text', text: /Commit stages all changes/ })).toBeDefined()
-  await ui.select({ key: 'commit-mode', value: 'amend' })
+  await chooseMode(ui, 'amend')
   expect(await ui.find({ type: 'Text', text: /Nothing staged/ })).toBeUndefined()
-  await ui.select({ key: 'commit-mode', value: 'commit' })
+  await chooseMode(ui, 'commit')
   await ui.unmount()
 })
 
 test('Commit & Push with the push left running clears the landed message and says so', async ($, on) => {
   const calls = await world($, on, repo({ hooks: true, background: true, slowStep: 'push' }))
   const ui = await gitPane($, 'terminal')
-  await ui.select({ key: 'commit-mode', value: 'commit-push' })
+  await chooseMode(ui, 'commit-push')
   await ui.input({ key: 'message', text: 'feat: slow push', kind: 'submit' })
   expect(calls.toasts.at(-1)).toBe('Committed. Push is still running in the background; check the terminal.')
   expect((await ui.find({ type: 'Input', key: 'message' }))?.props.value).toBe('')
-  await ui.select({ key: 'commit-mode', value: 'commit' })
+  await chooseMode(ui, 'commit')
   await ui.unmount()
 })
 
@@ -961,17 +1021,17 @@ test('the commit row shows the mode chooser where there is one, and names the mo
   await world($, on, repo())
   for (const width of WIDTHS) {
     const ui = await gitPane($, 'terminal', width)
-    expect(await ui.find({ type: 'Select', key: 'commit-mode' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', key: 'commit-mode' })).toBeDefined()
     await ui.unmount()
   }
-  // A surface with no Select (mobile): the Commit Button carries the mode's name.
+  // Mobile: the Commit Button carries the retained mode's name.
   const term = await gitPane($, 'terminal', 40)
-  await term.select({ key: 'commit-mode', value: 'commit-push' })
+  await chooseMode(term, 'commit-push')
   await term.press({ key: 'key-g' })
   await term.unmount()
   for (const width of WIDTHS) {
     const ui = await $.ui.mount({ plugin: 'jei', surface: 'mobile', component: 'Pane', props: paneProps(width), requestId: 'jei' })
-    await ui.press({ key: 'tab-4' })
+    await ui.press({ key: 'tab-3' })
     expect(await ui.find({ type: 'Select', key: 'commit-mode' })).toBeUndefined()
     expect((await ui.find({ type: 'Button', key: 'commit' }))?.props.label).toBe('Commit & Push')
     // No Input either: the message shows as text.
@@ -979,7 +1039,7 @@ test('the commit row shows the mode chooser where there is one, and names the mo
     await ui.unmount()
   }
   const back = await gitPane($, 'terminal', 40)
-  await back.select({ key: 'commit-mode', value: 'commit' })
+  await chooseMode(back, 'commit')
   await back.input({ key: 'message', text: '', kind: 'change' })
   await back.unmount()
 })

@@ -68,7 +68,7 @@ export function historyFixture(options: Record<string, unknown> = {}) {
     renderers.push(r); await r.flush(); return r
   }
   function key(bind: string) { return layers.flatMap((l) => l().commands ?? []).findLast((c) => c.bind === bind && (typeof c.enabled === 'function' ? c.enabled() : c.enabled !== false))?.run() }
-  return { ctx, mount, copied, copy(value: boolean) { copyResult = value }, key, calls, confirms, selects, prompts, sent, notices, handlers, setWidth, layers,
+  return { ctx, mount, copied, copy(value: boolean) { copyResult = value }, key, openSearch() { return layers.flatMap(l => l().commands ?? []).find(c => c.id === 'jei.toggle')!.run('search') }, calls, confirms, selects, prompts, sent, notices, handlers, setWidth, layers,
     setGit(value: unknown) { git = value }, setCwd(value: string) { cwd = value }, confirm(value: boolean | undefined) { confirmation = value }, choose(value: unknown) { selection = value }, edit(value: string | undefined) { edited = value },
     emit(name: string, data: unknown, directory = cwd) { for (const fn of listeners.get(name) ?? []) fn({ data, location: { directory } }) },
     changed() { for (const fn of listeners.get('changed') ?? []) fn({ data: {}, location: { directory: cwd } }) },

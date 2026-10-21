@@ -4,7 +4,7 @@
 // adapter checks at compile time that they stay identical
 // (hosts/claude-code/state.ts). Every value is JSON data.
 
-export type JeiTab = 'files' | 'search' | 'symbols' | 'git'
+export type JeiTab = 'files' | 'symbols' | 'git'
 export type JeiView = 'files' | 'files.preview' | 'search' | 'search.replace' | 'quickopen' | 'symbols' | 'symbols.results' | 'git' | 'git.diff' | 'git.branches' | 'git.compare'
 
 export type JeiDiffSource =
@@ -41,6 +41,7 @@ export type JeiTree = {
 export type JeiPreview = { rel: string; source: boolean; top: number; line?: number }
 
 export type JeiSearch = {
+  draft?: string
   text: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; globs: string; replacement: string
   quickText?: string
   subject?: Partial<Record<'search' | 'quickopen' | 'search.replace', string>>

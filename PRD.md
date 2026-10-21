@@ -36,7 +36,7 @@ JEI is written **from scratch**; no code from other projects is copied. If a fra
 ## 2. Goals, non-goals, anti-goals
 
 ### Goals
-1. One pane, four tabs, **Files · Search · Symbols · Git**, that replace the VS Code sidebar for a developer who works through an agent.
+1. One pane, three tabs, **Files · Symbols · Git**, with Search inside Files, that replace the VS Code sidebar for a developer who works through an agent.
 2. The **Git tab mirrors VS Code's Source Control panel** (repository row, Graph, Changes, branches), adapted to a terminal pane.
 3. **Agent-aware:** the pane shows what the agent reads, writes and commits, and every view can hand context to the agent in one key ("Ask", "mention").
 4. **Two hosts, one core:** Claude Code and OpenCode get the same features at the same time. All logic lives in a host-independent core; each host is a thin adapter.
@@ -150,7 +150,7 @@ An OpenCode plugin package has a **server entry** (`@opencode/plugin`, `Plugin.d
 
 ```
 ┌ conversation ─────────────────────────────┬ JEI ──────────────────────────────┐
-│ > add zod validation to the users endpoint│ 1 Files  2 Search  3 Symbols  4 Git│
+│ > add zod validation to the users endpoint│ 1 Files  2 Symbols  3 Git│
 │                                           │───────────────────────────────────│
 │ ● Update(src/api/user.ts)                 │  (active tab content)             │
 │   ⎿ 12 additions, 3 removals              │                                   │
@@ -160,7 +160,7 @@ An OpenCode plugin package has a **server entry** (`@opencode/plugin`, `Plugin.d
 ```
 
 - **All UI text is English.**
-- Tabs switch with `1`–`4` while the pane holds the keyboard; clicking a tab works where the host supports the mouse.
+- Tabs switch with `1`–`3` while the pane holds the keyboard; clicking a tab works where the host supports the mouse.
 - The last line of the pane is always a **hint line** listing the keys of the current view.
 - `/jei` toggles the pane; `/jei files|search|symbols|git` opens it on a tab; `/jei <path>` opens Files revealing a path. Same command on both hosts.
 - Colors follow the host's theme (dark/light); Nerd Font icons when available, plain Unicode otherwise.
@@ -214,7 +214,7 @@ File ops live in `core/fsops.ts` as argv builders plus root checks; the host exe
 - **OpenCode:** the server entry uses `node:fs/promises` (`mkdir`, `rename`, `rm`) for the same operations; no OS argv needed.
 - On both, every path must resolve inside the project root. Tests cover both argv shapes.
 
-### 6.2 Search tab (project-wide find, like `Ctrl+Shift+F`)
+### 6.2 Search inside Files (project-wide find, like `Ctrl+Shift+F`)
 
 **Behavior**
 - Query field with toggles: match case, regex, whole word; include and exclude globs.
@@ -227,7 +227,7 @@ File ops live in `core/fsops.ts` as argv builders plus root checks; the host exe
 
 **Keys:** `enter` preview · `a` add result to prompt · `s` send all to the agent · `c` case · `x` regex · `w` whole word · `i` include/exclude · `p` replace · `q` quick open mode.
 
-**Build:** ripgrep `rg --json` streamed (Claude Code: `$.process.spawn({ argv, cwd })`; OpenCode: `node:child_process` `spawn` in the server entry, results pushed to the TUI with `registration.events.emit`). JSON parsing and grouping live in `core/`. Reject multiline patterns; cancel the previous run on each new query (debounce ~150 ms). Search retains at most 2,000 result lines and an estimated 16 MiB of UTF-16 strings/range data with `Results truncated.` on overflow (ADR 0023). Replace reads/writes complete UTF-8 files within 4 MiB, lists binary/invalid/changed and other skipped files, and independently verifies Unicode whole-word boundaries. Quick Open uses NUL-delimited `git ls-files -co --exclude-standard` minus deleted tracked paths (fallback `rg --files`), capped at 50,000 candidates and cached/refreshed on file events. Fuzzy ranking favors matches at word starts and in the basename. Missing rg gives installation guidance; repository fallback searches tracked files' first verified occurrence per line, with hidden/untracked coverage differences recorded.
+**Build:** ripgrep `rg --json` streamed (Claude Code: `$.process.spawn({ argv, cwd })`; OpenCode: `node:child_process` `spawn` in the server entry, results pushed to the TUI with `registration.events.emit`). JSON parsing and grouping live in `core/`. Reject multiline patterns; keep typing in a draft and cancel the previous run when Enter submits a new query. Search retains at most 2,000 result lines and an estimated 16 MiB of UTF-16 strings/range data with `Results truncated.` on overflow (ADR 0023). Replace reads/writes complete UTF-8 files within 4 MiB, lists binary/invalid/changed and other skipped files, and independently verifies Unicode whole-word boundaries. Quick Open uses NUL-delimited `git ls-files -co --exclude-standard` minus deleted tracked paths (fallback `rg --files`), capped at 50,000 candidates and cached/refreshed on file events. Fuzzy ranking favors matches at word starts and in the basename. Missing rg gives installation guidance; repository fallback searches tracked files' first verified occurrence per line, with hidden/untracked coverage differences recorded.
 
 ### 6.3 Symbols tab (outline, definition, references)
 
@@ -275,7 +275,7 @@ Mirrors VS Code's Source Control panel, top to bottom.
 
 **Changes**
 - Message field ("Message (enter to commit on "main")") with **✦ Generate**: builds a Conventional Commits message from the staged diff (or the full diff when nothing is staged) with a small model (Claude Code: `$.model.complete`, default Haiku; OpenCode: `client.generate.text`, the model the user picks in `commitModel` or OpenCode's default; both configurable). The user can always edit it before committing.
-- **Commit** button with a menu: Commit, Commit & Push, Commit (amend). When nothing is staged, Commit stages everything first (VS Code's default "smart commit", option to turn off).
+- **Commit** button with three modes: Commit, Commit & Push, Commit (amend). Claude Code cycles Only → & Push → Amend through a separate Button, keeping arrows available for Graph and working changes; OpenCode uses its native modal chooser. Selecting a mode never commits. When nothing is staged, Commit stages everything first (VS Code's default "smart commit", option to turn off). See ADR 0024.
 - Two groups, **Staged** and **Changes**, each file with status letter, folder and +/−.
 - Per file: open diff, stage/unstage, discard (confirmed). Per group: stage all, unstage all, discard all (confirmed).
 
@@ -302,7 +302,7 @@ Same keys on both hosts. Claude Code: `userConfig` in `plugin.json`, where on/of
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `startOpen` | boolean | `true` | Open the pane when a session starts (where it can dock) |
-| `defaultTab` | `files` \| `search` \| `symbols` \| `git` | `files` | Tab shown on open |
+| `defaultTab` | `files` \| `symbols` \| `git` | `files` | Tab shown on open |
 | `activity` | `reads and writes` \| `writes` \| `reads` \| `none` | `reads and writes` | What the shimmer shows |
 | `followAgent` | boolean | `true` | Tree follows what the agent touches |
 | `glyphs` | `auto` \| `nerd` \| `plain` | `auto` | Icon set |
@@ -449,7 +449,7 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - Name: **JEI — Just Enough IDE**. Everything (UI, docs, repo) in English. Open source.
 - **Two hosts from the first release: Claude Code and OpenCode, in one repository.**
 - Built from scratch.
-- Four tabs: Files, Search, Symbols, Git. Search, Quick Open and Symbols (outline + definition/references) are in.
+- Three tabs: Files, Symbols, Git, with Search inside Files. Search, Quick Open and Symbols (outline + definition/references) are in.
 - Git tab follows VS Code's Source Control layout (option A): repository row, Graph, Changes, branches; switch and create branches.
 - Clicking a commit expands it inline with its files; clicking a file shows its diff **replacing the pane content** (unified, one column).
 - Git extras accepted: Ask on commits/diffs, ✦ markers for the agent's commits, commit actions (copy hash, checkout, revert, open on GitHub), graph filter, compare branch with main.
@@ -472,14 +472,14 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - OpenCode tools are classified by id from `ctx.tool.list()` with an input-shape fallback.
 - On OpenCode, Symbols is approximate only until OpenCode exposes an LSP API.
 - `commitModel` empty by default = the host's small model.
-- Quick Open lives inside the Search tab rather than as a fifth tab.
+- Quick Open is nested under Search inside Files.
 - File operations (new, rename, move, delete with confirmation) are included, in 0.4.
 - Symbols moved into 0.3 next to Search and Quick Open; the first public release moved from 0.5 to 0.4.
 - Symbols use LSP when available and regex outlines otherwise; no tree-sitter in v1.
 - Switching branches with uncommitted changes asks; JEI never stashes on its own.
 - ✦ Generate uses Conventional Commits format.
 - Smart commit (stage all when nothing is staged) on by default, as in VS Code.
-- Tabs switch with `1`–`4`.
+- Tabs switch with `1`–`3`.
 - Slash command `/jei` on both hosts; MIT license; milestone order in §11.
 - npm package name `opencode-jei`; Bun as the dev toolchain; release-please + npm trusted publishing.
 - Claude Code surfaces: terminal first-class; Desktop app must render and work by click, polish best effort; VS Code/mobile out.

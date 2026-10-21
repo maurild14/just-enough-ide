@@ -14,12 +14,12 @@ export type PaneState = {
   diff?: { source: DiffSource; path: string }
 }
 
-type LegacyPaneState = Omit<PaneState, 'diff' | 'recent'> & { recent?: string[]; diff?: PaneState['diff'] | { path: string; staged: boolean; untracked: boolean } }
+type LegacyPaneState = Omit<PaneState, 'tab' | 'diff' | 'recent'> & { tab: Tab | 'search'; recent?: string[]; diff?: PaneState['diff'] | { path: string; staged: boolean; untracked: boolean } }
 
 /** Session state survives plugin reloads, including v0.1's working-diff shape. */
 export function normalizePane(state: PaneState | LegacyPaneState): PaneState {
   const diff = state.diff
-  const base = state.recent === undefined ? { ...state, recent: [] } : state
+  const base: LegacyPaneState & { tab: Tab } = state.tab === 'search' ? { ...state, tab: 'files' as const, stack: ['files' as const, ...state.stack], recent: state.recent ?? [] } : state.recent === undefined ? { ...state, tab: state.tab, recent: [] } : state as LegacyPaneState & { tab: Tab }
   if (diff && !('source' in diff)) {
     return { ...base, recent: state.recent ?? [], diff: { path: diff.path, source: { kind: 'working', staged: diff.staged, untracked: diff.untracked } } }
   }
@@ -27,17 +27,17 @@ export function normalizePane(state: PaneState | LegacyPaneState): PaneState {
 }
 
 export type PaneAction =
-  | { type: 'tab'; tab: Tab }
+  | { type: 'tab'; tab: Tab | 'search' }
   | { type: 'open-diff'; source: DiffSource; path: string }
   | { type: 'branches' }
   | { type: 'compare' }
-  | { type: 'quickopen' | 'replace' | 'symbol-results' }
+  | { type: 'search' | 'quickopen' | 'replace' | 'symbol-results' }
   | { type: 'preview'; rel: string; line?: number }
   | { type: 'back' }
   | { type: 'select'; view: View; id: string }
 
-export function initialPane(tab: Tab): PaneState {
-  return { tab, stack: [tab], selected: {}, recent: [] }
+export function initialPane(tab: Tab | 'search'): PaneState {
+  return { tab: tab === 'search' ? 'files' : tab, stack: tab === 'search' ? ['files', 'search'] : [tab], selected: {}, recent: [] }
 }
 
 export function currentView(s: PaneState): View {
@@ -54,21 +54,23 @@ function push(s: PaneState, tab: Tab, view: View): View[] {
 export function reducePane(s: PaneState, a: PaneAction): PaneState {
   switch (a.type) {
     case 'tab':
-      return { tab: a.tab, stack: [a.tab], selected: s.selected, recent: s.recent }
+      return { ...initialPane(a.tab), selected: s.selected, recent: s.recent }
     case 'select':
       return { ...s, selected: { ...s.selected, [a.view]: a.id } }
+    case 'search':
     case 'quickopen':
     case 'replace':
     case 'symbol-results': {
-      const tab = a.type === 'symbol-results' ? 'symbols' : 'search'
-      const view = a.type === 'symbol-results' ? 'symbols.results' : a.type === 'replace' ? 'search.replace' : 'quickopen'
-      return { tab, stack: push(s, tab, view), selected: s.selected, recent: s.recent }
+      const tab = a.type === 'symbol-results' ? 'symbols' : 'files'
+      const view = a.type === 'symbol-results' ? 'symbols.results' : a.type === 'replace' ? 'search.replace' : a.type === 'search' ? 'search' : 'quickopen'
+      const origin = tab === 'files' && !s.stack.includes('search') ? { ...s, tab: 'files' as const, stack: ['files', 'search'] as View[] } : s
+      return { tab, stack: push(origin, tab, view), selected: s.selected, recent: s.recent }
     }
     case 'preview':
       return {
         ...s,
         stack: push(s, s.tab, 'files.preview'),
-        selected: { ...s.selected, files: a.rel },
+        selected: currentView(s) === 'files' ? { ...s.selected, files: a.rel } : s.selected,
         recent: [a.rel, ...s.recent.filter((rel) => rel !== a.rel)].slice(0, 50),
         preview: { rel: a.rel, ...(a.line === undefined ? {} : { line: a.line }) },
       }

@@ -53,7 +53,7 @@ test('Search, Replace, Quick Open and Symbols expose their milestone actions', (
 })
 
 test('tab keys', () => {
-  expect(TAB_KEYS).toEqual({ '1': 'files', '2': 'search', '3': 'symbols', '4': 'git' })
+  expect(TAB_KEYS).toEqual({ '1': 'files', '2': 'symbols', '3': 'git' })
 })
 
 test('hint line fits every width and has no help key', () => {
@@ -68,10 +68,10 @@ test('hint line fits every width and has no help key', () => {
 test('hint line at 24, 40, 80 and 10', () => {
   expect(hintLine('git', 40)).toBe('↑↓ enter s u d c y a b f t n g e q esc')
   expect(hintLine('git', 24)).toBe('↑↓ s u d c y a b f t esc')
-  expect(hintLine('files', 24)).toBe('↑↓ enter a o f h q esc')
-  expect(hintLine('files', 40)).toBe('↑↓ move · enter open · a o f h q esc')
-  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · a mention · o open in editor · f filter · h q esc')
-  expect(hintLine('files', 120)).toBe('↑↓ move · enter open · a mention · o open in editor · f filter · h hidden · q back · esc back')
+  expect(hintLine('files', 24)).toBe('↑↓ enter s a o f h q esc')
+  expect(hintLine('files', 40)).toBe('↑↓ move · enter open · s a o f h q esc')
+  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · s search · a mention · o open in editor · f h q esc')
+  expect(hintLine('files', 120)).toBe('↑↓ move · enter open · s search · a mention · o open in editor · f filter · h hidden · q back · esc back')
   expect(hintLine('git.diff', 10)).toBe('↑↓ n p esc')
   expect(hintLine('git', 10)).toBe('↑↓ s u esc')
 })

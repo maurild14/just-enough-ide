@@ -4,7 +4,7 @@ import { currentView, initialPane, normalizePane, reducePane } from './pane.ts'
 test('initial and tab switch', () => {
   expect(currentView(initialPane('git'))).toBe('git')
   const s = reducePane(initialPane('files'), { type: 'tab', tab: 'search' })
-  expect(s.stack).toEqual(['search'])
+  expect(s.stack).toEqual(['files', 'search'])
   expect(currentView(s)).toBe('search')
 })
 
@@ -35,8 +35,8 @@ test('selection survives tab switches; stack does not', () => {
 test('preview keeps its originating tab and back returns there', () => {
   for (const tab of ['files', 'search', 'symbols', 'git'] as const) {
     const s = reducePane(initialPane(tab), { type: 'preview', rel: 'a.ts', line: 42 })
-    expect(s.tab).toBe(tab)
-    expect(s.stack).toEqual([tab, 'files.preview'])
+    expect(s.tab).toBe(tab === 'search' ? 'files' : tab)
+    expect(s.stack).toEqual([...initialPane(tab).stack, 'files.preview'])
     expect(s.preview).toEqual({ rel: 'a.ts', line: 42 })
     const back = reducePane(s, { type: 'back' })
     expect(currentView(back)).toBe(tab)
@@ -81,6 +81,25 @@ test('reducer does not mutate', () => {
   const s = initialPane('files')
   reducePane(s, { type: 'select', view: 'files', id: 'x' })
   expect(s.selected).toEqual({})
+})
+
+test('Search is nested in Files and preview preserves the original tree selection', () => {
+  let state = reducePane(initialPane('files'), { type: 'select', view: 'files', id: 'src/old.ts' })
+  state = reducePane(state, { type: 'search' })
+  state = reducePane(state, { type: 'select', view: 'search', id: 'match-25' })
+  state = reducePane(state, { type: 'preview', rel: 'other/new.ts', line: 42 })
+  expect(state.tab).toBe('files')
+  expect(state.selected.files).toBe('src/old.ts')
+  state = reducePane(state, { type: 'back' })
+  expect(state.stack).toEqual(['files', 'search'])
+  expect(state.selected.search).toBe('match-25')
+  state = reducePane(state, { type: 'back' })
+  expect(state.stack).toEqual(['files'])
+  expect(state.selected.files).toBe('src/old.ts')
+  const legacy = normalizePane({ tab: 'search', stack: ['search', 'quickopen'], selected: { search: 'match-25' }, recent: ['other/new.ts'] })
+  expect(legacy.tab).toBe('files')
+  expect(legacy.stack).toEqual(['files', 'search', 'quickopen'])
+  expect(normalizePane(legacy)).toBe(legacy)
 })
 
 test('legacy working diffs normalize without losing stack, selection or flags', () => {

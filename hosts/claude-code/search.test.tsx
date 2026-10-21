@@ -2,11 +2,62 @@ import { expect, test } from 'claude-code/testing'
 import { command, props, world } from '../../test/claude-search.ts'
 import { lineWidths, type Node } from './measure.ts'
 
+test('Search takes focus from a retained Files filter without competing autofocus', async ($, on) => {
+  const seen = await world($, on)
+  await $.command.run(command('src/other.ts'))
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'desktop', component: 'Pane', requestId: 'jei', props: props() })
+  await ui.press({ key: 'key-f' })
+  await ui.input({ key: 'filter', text: 'other', kind: 'change' })
+  await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'search-query', origin: { kind: 'person' } })
+  expect((await ui.find({ key: 'filter' }))?.props.autoFocus).toBeUndefined()
+  await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
+  await ui.press({ key: 'back' })
+  expect((await ui.find({ key: 'filter' }))?.props.value).toBe('other')
+  await ui.press({ key: 'key-f' })
+  await ui.unmount()
+})
+
+test('Files Search has a visible frame, waits for Enter and restores tree/result selection on both surfaces', async ($, on) => {
+  const seen = await world($, on)
+  seen.files['src/account.ts'] = Array.from({ length: 40 }, (_, i) => `load ${i}`).join('\n')
+  for (const surface of ['terminal', 'desktop'] as const) {
+    await $.command.run(command('src/other.ts'))
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
+    expect(await ui.find({ key: 'search-field' })).toBeDefined()
+    const before = seen.runs.filter(argv => argv[0] === 'rg').length
+    await ui.press({ key: 'key-s' })
+    await ui.input({ key: 'search-query', text: 'load', kind: 'change' }); await seen.clock.advance(300)
+    expect(seen.runs.filter(argv => argv[0] === 'rg')).toHaveLength(before)
+    expect((await ui.find({ key: 'tab-2' }))?.props.hotkey).toBeUndefined()
+    await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
+    expect(await ui.find({ key: 'search-row-match-0' })).toBeDefined()
+    await ui.redraw(props(24, 5))
+    for (let i = 0; i < 25; i++) await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: 1, bodyRows: 5, contentRows: 60, origin: { kind: 'person' } })
+    expect(await ui.find({ key: 'search-row-match-25' })).toBeDefined()
+    await ui.press({ key: 'search-row-match-25' })
+    await ui.press({ key: 'back' })
+    expect(await ui.find({ key: 'search-row-match-25' })).toBeDefined()
+    await ui.press({ key: 'back' })
+    expect((seen.states.pane as { selected: { files: string } }).selected.files).toBe('src/other.ts')
+    await ui.press({ key: 'search-clear' })
+    expect((await ui.find({ key: 'search-query' }))?.props.value).toBe('')
+    await ui.redraw(props())
+    await ui.input({ key: 'search-query', text: '', kind: 'submit' })
+    expect((seen.states.pane as { stack: string[] }).stack).toEqual(['files'])
+    for (const width of [24, 40, 80, 120]) {
+      await ui.redraw(props(width))
+      expect(await ui.find({ key: 'search-border-top' })).toBeDefined()
+      for (const drawn of lineWidths(await ui.drawn() as Node)) expect(drawn).toBeLessThanOrEqual(width)
+    }
+    await ui.unmount()
+  }
+})
+
 test('Search native input streams, toggles argv, hands text and returns from a marked preview', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
-  await ui.input({ key: 'search-query', text: 'load', kind: 'change' }); await seen.clock.advance(300)
+  await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   expect(await ui.find({ key: 'search-row-match-0' })).toBeDefined()
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' })
   await ui.press({ key: 'key-c' }); await seen.clock.advance(300)
@@ -51,17 +102,17 @@ test('replacement reviews a native diff, confirms, refuses changed snapshots and
   await ui.unmount()
 })
 
-test('typing cancels an active native stream, batches its early rows and suppresses its late rows', async ($, on) => {
+test('submitting a new query cancels an active native stream and suppresses its late rows', async ($, on) => {
   const seen = await world($, on); seen.settings.slow = true
   await $.command.run(command('search'))
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
-  await ui.input({ key: 'search-query', text: 'load', kind: 'change' })
+  await ui.input({ key: 'search-query', text: 'load', kind: 'submit' })
   await seen.clock.advance(150)
-  expect(await ui.find({ key: 'search-row-match-0' })).toBeUndefined()
+  expect(await ui.find({ key: 'search-row-match-0' })).toBeDefined()
   await seen.clock.advance(100)
   expect((await ui.find({ key: 'search-row-match-0' }))?.text).toContain('load')
-  await ui.input({ key: 'search-query', text: 'save', kind: 'change' })
-  await seen.clock.advance(300)
+  await ui.input({ key: 'search-query', text: 'save', kind: 'submit' })
+  await seen.clock.advance(1500)
   expect((await ui.find({ key: 'search-row-match-0' }))?.text).toContain('save')
   await seen.clock.advance(1200)
   expect(seen.settings.closed).toBeGreaterThanOrEqual(2)
@@ -69,7 +120,6 @@ test('typing cancels an active native stream, batches its early rows and suppres
   expect(await ui.find({ type: 'Text', text: /Searching/ })).toBeUndefined()
   await ui.unmount()
 })
-
 test('native toggles and filters reach shared argv; no rg outside a repository shows installation help', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
@@ -101,7 +151,7 @@ test('all native Search commands remain reachable through scroll at 24 columns a
     for (const n of widths) expect(n).toBeLessThanOrEqual(24)
   }
   for (const action of ['mention', 'send-all', 'toggle-case', 'toggle-regex', 'toggle-word', 'include', 'replace', 'quickopen']) expect(found.has(`search-row-command-${action}`)).toBe(true)
-  await ui.press({ key: 'search-row-command-quickopen' })
+  await ui.redraw(props()); await ui.press({ key: 'key-q' })
   expect((await ui.find({ key: 'search-query' }))?.props.placeholder).toBe('Go to file')
   await ui.unmount()
 })
@@ -111,8 +161,8 @@ test('Quick Open accepts a line and keeps editor letters and digits as text', as
   await $.command.run(command('search'))
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(24, 5) })
   await ui.input({ key: 'search-query', text: 'qxw1234', kind: 'change' })
-  expect((await ui.find({ key: 'tab-2' }))?.props.hotkey).toBeUndefined()
-  await ui.input({ key: 'search-query', text: '', kind: 'submit' }); await seen.clock.advance(300)
+  expect((await ui.find({ key: 'tab-1' }))?.props.hotkey).toBeUndefined()
+  await ui.press({ key: 'search-cancel' }); await seen.clock.advance(300)
   await ui.redraw(props())
   await ui.press({ key: 'key-q' })
   await ui.input({ key: 'search-query', text: 'account:42', kind: 'submit' })
@@ -128,7 +178,7 @@ test('unresolved double-slash projects refuse new Search and Symbols operations 
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   expect((await ui.find({ key: 'search-notice' }))?.text).toContain('Cannot determine')
   expect(seen.runs.filter(argv => argv[0] === 'rg')).toHaveLength(0)
-  await ui.press({ key: 'tab-3' })
+  await ui.press({ key: 'tab-2' })
   expect(await ui.find({ type: 'Text', text: /Cannot determine/ })).toBeDefined()
   expect(seen.checks).toHaveLength(0); expect(seen.calls).toHaveLength(0)
   await ui.unmount()

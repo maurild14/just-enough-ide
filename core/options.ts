@@ -12,7 +12,7 @@ export type Options = {
   graphLimit: number
 }
 
-const TABS: readonly Tab[] = ['files', 'search', 'symbols', 'git']
+const TABS: readonly Tab[] = ['files', 'symbols', 'git']
 const ACTIVITIES: readonly Options['activity'][] = ['reads and writes', 'writes', 'reads', 'none']
 const GLYPHS: readonly Options['glyphs'][] = ['auto', 'nerd', 'plain']
 

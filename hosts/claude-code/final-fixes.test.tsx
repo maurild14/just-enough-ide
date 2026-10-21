@@ -3,6 +3,28 @@ import { ROOT, command, props, world } from '../../test/claude-search.ts'
 
 const focus = (element: string) => ({ component: 'Pane' as const, requestId: 'jei', plugin: 'jei', element, origin: { kind: 'person' as const } })
 
+test('leaving a Search or Symbols input restores tab hotkeys without submitting', async ($, on) => {
+  const seen = await world($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    await $.command.run(command('search'))
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
+    await $.ui.focus(focus('search-query'))
+    await ui.input({ key: 'search-query', text: 'load4q', kind: 'change' })
+    expect((await ui.find({ key: 'tab-3' }))?.props.hotkey).toBeUndefined()
+    await $.ui.focus(focus('tab-3'))
+    expect((await ui.find({ key: 'tab-3' }))?.props.hotkey).toBe('3')
+    await ui.press({ key: 'tab-2' }); await seen.clock.settle()
+    await ui.press({ key: 'key-f' })
+    await $.ui.focus(focus('symbols-find'))
+    expect((await ui.find({ key: 'tab-1' }))?.props.hotkey).toBeUndefined()
+    await $.ui.focus(focus('tab-1'))
+    expect((await ui.find({ key: 'tab-1' }))?.props.hotkey).toBe('1')
+    await ui.press({ key: 'tab-1' })
+    expect((await ui.find({ key: 'tab-1' }))?.props.variant).toBe('primary')
+    await ui.unmount()
+  }
+})
+
 test('command controls retain the selected Search result, Quick Open file and replacement file', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))

@@ -19,7 +19,7 @@
       "type": "string",
       "title": "Default tab",
       "description": "Tab shown when the pane opens.",
-      "options": ["files", "search", "symbols", "git"],
+      "options": ["files", "symbols", "git"],
       "default": "files"
     },
     "activity": {

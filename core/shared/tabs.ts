@@ -3,7 +3,6 @@ import { cellWidth } from './fit.ts'
 
 export const TAB_NAMES: Readonly<Record<Tab, string>> = {
   files: 'Files',
-  search: 'Search',
   symbols: 'Symbols',
   git: 'Git',
 }

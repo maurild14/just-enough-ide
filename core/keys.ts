@@ -1,4 +1,4 @@
-export type Tab = 'files' | 'search' | 'symbols' | 'git'
+export type Tab = 'files' | 'symbols' | 'git'
 export type View = 'files' | 'files.preview' | 'search' | 'search.replace' | 'quickopen' | 'symbols' | 'symbols.results' | 'git' | 'git.diff' | 'git.branches' | 'git.compare'
 export type Key = { key: string; action: string; label: string }
 
@@ -15,6 +15,7 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     up,
     down,
     { key: 'enter', action: 'activate', label: 'open' },
+    { key: 's', action: 'search', label: 'search' },
     { key: 'a', action: 'mention', label: 'mention' },
     { key: 'o', action: 'open-editor', label: 'open in editor' },
     { key: 'f', action: 'filter', label: 'filter' },
@@ -33,7 +34,8 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     { key: 'a', action: 'mention', label: 'add' }, { key: 's', action: 'send-all', label: 'send all' },
     { key: 'c', action: 'toggle-case', label: 'case' }, { key: 'x', action: 'toggle-regex', label: 'regex' },
     { key: 'w', action: 'toggle-word', label: 'word' }, { key: 'i', action: 'include', label: 'include' },
-    { key: 'p', action: 'replace', label: 'replace' }, { key: 'q', action: 'quickopen', label: 'quick open' }, escape],
+    { key: 'p', action: 'replace', label: 'replace' }, { key: 'q', action: 'quickopen', label: 'quick open' },
+    { key: 'f', action: 'edit', label: 'edit query' }, { key: 'b', action: 'back', label: 'files' }, escape],
   'search.replace': [scrollUp, scrollDown, { key: 'enter', action: 'apply-file', label: 'apply file' },
     { key: 'y', action: 'apply-all', label: 'apply all' }, { key: 'a', action: 'ask', label: 'ask agent' }, back, escape],
   quickopen: [up, down, { key: 'enter', action: 'activate', label: 'preview' }, { key: 'a', action: 'mention', label: 'add' },
@@ -83,11 +85,10 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
   ],
 }
 
-export const TAB_KEYS: Readonly<Record<'1' | '2' | '3' | '4', Tab>> = {
+export const TAB_KEYS: Readonly<Record<'1' | '2' | '3', Tab>> = {
   '1': 'files',
-  '2': 'search',
-  '3': 'symbols',
-  '4': 'git',
+  '2': 'symbols',
+  '3': 'git',
 }
 
 const SEP = ' · '

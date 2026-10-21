@@ -1,7 +1,7 @@
 import type { EngineInterface } from 'claude-code'
 import { currentView, reducePane } from '../../core/pane.ts'
 import { readGit, readGitUi, readHistory, readPane, readTree, updateGitUi, updateHistory, updatePane, updateTree } from './state.ts'
-import { leaveSearchEditor, searchEditing } from './search.tsx'
+import { leaveSearchEditor, searchEditing, stopSearch } from './search.tsx'
 import { leaveSymbolsEditor, stopSymbols, symbolsEditing } from './symbols.tsx'
 
 /** The visible control and keyboard shortcut share the same one-level return. */
@@ -22,7 +22,8 @@ export async function backContext($: EngineInterface) {
 export async function goBack($: EngineInterface): Promise<void> {
   const pane = await readPane($)
   const view = currentView(pane)
-  if (['search', 'quickopen', 'search.replace'].includes(view) && await leaveSearchEditor($)) return
+  if (['files', 'search', 'quickopen', 'search.replace'].includes(view) && await leaveSearchEditor($)) return
+  if (['search', 'quickopen', 'search.replace'].includes(view)) await stopSearch($)
   if ((view === 'symbols' || view === 'symbols.results') && await leaveSymbolsEditor($)) return
   if (view === 'symbols' || view === 'symbols.results') await stopSymbols($)
   if (view === 'git' || view === 'git.branches' || view === 'git.compare') {

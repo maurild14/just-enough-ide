@@ -210,5 +210,5 @@ export async function renderDiff($: EngineInterface, e: PaneRender, frame: Files
       <Code source={w.text} format="diff" path={d.path} wrap="truncate-end" />
     </Box>,
   )
-  return { header, body, actions }
+  return { header, body, actions, scrollable: w.total > rows }
 }

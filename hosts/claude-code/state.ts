@@ -46,7 +46,7 @@ export const gitUi = atom({ plugin: 'jei', key: 'gitUi' } as const, {
 
 type StateHost = Pick<EngineInterface, 'state'>
 
-const emptySearch = (): JeiSearch => ({ text: '', caseSensitive: false, regex: false, wholeWord: false, globs: '', replacement: '', editing: 'query', matches: [], summary: '', engine: 'rg', busy: false, plan: [], skipped: [], expanded: [], top: 0, confirm: null })
+const emptySearch = (): JeiSearch => ({ text: '', caseSensitive: false, regex: false, wholeWord: false, globs: '', replacement: '', editing: null, matches: [], summary: '', engine: 'rg', busy: false, plan: [], skipped: [], expanded: [], top: 0, confirm: null })
 const emptySymbols = (): JeiSymbols => ({ rel: '', nodes: [], source: 'approximate', notice: '', query: '', editing: false, busy: false, permission: false, result: null, calls: [] })
 export async function readSearch($: StateHost, root: string): Promise<JeiSearch> { return (await read($, searches))[root] ?? emptySearch() }
 export function updateSearch($: StateHost, root: string, fn: (s: JeiSearch) => JeiSearch): Promise<Record<string, JeiSearch>> { return update($, searches, all => ({ ...all, [root]: fn(all[root] ?? emptySearch()) })) }

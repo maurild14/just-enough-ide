@@ -2,6 +2,19 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { lineWidths, type Node } from './measure.ts'
 
+test('repeated Branches focus and boundary scroll do not rewrite selection', async ($, on) => {
+  const r = await historyWorld($, on)
+  const ui = await historyPane($, 80)
+  await ui.press({ key: 'key-b' })
+  const focus = { component: 'Pane' as const, requestId: 'jei', plugin: 'jei', element: 'branch-refs/heads/main', origin: { kind: 'person' as const } }
+  await $.ui.focus(focus)
+  const before = r.writes.length
+  await $.ui.focus(focus)
+  await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: -1, bodyRows: 30, contentRows: 60, origin: { kind: 'person' } })
+  expect(r.writes.slice(before).filter(key => key === 'pane')).toEqual([])
+  await ui.unmount()
+})
+
 test('comparison validates a retained file selection against the new files', async ($, on) => {
   const r = await historyWorld($, on)
   for (const surface of ['terminal', 'desktop'] as const) {

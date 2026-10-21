@@ -131,6 +131,7 @@ export async function focusSymbols($: EngineInterface, key: string | undefined):
     if (s.editing || data && s.selection?.[view] !== id) await updateSymbols($, root, s => ({ ...s, editing: false, ...(data ? { selection: { ...s.selection, [view]: id } } : {}) }))
     if (pane.selected[view] !== id) await updatePane($, s => reducePane(s, { type: 'select', view, id }))
   } else if (key === 'symbols-find' && !(await readSymbols($, root)).editing) await updateSymbols($, root, s => ({ ...s, editing: true }))
+  else if (key !== 'symbols-find' && (await readSymbols($, root)).editing) await updateSymbols($, root, s => ({ ...s, editing: false }))
 }
 export async function scrollSymbols($: EngineInterface, by: number): Promise<boolean> {
   const pane = await readPane($), view = currentView(pane)
@@ -295,5 +296,5 @@ export async function renderSymbols($: EngineInterface, e: PaneRender, frame: Fi
   const suffix = ` · ${sourceLabel === 'lsp' ? 'LSP' : sourceLabel === 'mixed' ? 'LSP / approximate' : 'approximate'}`, header = text(`${fitEnd(title, Math.max(0, inner - cellWidth(suffix)))}${suffix}`)
   if (e.props.scroll.bodyRows < 6 && frame.bodyRows > pinned.length) pinned.push(header)
   const top = windowTop(`${root}:${view}`, rows.map(row => row.id), selected, frame.bodyRows - pinned.length)
-  return { header, body: [...pinned, ...rows.slice(top, top + Math.max(0, frame.bodyRows - pinned.length)).map(row => row.el)], actions: s.editing ? [] : KEYS[view].flatMap(k => /^[a-z0-9]$/.test(k.key) && k.action !== 'back' ? [{ key: k.key, run: act($, () => command(k.action)) }] : []) }
+  return { header, body: [...pinned, ...rows.slice(top, top + Math.max(0, frame.bodyRows - pinned.length)).map(row => row.el)], actions: s.editing ? [] : KEYS[view].flatMap(k => /^[a-z0-9]$/.test(k.key) && k.action !== 'back' ? [{ key: k.key, run: act($, () => command(k.action)) }] : []), scrollable: rows.length > frame.bodyRows - pinned.length }
 }

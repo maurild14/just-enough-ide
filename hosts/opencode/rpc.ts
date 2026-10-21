@@ -56,7 +56,7 @@ const gitSnapshot = {
 } as const
 const options = {
   type: 'object', properties: {
-    startOpen: flag, defaultTab: { enum: ['files', 'search', 'symbols', 'git'] },
+    startOpen: flag, defaultTab: { enum: ['files', 'symbols', 'git'] },
     activity: { enum: ['reads and writes', 'writes', 'reads', 'none'] }, followAgent: flag,
     glyphs: { enum: ['auto', 'nerd', 'plain'] }, editorCommand: text, commitModel: text,
     smartCommit: flag, graphLimit: { type: 'integer', minimum: 1 },

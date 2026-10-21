@@ -10,11 +10,11 @@ import { previewText, type ReplaceFile, type Skipped } from '../../core/search/r
 import { parseGlobs, type Match, type SearchQuery } from '../../core/search/rg.ts'
 import { replaceAskText, sendText } from '../../core/search/results.ts'
 import { cellWidth, fitEnd, fitPath, printable } from '../../core/shared/fit.ts'
-import { nativeRel } from '../../core/shared/paths.ts'
+import { nativeRel, toPosix } from '../../core/shared/paths.ts'
 import { handToAgent } from './hand-off.ts'
 import type { JeiRpc } from './rpc.ts'
 
-type SearchState = { text: string; quickText?: string; globs: string; replacement: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; matches: Match[]; summary: string; engine: string; planId: string; files: ReplaceFile[]; skipped: Skipped[]; busy: boolean; applying: boolean; serial: number; refreshSearch?: boolean; quickFiles?: string[]; quickRevision?: number; subject?: { match?: Match; quick?: string; replacement?: string } }
+type SearchState = { draft?: string; text: string; quickText?: string; globs: string; replacement: string; caseSensitive: boolean; regex: boolean; wholeWord: boolean; matches: Match[]; summary: string; engine: string; planId: string; files: ReplaceFile[]; skipped: Skipped[]; busy: boolean; applying: boolean; serial: number; refreshSearch?: boolean; quickFiles?: string[]; quickRevision?: number; subject?: { match?: Match; quick?: string; replacement?: string } }
 const initial = (): SearchState => ({ text: '', globs: '', replacement: '', caseSensitive: false, regex: false, wholeWord: false, matches: [], summary: '', engine: 'rg', planId: '', files: [], skipped: [], busy: false, applying: false, serial: 0 })
 const natural = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0
 function record(v: unknown): Record<string, unknown> { if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('Invalid Search reply.'); return v as Record<string, unknown> }
@@ -45,14 +45,15 @@ export function Search(props: {
     update(d => { delete d.quickRevision })
     props.quickCacheScopes.add(scope)
   }
-  const [editing, setEditing] = createSignal<'query' | 'globs' | 'replacement' | null>(s.text ? null : 'query')
+  const [editing, setEditing] = createSignal<'query' | 'globs' | 'replacement' | null>(currentView(props.state) === 'files' || s.text ? null : 'query')
   const [quickError, setQuickError] = createSignal('')
   const [quickLoading, setQuickLoading] = createSignal(false)
   const [expanded, setExpanded] = createSignal<string[]>(s.files.map(f => f.rel))
   const [top, setTop] = createSignal(0)
   let stopped = false, epoch = 0, runId = '', listTop = 0
   let timer: ReturnType<typeof setTimeout> | undefined, pending: AbortController | undefined
-  const view = createMemo(() => currentView(props.state)), quick = createMemo(() => view() === 'quickopen'), replacing = createMemo(() => view() === 'search.replace')
+  const browsing = () => currentView(props.state) === 'files'
+  const view = createMemo(() => browsing() ? 'search' as const : currentView(props.state)), quick = createMemo(() => view() === 'quickopen'), replacing = createMemo(() => view() === 'search.replace')
   const theme = () => props.ctx.theme, inner = () => Math.max(0, props.width - 2)
   const compact = () => props.height <= 3
   const query = (): SearchQuery => ({ text: s.text, caseSensitive: s.caseSensitive, regex: s.regex, wholeWord: s.wholeWord, ...parseGlobs(s.globs) })
@@ -72,7 +73,7 @@ export function Search(props: {
     if (runId) { const id = runId; runId = ''; void props.api.searchCancel({ sessionID: props.sessionID, id }).catch(() => {}) }
     if (!s.applying) update(d => { d.busy = false; if (d.summary === 'Searching…') d.summary = 'Search canceled.' })
   }
-  function restart() {
+  function restart(immediate = false) {
     stop()
     if (quick() || replacing()) return
     const generation = epoch
@@ -83,7 +84,7 @@ export function Search(props: {
       update(d => { d.serial++; d.busy = true; d.summary = 'Searching…' })
       const id = String(s.serial); runId = id
       void props.api.searchStart({ sessionID: props.sessionID, id, query: query() }).catch(error => { if (!stopped && generation === epoch) { runId = ''; update(d => { d.busy = false; d.summary = reason(error) }) } })
-    }, 150)
+    }, immediate ? 1 : 150)
   }
   const reason = (error: unknown) => error && typeof error === 'object' && !Array.isArray(error) && 'message' in error && typeof error.message === 'string' ? error.message.split(/\r?\n/)[0]! : 'Unable to complete Search.'
   function fail(error: unknown) { if (!stopped) props.ctx.ui.toast.show({ message: fitEnd(reason(error), Math.max(1, props.width)), variant: 'error' }) }
@@ -129,13 +130,14 @@ export function Search(props: {
       for (const [i, m] of s.matches.entries()) { if (!compact() && m.rel !== previous) all.push({ id: `group:${m.rel}`, label: `${m.rel} (${counts.get(m.rel)})`, passive: true }); previous = m.rel; all.push({ id: `match-${i}`, match: m }) }
     }
     if (!all.length) all.push({ id: 'notice', label: quick() ? quickError() || 'Type to find a file.' : s.summary || (replacing() ? 'No replacements.' : 'Type to search the project.'), passive: true })
-    if (!replacing()) all.push({ id: 'command:edit', label: 'Edit query' })
+    if (quick()) all.push({ id: 'command:edit', label: 'Edit query' })
     for (const key of KEYS[view()]) if ((/^[a-z]$/.test(key.key) || key.action === 'apply-file') && key.action !== 'back') all.push({ id: `command:${key.action}`, label: `${key.key} ${key.label}` })
     return all
   })
   const selectable = () => rows().filter(r => !r.passive)
-  createEffect(() => { if (quick() && quickLoading()) return; if (!selectable().some(r => r.id === selected())) { const first = selectable()[0]; if (first) select(first.id) } })
-  const pinned = () => !replacing() ? 1 + (!compact() && !quick() ? 1 : 0) : props.header ? 1 : 0
+  createEffect(() => { if (quick() && quickLoading()) return; if (!browsing() && !selectable().some(r => r.id === selected())) { const first = selectable()[0]; if (first) select(first.id) } })
+  const fieldRows = () => props.height >= (browsing() ? 3 : 6) ? 3 : 1
+  const pinned = () => !replacing() ? fieldRows() + (props.header && !browsing() ? 1 : 0) + (!compact() && !quick() ? 1 : 0) : props.header ? 1 : 0
   const room = () => Math.max(0, props.height - pinned() - (!compact() && !quick() && !replacing() && s.summary ? 1 : 0))
   const window = createMemo(() => { const all = rows(), at = all.findIndex(r => r.id === selected()); if (at >= 0) listTop = Math.min(Math.max(listTop, at - room() + 1), at); listTop = Math.max(0, Math.min(listTop, all.length - room())); return all.slice(listTop, listTop + room()) })
   const preview = (path: string, line?: number) => { stop(); props.dispatch({ type: 'preview', rel: path, ...(line ? { line } : {}) }) }
@@ -158,7 +160,12 @@ export function Search(props: {
     if (s.applying) return
     const field = editing(); setEditing(null)
     if (quick()) { const path = ranked()[0]; if (path) preview(path, parseQuery(s.quickText ?? '').line ?? undefined); return }
-    if (field !== 'replacement') return
+    if (field !== 'replacement') {
+      if (field === 'query') update(d => { d.text = d.draft ?? d.text })
+      if (!s.text && !s.regex) { clear(); return }
+      if (browsing()) props.dispatch({ type: 'search' })
+      restart(true); return
+    }
     if (s.busy) stop()
     const generation = epoch; pending = new AbortController(); update(d => { d.busy = true })
     try {
@@ -170,7 +177,13 @@ export function Search(props: {
       update(d => { d.planId = raw.planId as string; d.files = files; d.skipped = skipped }); setExpanded(files.map(f => f.rel)); setTop(0); props.dispatch({ type: 'replace' })
     } finally { if (generation === epoch) update(d => { d.busy = false }) }
   }
+  function clear() {
+    stop(); setEditing(null); update(d => { d.draft = ''; d.text = ''; d.matches = []; d.summary = '' })
+    props.dispatch({ type: 'tab', tab: 'files' })
+  }
   async function run(action: string): Promise<void> {
+    if (action === 'blur') { setEditing(null); return }
+    if (action === 'submit') return submit()
     if (action === 'back') { if (editing()) { if (editing() === 'replacement') stop(); setEditing(null) } else { stop(); props.dispatch({ type: 'back' }) }; return }
     if (action === 'move-up' || action === 'move-down' || action === 'scroll-up' || action === 'scroll-down') {
       setEditing(null)
@@ -202,9 +215,9 @@ export function Search(props: {
   props.bind(invoke, () => editing() !== null)
   onCleanup(() => { stopped = true; stop(); offMatches(); offDone(); props.bind(() => {}, () => false) })
   const field = () => editing() ?? 'query'
-  const fieldValue = () => field() === 'query' ? quick() ? s.quickText ?? '' : s.text : field() === 'globs' ? s.globs : s.replacement
+  const fieldValue = () => field() === 'query' ? quick() ? s.quickText ?? '' : s.draft ?? s.text : field() === 'globs' ? s.globs : s.replacement
   const markers = () => compact() && !quick() && field() === 'query' ? [s.caseSensitive ? '[Aa]' : '', s.regex ? '[.*]' : '', s.wholeWord ? '[\\b]' : '', s.engine === 'git grep' ? 'git grep' : '', s.summary === 'Results truncated.' ? 'truncated' : ''].filter(Boolean).join(' ') : ''
-  const change = (value: string) => { const key = field() === 'query' ? quick() ? 'quickText' : 'text' : field() === 'globs' ? 'globs' : 'replacement'; if (s[key] === value) return; update(d => { d[key] = value }); if (key !== 'replacement' && !quick()) restart() }
+  const change = (value: string) => { const key = field() === 'query' ? quick() ? 'quickText' : 'draft' : field() === 'globs' ? 'globs' : 'replacement'; if (s[key] === value) return; update(d => { d[key] = value }) }
   function matchSpans(m: Match) {
     const prefix = `${m.line}: `, width = Math.max(0, inner() - cellWidth(prefix)), first = m.ranges[0]?.[0] ?? 0
     let from = Math.max(0, first - Math.floor(width / 3)); if (/[\uDC00-\uDFFF]/.test(m.text[from] ?? '')) from--
@@ -213,18 +226,22 @@ export function Search(props: {
     for (const [start, end] of m.ranges) { const a = Math.max(at, start - from), b = Math.min(visible.length, end - from); if (a > visible.length) break; if (b < a) continue; pieces.push({ text: visible.slice(at, a) }, { text: visible.slice(a, b), hit: true }); at = b }
     pieces.push({ text: visible.slice(at) + (visible !== text ? '…' : '') }); return pieces.map(p => ({ ...p, text: printable(p.text) }))
   }
-  return <box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
+  return <box flexDirection="column" flexGrow={browsing() ? 0 : 1} height={browsing() ? props.height : undefined} flexShrink={0} minHeight={0} overflow="hidden">
     <Show when={!replacing()} fallback={<Show when={props.header}><text height={1}>{' Replace preview'}</text></Show>}>
-      <box height={1} flexShrink={0} flexDirection="row">
+      <box id="search-field" height={fieldRows()} flexShrink={0} flexDirection="row" border={fieldRows() === 3 ? true : ['left', 'right']} borderColor={theme().text.action.primary.base}>
         <Show when={markers()}><text fg={theme().text.muted}>{fitEnd(markers(), Math.max(0, props.width - 12)) + ' '}</text></Show>
-        <input id={`search-${field()}`} width={Math.max(1, props.width - (editing() ? 8 : 1) - (markers() ? Math.min(cellWidth(markers()), Math.max(0, props.width - 12)) + 1 : 0))} focused={props.focused && editing() !== null} value={fieldValue()} placeholder={field() === 'replacement' ? 'Replace with' : field() === 'globs' ? 'Include/exclude: src/** !**/*.test.ts' : quick() ? 'Go to file' : 'Search'} onInput={change} onSubmit={() => { void submit().catch(fail) }} onMouseDown={() => setEditing(field())} on:focused={() => setEditing(field())} on:blurred={() => setEditing(null)} />
+        <input id={`search-${field()}`} width={Math.max(1, props.width - 2 - (editing() ? 8 : 0) - 6 - (markers() ? Math.min(cellWidth(markers()), Math.max(0, props.width - 12)) + 1 : 0))} focused={props.focused && editing() !== null} value={fieldValue()} placeholder={field() === 'replacement' ? 'Replace with' : field() === 'globs' ? 'Include/exclude: src/** !**/*.test.ts' : quick() ? 'Go to file' : 'Search · Enter'} onInput={change} onSubmit={() => { void submit().catch(fail) }} onMouseDown={() => setEditing(field())} on:focused={() => setEditing(field())} on:blurred={() => setEditing(null)} />
+        <text fg={theme().text.action.primary.base} onMouseDown={clear}> Clear</text>
         <Show when={editing()}><text fg={theme().text.action.primary.base} onMouseDown={() => invoke('back')}> Cancel</text></Show>
       </box>
-      <Show when={!compact() && !quick()}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(` ${s.caseSensitive ? '[Aa]' : 'Aa'} ${s.regex ? '[.*]' : '.*'} ${s.wholeWord ? '[\\b]' : '\\b'} ${s.globs}${s.engine === 'git grep' ? ' · git grep (first match per line)' : ''}`, props.width)}</text></Show>
+      <Show when={props.header && !browsing()}><text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitEnd(quick() ? 'Quick Open' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text></Show>
+      <Show when={!browsing() && !compact() && !quick()}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(` ${s.caseSensitive ? '[Aa]' : 'Aa'} ${s.regex ? '[.*]' : '.*'} ${s.wholeWord ? '[\\b]' : '\\b'} ${s.globs}${s.engine === 'git grep' ? ' · git grep (first match per line)' : ''}`, props.width)}</text></Show>
     </Show>
+    <Show when={!browsing()}>
     <For each={window()}>{row => <text id={`search-row-${row.id}`} height={1} flexShrink={0} bg={row.id === selected() ? theme().background?.action.primary.base : undefined} onMouseDown={() => { if (!row.passive) { setEditing(null); select(row.id); invoke(replacing() ? 'apply-file' : 'activate') } }}>
       {' '}<Show when={row.match} fallback={<span style={{ fg: row.diff ? row.diff.startsWith('+') ? theme().diff?.text.added : row.diff.startsWith('-') ? theme().diff?.text.removed : theme().diff?.text.hunkHeader : row.passive ? theme().text.muted : theme().text.base }}>{row.diff ? fitEnd(row.diff, inner()) : row.label?.includes('/') ? fitPath(row.label, inner()) : fitEnd(row.label ?? '', inner())}</span>}>{(m: () => Match) => <For each={matchSpans(m())}>{p => <span style={{ fg: p.hit ? theme().text.action.primary.base : theme().text.base }}>{p.text}</span>}</For>}</Show>
     </text>}</For>
     <Show when={!compact() && !quick() && !replacing() && s.summary}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(s.summary + (s.engine === 'git grep' ? ' · git grep' : ''), props.width)}</text></Show>
+    </Show>
   </box>
 }

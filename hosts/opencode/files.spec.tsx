@@ -182,9 +182,9 @@ test('changed events and newer selections win over delayed listings and previews
 test('filter typing keeps letter and digit commands out of the input', async () => {
   const f = fixture(); const r = await f.mount()
   f.key('f'); await r.flush()
-  f.key('4'); f.key('a'); f.key('h'); await r.flush()
+  f.key('3'); f.key('a'); f.key('h'); await r.flush()
   expect(f.prompts).toHaveLength(0); expect(r.captureCharFrame()).toContain('Filter:')
-  f.key('esc'); await r.flush(); f.key('4'); await r.flush(); expect(r.captureCharFrame()).not.toContain('Filter:')
+  f.key('esc'); await r.flush(); f.key('3'); await r.flush(); expect(r.captureCharFrame()).not.toContain('Filter:')
 })
 
 for (const width of [24, 40, 80, 120]) test(`Back preserves the Files filter and q stays typable at ${width} by five rows`, async () => {
@@ -301,7 +301,7 @@ for (const height of [2, 5]) test(`filter remains editable and suppresses shortc
   f.key('f'); await r.flush(); await r.mockInput.typeText('usr'); await r.flush()
   expect(r.captureCharFrame()).toContain('Filter: usr')
   expect(r.captureCharFrame()).toContain('user.ts')
-  f.key('4'); f.key('a'); f.key('h'); await r.flush()
+  f.key('3'); f.key('a'); f.key('h'); await r.flush()
   expect(r.captureCharFrame()).toContain('Filter: usr'); expect(f.prompts).toHaveLength(0)
   expect(r.captureCharFrame().split('\n').every((line) => cellWidth(line) <= 24)).toBe(true)
   expect(r.captureSpans().rows).toBe(height)

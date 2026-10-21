@@ -38,3 +38,5 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0021 | `0021-native-search-symbol-controls-and-path-evidence.md` | Compact native controls, fresh LSP checks, marked source previews and canonical path evidence |
 | 0022 | `0022-opencode-search-symbols-and-review-state.md` | Session-scoped OpenCode streams, stored replacement review and marked source targets |
 | 0023 | `0023-bounded-search-and-complete-replacement-review.md` | Estimated retention budgets and complete replacement review |
+| 0024 | `0024-focus-and-arrow-navigation.md` | Arrow-safe commit mode, input blur and unchanged selection handling |
+| 0025 | [Search inside Files](0025-search-inside-files.md) | Three tabs, submitted query drafts and retained Files navigation. |

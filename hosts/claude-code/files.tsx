@@ -21,6 +21,7 @@ import {
   readGit,
   readPane,
   readPreview,
+  readSearch,
   readTick,
   readTree,
   updatePane,
@@ -46,7 +47,7 @@ export type FilesFrame = {
 /** A letter key of the hint line and what pressing it does. */
 export type FilesAction = { key: string; run: () => void }
 
-export type FilesView = { header: RenderElement; body: RenderElement[]; actions: FilesAction[] }
+export type FilesView = { header: RenderElement; body: RenderElement[]; above?: RenderElement[]; actions: FilesAction[]; scrollable?: boolean }
 
 const ROW_PREFIX = 'row-'
 const ENTRY_LIMIT = 500
@@ -205,10 +206,15 @@ export function windowTop(mode: string, ids: readonly string[], selected: string
 
 /** The ring moved onto a row: it becomes the selection. */
 export async function focusFiles($: EngineInterface, element: string | undefined): Promise<void> {
+  const changed = focused !== element
   focused = element
-  if (element === undefined || !element.startsWith(ROW_PREFIX)) return
+  const pane = await readPane($)
+  if (currentView(pane) !== 'files') return
+  if (element === undefined || !element.startsWith(ROW_PREFIX) || pane.selected.files === element.slice(ROW_PREFIX.length)) {
+    if (changed) await bumpTick($)
+    return
+  }
   const id = element.slice(ROW_PREFIX.length)
-  if (currentView(await readPane($)) !== 'files') return
   await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id }))
 }
 
@@ -225,8 +231,8 @@ export async function scrollFiles($: EngineInterface, by: number): Promise<boole
   const from = sel === undefined ? -1 : lastIds.indexOf(sel)
   const to = Math.max(0, Math.min(lastIds.length - 1, from < 0 ? 0 : from + Math.sign(by) * Math.max(1, Math.abs(by))))
   const id = lastIds[to]!
-  await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id }))
-  await $.ui.focus({ requestId: 'jei', key: `${ROW_PREFIX}${id}` }).catch(() => undefined)
+  if (id !== sel) await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id }))
+  if (focused !== `${ROW_PREFIX}${id}`) await $.ui.focus({ requestId: 'jei', key: `${ROW_PREFIX}${id}` }).catch(() => undefined)
   return true
 }
 
@@ -358,7 +364,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     if (state.line !== undefined && pv.text !== undefined) {
       const s = sliced(pv.text)
       const target = Math.min(state.line, lastPreviewLines)
-      return { header, body: s.text.split('\n').map((source, i) => <Box key={`preview-line-${s.top + i + 1}`} flexDirection="row"><Text color={color('accent')}>{s.top + i + 1 === target ? '›' : ' '}</Text><Code source={source} language={pv.language} path={baseName(rel)} wrap="truncate-end" /></Box>), actions }
+      return { header, body: s.text.split('\n').map((source, i) => <Box key={`preview-line-${s.top + i + 1}`} flexDirection="row"><Text color={color('accent')}>{s.top + i + 1 === target ? '›' : ' '}</Text><Code source={source} language={pv.language} path={baseName(rel)} wrap="truncate-end" /></Box>), actions, scrollable: lastPreviewLines > rows }
     }
     switch (pv.kind) {
       case 'code': {
@@ -369,19 +375,19 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
           ) : (
             <Code source={s.text} path={baseName(rel)} startLine={inner >= 40 ? s.top + 1 : undefined} wrap="truncate-end" />
           )
-        return { header, body: [pad(code)], actions }
+        return { header, body: [pad(code)], actions, scrollable: lastPreviewLines > rows }
       }
       case 'markdown': {
         const s = sliced(pv.text ?? '')
         const body = state.source ? <Code source={s.text} language="markdown" wrap="truncate-end" /> : <Markdown key="markdown" text={s.text} />
-        return { header, body: [pad(body)], actions }
+        return { header, body: [pad(body)], actions, scrollable: lastPreviewLines > rows }
       }
       case 'csv':
       case 'tsv': {
         const lines = fitTable(pv.rows ?? [], inner)
         lastPreviewLines = lines.length
         const top = Math.max(0, Math.min(state.top, lines.length - 1))
-        return { header, body: lines.slice(top, top + rows).map((l, i) => line(l, {}, `table-${top + i}`)), actions }
+        return { header, body: lines.slice(top, top + rows).map((l, i) => line(l, {}, `table-${top + i}`)), actions, scrollable: lines.length > rows }
       }
       case 'image': {
         lastPreviewLines = 0
@@ -406,6 +412,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
 
   // Tree, or the filter's results.
   const tree = await readTree($)
+  const searchEditing = (await readSearch($, root)).editing !== null
   const activity = await readActivity($)
   const log = ActivityLog.from(activity)
   const now = Object.keys(activity).length > 0 ? await $.clock.now() : 0
@@ -418,7 +425,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
       <Text>{inner > 0 ? ' ' : ''}</Text>
       <Input
         key="filter"
-        autoFocus
+        autoFocus={searchEditing ? undefined : true}
         label="Filter"
         placeholder="file name"
         value={tree.filter}
@@ -559,5 +566,5 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   const filterPinned = tree.filtering && e.props.scroll.bodyRows < 6 ? [filterHeader] : []
   const rows = Math.max(0, frame.bodyRows - filterPinned.length)
   const top = windowTop(mode, ids, selected, rows)
-  return { header, body: [...filterPinned, ...items.slice(top, top + rows).map((i) => i.el)], actions }
+  return { header, body: [...filterPinned, ...items.slice(top, top + rows).map((i) => i.el)], actions, scrollable: items.length > rows }
 }

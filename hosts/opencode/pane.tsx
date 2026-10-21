@@ -14,7 +14,6 @@ import { TAB_NAMES, tabBar } from '../../core/shared/tabs.ts'
 import { insideRel } from '../../core/shared/paths.ts'
 import { Files } from './files.tsx'
 import { Git } from './git.tsx'
-import { Search } from './search.tsx'
 import { Symbols } from './symbols.tsx'
 import { JeiRpc } from './rpc.ts'
 
@@ -60,7 +59,6 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   const quickCacheScopes = new Set<string>()
   let filesAction: (action: string) => void = () => {}
   let gitAction: (action: string) => void = () => {}
-  let searchAction: (action: string) => void = () => {}
   let symbolsAction: (action: string) => void = () => {}
   const [editingAction, setEditingAction] = createSignal<() => boolean>(() => false)
   const editing = () => editingAction()()
@@ -68,8 +66,8 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   const [height, setHeight] = createSignal(dimensions().height)
   const width = () => Math.max(0, Math.floor(props.input.width))
   const isFiles = () => currentView(state()) === 'files.preview' || state().tab === 'files'
-  const activeAction = (action: string) => { if (isFiles()) filesAction(action); else if (state().tab === 'git') gitAction(action); else if (state().tab === 'search') searchAction(action); else symbolsAction(action) }
-  const showBack = () => height() >= 3 && (state().stack.length > 1 || editing()) && !(editing() && ['search', 'symbols'].includes(state().tab))
+  const activeAction = (action: string) => { if (isFiles()) filesAction(action); else if (state().tab === 'git') gitAction(action); else symbolsAction(action) }
+  const showBack = () => height() >= 3 && (state().stack.length > 1 || editing()) && !(editing() && ['files', 'search', 'quickopen', 'symbols', 'symbols.results'].includes(currentView(state())))
   const back = () => { if (error() || !snapshot()) dispatch({ type: 'back' }); else activeAction('back') }
   let stopped = false
   let received = 0
@@ -136,7 +134,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
     ],
   }))
   const tabs = createMemo(() => tabBar(width(), width(), state().tab))
-  const showHints = () => height() >= (state().tab === 'files' ? 10 : 5)
+  const showHints = () => height() >= (currentView(state()) === 'files' || currentView(state()) === 'files.preview' ? 10 : 5)
   const bodyHeight = () => Math.max(0, height() - (height() >= 3 ? 1 : 0) - (height() >= 8 ? 1 : 0) - (showHints() ? 1 : 0) - (showBack() ? 1 : 0))
   const hints = () => {
     const selected = state().selected.git ?? ''
@@ -165,6 +163,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
       <Files ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} options={snapshot()!.options} git={snapshot()!.git}
         state={state()} dispatch={dispatch} activity={activity()} now={now()} revision={revision()} width={width()}
         height={bodyHeight()} header={height() >= 6}
+        quickCacheScopes={quickCacheScopes} refresh={refreshAfterChange}
         focused={props.input.focused} bind={(run, isEditing) => { filesAction = run; setEditingAction(() => isEditing) }} />
     }>
       <Show when={state().tab !== 'git' || !snapshot() || error()} fallback={
@@ -173,9 +172,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
           height={bodyHeight()} header={height() >= 6}
           focused={props.input.focused} bind={(run, isEditing) => { gitAction = run; setEditingAction(() => isEditing) }} />
       }>
-      <Show when={state().tab === 'search'} fallback={<Symbols ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} state={state()} dispatch={dispatch} activity={activity()} revision={revision()} width={width()} height={bodyHeight()} header={height() >= 6} focused={props.input.focused} bind={(run, isEditing) => { symbolsAction = run; setEditingAction(() => isEditing) }} />}>
-        <Search ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} state={state()} dispatch={dispatch} activity={activity()} revision={revision()} quickCacheScopes={quickCacheScopes} refresh={refreshAfterChange} width={width()} height={bodyHeight()} header={height() >= 6} focused={props.input.focused} bind={(run, isEditing) => { searchAction = run; setEditingAction(() => isEditing) }} />
-      </Show>
+      <Symbols ctx={props.ctx} api={props.api} sessionID={props.input.sessionID} cwd={snapshot()!.cwd} state={state()} dispatch={dispatch} activity={activity()} revision={revision()} width={width()} height={bodyHeight()} header={height() >= 6} focused={props.input.focused} bind={(run, isEditing) => { symbolsAction = run; setEditingAction(() => isEditing) }} />
       </Show>
     </Show>}</Show>
     </Show>

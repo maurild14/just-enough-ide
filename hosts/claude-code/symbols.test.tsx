@@ -61,7 +61,7 @@ test('Find symbol editors and source labels survive the native surface and compa
     const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
     await ui.press({ key: 'key-f' })
     await ui.input({ key: 'symbols-find', text: 'qxw1234', kind: 'change' })
-    expect((await ui.find({ key: 'tab-2' }))?.props.hotkey).toBeUndefined()
+    expect((await ui.find({ key: 'tab-1' }))?.props.hotkey).toBeUndefined()
     expect(await ui.find({ key: 'key-c' })).toBeUndefined()
     for (const width of [24, 40, 80, 120]) {
       await ui.redraw(props(width, 5))
@@ -127,7 +127,7 @@ test('pending Find can leave and return to the cached outline without retaining 
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   seen.permission('allow'); seen.settings.holdWorkspace = true
   await ui.press({ key: 'key-f' }); await ui.input({ key: 'symbols-find', text: 'load', kind: 'submit' })
-  await ui.press({ key: 'tab-1' }); await ui.press({ key: 'tab-3' })
+  await ui.press({ key: 'tab-1' }); await ui.press({ key: 'tab-2' })
   await seen.clock.advance(400)
   await ui.press({ key: 'key-f' }); await ui.input({ key: 'symbols-find', text: 'save', kind: 'submit' })
   await seen.clock.advance(600)

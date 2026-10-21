@@ -13,7 +13,7 @@ import { focusBranches, scrollBranches } from '../hosts/claude-code/branches.tsx
 import { focusSearch, scrollSearch, stopSearch } from '../hosts/claude-code/search.tsx'
 import { enterSymbols, focusSymbols, scrollSymbols, stopSymbols } from '../hosts/claude-code/symbols.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
-import { initPane, PANE_ID, readCwd, readPane, resetGitUi, resetSearchSymbols, setCwd, updatePane, updateTree } from '../hosts/claude-code/state.ts'
+import { initPane, PANE_ID, readCwd, readPane, resetGitUi, resetSearchSymbols, setCwd, updatePane, updateTree, updateSearch } from '../hosts/claude-code/state.ts'
 
 const TITLE = 'JEI'
 
@@ -84,6 +84,7 @@ export const register: Register = (on, raw) => {
     await stopSearch($)
     await stopSymbols($)
     await updatePane($, (s) => reducePane(s, { type: 'tab', tab }))
+    if (tab === 'search') await updateSearch($, await readCwd($), s => ({ ...s, editing: 'query' }))
     if (rel) {
       const id = rel
       await updateTree($, (t) => ({ ...t, expanded: [...reveal(new Set(t.expanded), id)] }))
@@ -91,7 +92,7 @@ export const register: Register = (on, raw) => {
     }
     const opened = await openPane($)
     if (tab === 'symbols') void enterSymbols($).catch(err => $.ui.log(`jei: ${reason(err)}`))
-    return { text: opened ?? `JEI opened on ${TAB_NAMES[tab]}.` }
+    return { text: opened ?? `JEI opened on ${TAB_NAMES[tab === 'search' ? 'files' : tab]}.` }
   })
 
   // Observes only: a failure must never hold up the cd, so the catch passes it on.
@@ -120,9 +121,11 @@ export const register: Register = (on, raw) => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // Files, Git and the diff draw their own window (pinned header and hint), so they take the scroll.
-  on('ui.scroll', { requestId: 'jei' }, async ($, e, next) =>
-    (await scrollFiles($, e.by)) || (await scrollGitList($, e.by)) || (await scrollBranches($, e.by)) || (await scrollDiff($, e.by)) || (await scrollSearch($, e.by)) || (await scrollSymbols($, e.by)) ? {} : next(e),
+  // Each view owns its window; ignored scrolls must leave the pinned frame in place.
+  on('ui.scroll', { requestId: 'jei' }, async ($, e) => {
+    (await scrollFiles($, e.by)) || (await scrollGitList($, e.by)) || (await scrollBranches($, e.by)) || (await scrollDiff($, e.by)) || (await scrollSearch($, e.by)) || (await scrollSymbols($, e.by))
+    return {}
+  },
   ).catch(
     ($, e, next) => next(e),
   )

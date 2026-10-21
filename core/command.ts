@@ -1,10 +1,10 @@
 import type { Tab } from './keys.ts'
 import { toPosix } from './shared/paths.ts'
 
-const TABS: readonly Tab[] = ['files', 'search', 'symbols', 'git']
+const TABS: readonly (Tab | 'search')[] = ['files', 'search', 'symbols', 'git']
 
 /** Parse the argument of `/jei`: empty toggles, a tab name opens it, anything else reveals a path in Files. */
-export function parseJeiArgument(arg: string): { tab?: Tab; reveal?: string; toggle: boolean } {
+export function parseJeiArgument(arg: string): { tab?: Tab | 'search'; reveal?: string; toggle: boolean } {
   const text = arg.trim()
   if (text === '') return { toggle: true }
   const name = text.toLowerCase()

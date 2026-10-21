@@ -13,20 +13,21 @@ const refOf = (b: Branch) => `refs/${b.remote ? 'remotes' : 'heads'}/${b.name}`
 const lists = new Map<string, { ids: string[]; selected: string | undefined }>()
 
 export async function focusBranches($: EngineInterface, id: string | undefined): Promise<void> {
-  const view = currentView(await readPane($))
-  if (id && (id.startsWith('branch-refs/') || id.startsWith('compare-file-')) && (view === 'git.branches' || view === 'git.compare')) {
+  const pane = await readPane($), view = currentView(pane)
+  if (id && (id.startsWith('branch-refs/') || id.startsWith('compare-file-')) && (view === 'git.branches' || view === 'git.compare') && pane.selected[view] !== id) {
     await updatePane($, (s) => reducePane(s, { type: 'select', view, id }))
   }
 }
 
 export async function scrollBranches($: EngineInterface, by: number): Promise<boolean> {
-  const view = currentView(await readPane($))
+  const pane = await readPane($), view = currentView(pane)
   if (view !== 'git.branches' && view !== 'git.compare') return false
   const list = lists.get(await $.session.id())
   if (!list?.ids.length) return true
-  const from = list.ids.indexOf(list.selected ?? '')
+  const selected = pane.selected[view]
+  const from = list.ids.indexOf(selected && list.ids.includes(selected) ? selected : list.selected ?? '')
   const id = list.ids[Math.max(0, Math.min(list.ids.length - 1, from + by))]!
-  await updatePane($, (s) => reducePane(s, { type: 'select', view, id }))
+  if (pane.selected[view] !== id) await updatePane($, (s) => reducePane(s, { type: 'select', view, id }))
   await $.ui.focus({ requestId: 'jei', key: id }).catch(() => undefined)
   return true
 }
@@ -105,5 +106,5 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
     onSubmit={(branchFilter: string) => historyAct($, () => updateHistory($, root, (historyUi) => ({ ...historyUi, branchFilter, branchFiltering: false })))()} /></Box>)
   const room = Math.max(1, frame.bodyRows - pinned.length)
   const top = windowTop(view, items.map((i) => i.id), selected ?? ids[0], room)
-  return { header, body: [...pinned, ...items.slice(top, top + room).map((i) => i.el)], actions: comparing || historyUi.newBranch || historyUi.branchFiltering ? [] : actions }
+  return { header, body: [...pinned, ...items.slice(top, top + room).map((i) => i.el)], actions: comparing || historyUi.newBranch || historyUi.branchFiltering ? [] : actions, scrollable: items.length > room }
 }

@@ -2,6 +2,17 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, ROOT, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
 
+test('focusing the history filter preserves the selected graph row', async ($, on) => {
+  const r = await historyWorld($, on)
+  const ui = await historyPane($, 80)
+  await select($, ui, `graph-${A}`)
+  await ui.press({ key: 'key-f' })
+  const before = r.writes.length
+  await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'graph-filter', origin: { kind: 'person' } })
+  expect(r.writes.slice(before).filter(key => key === 'pane')).toEqual([])
+  await ui.unmount()
+})
+
 for (const action of ['stage', 'unstage', 'discard'] as const) test(`working selection and painted actions survive ${action} with history`, async ($, on) => {
   const r = await historyWorld($, on)
   const record = (status: string, path: string) => `1 ${status} N... 100644 100644 100644 ${A} ${A} ${path}`
@@ -37,7 +48,7 @@ for (const surface of ['terminal', 'desktop'] as const) test(`nested panes fit t
       const widths = lineWidths(await ui.drawn() as Node)
       expect(widths.length).toBeLessThanOrEqual(rows)
       for (const drawn of widths) expect(drawn).toBeLessThanOrEqual(width)
-      for (const tab of [1, 2, 3, 4]) expect(await ui.find({ key: `tab-${tab}` })).toBeDefined()
+      for (const tab of [1, 2, 3]) expect(await ui.find({ key: `tab-${tab}` })).toBeDefined()
       expect(await ui.find({ key: 'key-n' })).toBeDefined()
       if (rows >= 4) expect((await ui.find({ key: 'back' }))?.props.hotkey).toBe('q')
     }

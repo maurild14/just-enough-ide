@@ -13,9 +13,9 @@ export type HistoryUi = Mounted<'terminal' | 'desktop', 'Pane'>
 export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean; dirty?: boolean } = {}) {
   const clock = mock.clock(on, { now: 2_000_000_000_000 })
   const r = { root: ROOT, head: A, dirty: false, hooks: false, merge: false, topology: false, empty: false, upstream: '', ahead: 0, behind: 0, fetchError: '', copy: true, logError: false, branchesError: false, openerCode: 0, openerError: false,
-    runs: [] as string[][], copies: [] as string[], fills: [] as string[], toasts: [] as string[], tools: [] as string[],
+    runs: [] as string[][], copies: [] as string[], fills: [] as string[], toasts: [] as string[], tools: [] as string[], writes: [] as string[],
     reflog: [] as string[], shell: async (_command: string) => {}, session: 'history-session', base: true, originHead: '', remoteRef: 'origin/main', remoteHash: A, evidenceError: false, clock,
-    histories: {} as Record<string, Record<string, { agents: string[] }>>, records: null as string[] | null, comparedFiles: null as string[] | null, beforeRun: async (_argv: string[]) => {}, time: 2_000_000_000, ...initial }
+    histories: {} as Record<string, Record<string, { agents: string[] }>>, records: null as string[] | null, logHashes: null as string[] | null, comparedFiles: null as string[] | null, beforeRun: async (_argv: string[]) => {}, time: 2_000_000_000, ...initial }
   const out = (stdout = '', exitCode = 0, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
   const log = (hash: string) => {
     const parents = r.topology ? (hash === A ? `${B} ${C}` : hash === D ? '' : D) : hash === A ? (r.merge ? `${B} ${C}` : B) : ''
@@ -28,6 +28,7 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
     return e.plugin === 'jei' && e.key === 'history' && result.value ? { value: { ...result.value, value: r.histories[r.session] ?? {} } } : result
   })
   on('state.set', (_$, e, next) => {
+    r.writes.push(e.key)
     if (e.plugin === 'jei' && e.key === 'history') r.histories[r.session] = e.value as Record<string, { agents: string[] }>
     return next(e)
   })
@@ -51,7 +52,7 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
       if (r.empty) return out()
       const requested = a[a.indexOf('--end-of-options') + 1]
       if (a.includes('--end-of-options') && [A, B, C].includes(requested!)) return out(log(requested!))
-      const rows = a.some((v) => v.startsWith('--author=')) ? [B] : r.topology ? [A, B, C, D] : [r.head, ...(r.head === C ? [A, B] : [B])]
+      const rows = r.logHashes ?? (a.some((v) => v.startsWith('--author=')) ? [B] : r.topology ? [A, B, C, D] : [r.head, ...(r.head === C ? [A, B] : [B])])
       return out(rows.slice(0, Number(a[a.indexOf('-n') + 1])).map(log).join(''))
     }
     if (a.includes('rev-list')) return out(a.some((v) => v.includes('%ct')) ? `${r.head} 2000000000\n` : `${r.head} ${B}\n`)
@@ -86,7 +87,7 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
 
 export async function historyPane($: Engine, width: number, rows = 30, surface: 'terminal' | 'desktop' = 'terminal') {
   const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(width, rows) })
-  await ui.press({ key: 'tab-4' })
+  await ui.press({ key: 'tab-3' })
   return ui
 }
 

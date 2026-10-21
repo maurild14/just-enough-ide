@@ -2,7 +2,7 @@
 
 > The parts of an IDE you still need when the AI writes the code: a file tree, project search, symbols and a full Git panel, docked beside your Claude Code or OpenCode session.
 
-JEI is a pane with four tabs (Files, Search, Symbols, Git) that sits next to the agent's conversation. You watch what the agent reads and edits, review its changes and commit them, without leaving the session. Both hosts get the same features and the same keys from one codebase.
+JEI is a pane with three tabs (Files, Symbols, Git), with Search inside Files that sits next to the agent's conversation. You watch what the agent reads and edits, review its changes and commit them, without leaving the session. Both hosts get the same features and the same keys from one codebase.
 
 <!-- screenshots: added by the maintainer from acme-app before the public release -->
 
@@ -16,7 +16,7 @@ JEI is a pane with four tabs (Files, Search, Symbols, Git) that sits next to the
 - **Search:** streamed project results, case/regex/word toggles, include/exclude globs, one/all hand-off, and reviewed, confirmed UTF-8 replacement with changed-file refusal.
 - **Quick Open:** fuzzy files ranked by touched and recent paths, with `:line` previews.
 - **Symbols:** nested outlines, workspace search, definitions, references and lazy Callers/Calls. OpenCode is approximate; Claude Code can use an allowed LSP tool. Every list identifies its source.
-- **Keys:** `1`–`4` switch tabs; every view lists its keys on the last line.
+- **Keys:** `1`–`3` switch Files, Symbols and Git; every view lists its keys on the last line.
 
 Coming next (see the milestones in [PRD.md §11](PRD.md#11-milestones)):
 
@@ -28,7 +28,8 @@ Coming next (see the milestones in [PRD.md §11](PRD.md#11-milestones)):
 | Graph | `y` copy hash, `a` Ask, `b` branches, `f` filter, `t` fetch, `n` new branch from the selected commit |
 | Branches | `enter` switch, `n` new branch from HEAD, `c` compare, `f` filter |
 | Diff | `n/p` hunk, `j/k` file, `a` Ask, `o` editor |
-| Search | `enter` preview, `a` add result, `s` send all, `c/x/w` case/regex/word, `i` globs, `p` replace, `q` Quick Open |
+| Files | `s` focus Search, type then `enter` search, Clear restore tree |
+| Search | `b` Files, `f` edit query, `enter` preview, `a` add result, `s` send all, `c/x/w` case/regex/word, `i` globs, `p` replace, `q` Quick Open |
 | Quick Open | `enter` preview, `a` mention, `q` Search; append `:42` for a line |
 | Replace | `enter` apply file, `y` apply all, `a` Ask; every application confirms the reviewed plan |
 | Symbols | `enter` preview/expand calls, `d` definition, `r` references, `c` calls, `a` send, `f` find symbol |
@@ -40,6 +41,8 @@ Search and Quick Open reserve `q` for their mode toggle. Submit or Cancel leaves
 Search retains at most 2,000 result lines and an estimated 16 MiB of result data. Replace requires a complete search and a review within its estimated 32 MiB snapshot budget; narrow the search when either limit is reached. Previews show the changed lines with context, and every application confirms the reviewed plan.
 
 Search and Quick Open keep separate query text. Claude Code reports an explicit retryable error when its file list exceeds the host's 4 MiB output limit; streaming file enumeration remains deferred.
+
+Files keeps an outlined Search field above the project name. Press `s` to edit, Enter to search, arrows to select, and Enter to preview. Back restores the selected result; `b` returns to the retained tree. Clear or an empty submission clears Search. `/jei search` remains supported; an old `defaultTab: search` opens Files.
 
 ## Install
 
@@ -79,7 +82,7 @@ The same keys on both hosts. On Claude Code, set them in `/config` (on/off setti
 | Key | Values | Default | Meaning |
 | --- | --- | --- | --- |
 | `startOpen` | on / off | on | Open the pane when a session starts (where it can dock) |
-| `defaultTab` | `files`, `search`, `symbols`, `git` | `files` | Tab shown on open |
+| `defaultTab` | `files`, `symbols`, `git` | `files` | Tab shown on open |
 | `activity` | `reads and writes`, `writes`, `reads`, `none` | `reads and writes` | What the shimmer shows |
 | `followAgent` | on / off | on | The tree follows the files the agent touches |
 | `glyphs` | `auto`, `nerd`, `plain` | `auto` | Icon set |

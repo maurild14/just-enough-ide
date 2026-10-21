@@ -13,7 +13,7 @@ import type { JeiAsk, JeiCommitMode, JeiGit, JeiGitUi } from '../../types/index.
 import { mutationGuard, refreshAfterChange, refreshGit } from './activity.ts'
 import { historyConfirmation, renderGraph } from './graph.tsx'
 import { firstLine, hostFor, reason, windowTop, type FilesAction, type FilesFrame, type FilesView, type PaneRender } from './files.tsx'
-import { gitState, readCwd, readGit, readGitUi, readPane, readTick, setGit, updateGitUi, updatePane } from './state.ts'
+import { bumpTick, gitState, readCwd, readGit, readGitUi, readPane, readTick, setGit, updateGitUi, updatePane } from './state.ts'
 import { color, statusLook } from './theme.ts'
 
 export type Repo = Extract<JeiGit, { root: string }>
@@ -22,9 +22,7 @@ export type Group = 'staged' | 'changes'
 export type FileRow = { id: string; group: Group; entry: StatusEntry; status: FileStatus; added: number | null; removed: number | null }
 
 /**
- * Commit modes: `label` is the mode `Select`'s option, read after the
- * `[ Commit ]` Button (`[ Commit ] & Push ▾`), so the row says Commit once;
- * `title` names the Button where no Select is drawn.
+ * Short mode labels follow the Commit Button; mobile uses the full title.
  */
 const MODES: readonly { value: JeiCommitMode; label: string; title: string }[] = [
   { value: 'commit', label: 'Only', title: 'Commit' },
@@ -471,28 +469,34 @@ async function gitList($: EngineInterface): Promise<GitList> {
   return list
 }
 const GROUP_PREFIX = 'group-'
-const isRowKey = (k: string) => /^(change-|staged-|group-|graph-|commit-file-|checkout-|revert-|web-)/.test(k)
 
 /** The ring moved onto a Git row: it becomes the selection. */
 export async function focusGit($: EngineInterface, element: string | undefined): Promise<void> {
-  if (currentView(await readPane($)) !== 'git') return
+  const pane = await readPane($)
+  if (currentView(pane) !== 'git') return
   const list = await gitList($)
+  const changed = list.focused !== element
   list.focused = element
-  if (element === undefined || !isRowKey(element)) return
+  if (element === undefined || !list.ids.includes(element) || pane.selected.git === element) {
+    if (changed) await bumpTick($)
+    return
+  }
   if (currentView(await readPane($)) !== 'git') return
   await updatePane($, (s) => reducePane(s, { type: 'select', view: 'git', id: element }))
 }
 
 /** Scroll keys on the Git list move the selection. True when handled. */
 export async function scrollGitList($: EngineInterface, by: number): Promise<boolean> {
-  if (currentView(await readPane($)) !== 'git') return false
+  const pane = await readPane($)
+  if (currentView(pane) !== 'git') return false
   const list = await gitList($)
   if (!list.ids.length) return false
-  const from = list.selected === undefined ? -1 : list.ids.indexOf(list.selected)
+  const selected = pane.selected.git && list.ids.includes(pane.selected.git) ? pane.selected.git : list.selected
+  const from = selected === undefined ? -1 : list.ids.indexOf(selected)
   const to = Math.max(0, Math.min(list.ids.length - 1, from < 0 ? 0 : from + Math.sign(by) * Math.max(1, Math.abs(by))))
   const id = list.ids[to]!
-  await updatePane($, (s) => reducePane(s, { type: 'select', view: 'git', id }))
-  await $.ui.focus({ requestId: 'jei', key: id }).catch(() => undefined)
+  if (id !== pane.selected.git) await updatePane($, (s) => reducePane(s, { type: 'select', view: 'git', id }))
+  if (list.focused !== id) await $.ui.focus({ requestId: 'jei', key: id }).catch(() => undefined)
   return true
 }
 
@@ -567,10 +571,9 @@ function plural(n: number, word: string): string {
 export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesFrame, options: Options): Promise<FilesView> {
   const els = $.ui.resolve(e)
   const { Box, Text, Button } = els
-  // Mobile draws no Input and no Select (its element table has neither, though the resolved table may
-  // still carry them): the message then shows as text and Commit names the mode.
+  // Mobile has no editable message field; Commit names the retained mode.
   const Input = e.surface !== 'mobile' && 'Input' in els ? els.Input : undefined
-  const Select = e.surface !== 'mobile' && 'Select' in els ? els.Select : undefined
+  const showMode = e.surface !== 'mobile'
   const root = await readCwd($)
   const g = await readGit($)
   const ui = await readGitUi($)
@@ -762,8 +765,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
       line(ui.message === '' ? placeholder : ui.message, { dim: ui.message === '' }, 'message')
     ),
   })
-  // With the mode Select beside it the Button is the verb alone; without one it names the mode.
-  const modeLabel = Select ? 'Commit' : (MODES.find((m) => m.value === ui.mode)?.title ?? 'Commit')
+  const modeLabel = showMode ? 'Commit' : (MODES.find((m) => m.value === ui.mode)?.title ?? 'Commit')
   const canCommit = ui.message.trim() !== '' && ui.busy === null
   const controls: { el: RenderElement; w: number }[] = []
   controls.push(
@@ -778,18 +780,15 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
           ),
         },
   )
-  if (Select) {
-    const w = Math.max(...MODES.map((m) => cellWidth(m.label))) + 2
+  if (showMode) {
+    const w = Math.max(...MODES.map((m) => cellWidth(m.label))) + CHROME
     controls.push({
       w,
       el: (
-        <Select
+        <Button
           key="commit-mode"
-          options={MODES.map((m) => ({ value: m.value, label: m.label }))}
-          value={ui.mode}
-          onSelect={(value: string) =>
-            act($, () => updateGitUi($, (u) => ({ ...u, mode: MODES.some((m) => m.value === value) ? (value as JeiCommitMode) : u.mode })))()
-          }
+          label={MODES.find(m => m.value === ui.mode)?.label ?? 'Only'}
+          onPress={act($, () => updateGitUi($, u => ({ ...u, mode: MODES[(MODES.findIndex(m => m.value === u.mode) + 1) % MODES.length]!.value })))}
         />
       ),
     })
@@ -971,7 +970,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
   if (room <= 0) return { header, body: pinned.slice(0, bodyRows), actions }
   const ids = items.map((i) => i.id)
   const top = windowTop('git', ids, selected, room)
-  return { header, body: [...pinned, ...items.slice(top, top + room).map((i) => i.el)], actions }
+  return { header, body: [...pinned, ...items.slice(top, top + room).map((i) => i.el)], actions, scrollable: items.length > room }
 }
 
 /** The Changes or Staged row a diff came from, and its neighbours, for `j`/`k`. */

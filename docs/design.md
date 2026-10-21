@@ -9,7 +9,7 @@ JEI is drawn in character cells. There are no pixels and no fonts to pick, and t
 ## 1. Principles
 
 1. **Text first.** Show names, letters and numbers. Glyphs add meaning only where text would cost more columns.
-2. **Quiet by default.** Use one accent color outside Git history. Graph lanes, reference kinds and Branches names use a small semantic host palette to make topology and provenance readable (ADR 0017). Everything else that isn't selected, changed or active is plain or muted. Draw no boxes.
+2. **Quiet by default.** Use one accent color outside Git history. Graph lanes, reference kinds and Branches names use a small semantic host palette to make topology and provenance readable (ADR 0017). Everything else that isn't selected, changed or active is plain or muted. Only the Files Search field draws an accent outline (ADR 0025).
 3. **Never break.** At any width or height, every line fits, nothing wraps and the selected row stays visible.
 4. **Color is never the only signal.** Every colored state also has a letter, glyph or word, so `NO_COLOR` still works.
 5. **Motion only means "the agent just did this".** The activity shimmer is the only animation.
@@ -68,7 +68,7 @@ Middle lane vacancies remain blank until reused so live continuations do not shi
 ## 4. Layout grid
 
 ```
-1 Files  2 Search  3 Symbols  4 Git      tab bar      (pinned)
+1 Files  2 Symbols  3 Git      tab bar      (pinned)
 ──────────────────────────────────────   rule, muted  (pinned)
  ⎇ main*  ↑1 ↓2                 Sync     header row   (pinned)
  ▾ src                             M     body         (scrolls)
@@ -92,7 +92,7 @@ These widths are pane widths, not terminal widths. Rows are rendered from a pure
 
 | Element | ≥100 (L) | 60–99 (M) | 32–59 (S) | <32 (XS) |
 | --- | --- | --- | --- | --- |
-| Tab bar | `1 Files  2 Search  3 Symbols  4 Git` | same | active tab named, rest numbers: `1 Files  2  3  4` | numbers only: `1 2 3 4` |
+| Tab bar | `1 Files  2 Symbols  3 Git` | same | active tab named, rest numbers: `1 Files  2  3` | numbers only: `1 2 3` |
 | Nerd icons | yes | yes | no | no |
 | Files row | name, roll-up count, status | name, status | name, status | name, status; indent 1 |
 | Git change row | `M` name, folder, `+12 −3` | `M` name, folder, `+12 −3` | `M` name, `+12 −3` | `M` name |
@@ -128,6 +128,12 @@ Claude Code keeps the six working action hints on working rows and substitutes t
 ## 6. Height rules
 
 OpenCode's commit input edits only the first line of a generated message; a retained body changes the control label to `Edit subject (body kept)`. Enter commits the complete draft, and a blank subject disables committing. The branch-aware message placeholder appears from 60 columns when it fits; narrower panels use `Message`. Smart-commit guidance appears only when smart commit will stage existing changes, never for amend or with smart commit disabled.
+
+Claude's separate commit-mode Button cycles `Only` → `& Push` → `Amend` on click/Enter without committing. It never captures Up/Down. Search/Symbols input blur restores action and tab hotkeys without clearing text or results. List focus and boundary scrolling do not rewrite unchanged selection; a changed focus indicator still redraws. See ADR 0024.
+
+Claude views with undisplayed content report `scrollable` to the pane shell. Its visible frame stays at the viewport height; an empty, nonfocusable row after the frame keeps native arrows routed through `ui.scroll` instead of into footer Buttons. That row is outside the viewport and consumes no visible content or hint row. Short inline lists retain their natural height. Every view's scroll remains within its own window, including ignored editor wheel events (ADR 0024).
+
+Search, Quick Open and Symbols use their editor's Cancel while typing, at every height. Suppress the separate Back row during editing so taking input focus does not insert a row above the field under the pointer. Nested views retain their normal Back control outside editing.
 
 - The tab bar and header row stay pinned, the hint line stays pinned at the bottom, and only the body scrolls. An active OpenCode Files filter and the Git commit message keep one editable input row even when the normal header is hidden, including heights 2 and 5; the result viewport keeps at least one row. Git's other controls participate in the selection-anchored scroll window and remain reachable by arrows/Enter.
 - When rows run short, OpenCode Git-family views (working Git, Graph, Branches and diff) keep a fitted hint at five rows and above, reserving that row before computing the body viewport. OpenCode Search/Symbols also keep hints from five rows (ADR 0022); Files retains the ten-row threshold. On Claude Code the letter keys live on the hint line's Buttons, so a view with letter actions keeps the hint, bare (keycaps, no labels), and drops it only below 3 rows (`docs/decisions/0009-esc-is-host-reserved-on-claude-code.md`). Below 8, hide the rule. Below 6, hide the header row; its key facts move into the tab bar's right side if they fit. Below 3, render only the body.
@@ -205,7 +211,7 @@ Render every view (Files tree, Files preview, Search, Quick Open, Symbols, Git, 
 - **Widths:** 24, 40, 80, 120, and 200 as a smoke test. **Heights:** 10, 24 and 5.
 - For each render, assert all of the following:
   - [ ] Every line's display width (wcwidth) is ≤ the pane width, with no partial wide character at the edge.
-  - [ ] The output is exactly `height` lines, and only preview and diff content has continuation lines.
+  - [ ] The visible output is exactly `height` lines, and only preview and diff content has continuation lines. Claude's empty native scroll-range row remains outside that viewport.
   - [ ] The selected row is inside the body viewport.
   - [ ] The tab bar and hint line are each ≤ the width, and the hint never ends in a catch-all item.
   - [ ] Status letters are present on every changed row at every width.
@@ -217,3 +223,5 @@ Render every view (Files tree, Files preview, Search, Quick Open, Symbols, Git, 
 - **Shimmer:** a touch produces 8 frames in truecolor and 3 frames with 16 colors, then a static `•`. `activity: none` produces 0 frames.
 
 OpenCode keeps its permanent shared key layer active while short panes hide chrome. Contextual Graph hints select applicable keys from the shared map. OpenCode working-row hints omit commit-only `y/a/n`, preserving room for Generate and Sync. Expanded OpenCode files show a muted, nonselectable `Loading…` row while details are pending. Filter/name editors use native editable dialogs; cancel retains the prior filter and confirmations use the fresh core question. Historical diff paths keep a body row at short heights. See ADRs 0015 and 0016.
+
+Files Search (ADR 0025) sits above the project name, with an accent-colored outline and visible Clear control. Tall panes use three rows for the frame; compact panes use one row with side borders. Editing does not insert a separate Back row. Enter shows results; Search f edits and b returns to the retained tree. Files keeps its filename filter; compact filter editing may temporarily hide Search.

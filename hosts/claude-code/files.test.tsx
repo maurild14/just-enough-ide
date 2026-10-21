@@ -33,6 +33,21 @@ const posix = (p: string) => p.replaceAll('\\', '/').replace(/^[A-Za-z]:/, '')
 
 const FILES = ['README.md', 'people.csv', 'logo.bin', 'big.log', 'empty.txt', 'src/index.ts', 'src/api/user.ts']
 
+test('repeated Files focus and boundary scroll leave selection state unchanged', async ($, on) => {
+  const writes: string[] = []
+  on('state.set', (_$, e, next) => { writes.push(e.key); return next(e) })
+  on('ui.focus', () => ({}))
+  await world($, on)
+  const ui = await mountAt($)
+  const focus = { component: 'Pane' as const, requestId: 'jei', plugin: 'jei', element: 'row-docs', origin: { kind: 'person' as const } }
+  await $.ui.focus(focus)
+  const before = writes.length
+  await $.ui.focus(focus)
+  await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: -1, bodyRows: 24, contentRows: 30, origin: { kind: 'person' } })
+  expect(writes.slice(before).filter(key => key === 'pane' || key === 'tick')).toEqual([])
+  await ui.unmount()
+})
+
 function paneProps(bodyColumns: number, bodyRows = 24) {
   return { title: 'JEI', isFocused: true, bodyColumns, placement: 'dock' as const, scroll: { offset: 0, bodyRows }, view: {} }
 }
@@ -544,7 +559,7 @@ test('Files filtering fits three, four and five rows and retains editable cancel
       for (const drawn of widths) expect(drawn).toBeLessThanOrEqual(width)
       expect((await ui.find({ key: 'filter' }))?.props.value).toBe('user')
       expect(await ui.find({ key: 'key-f' })).toBeDefined()
-      for (const tab of [1, 2, 3, 4]) expect(await ui.find({ key: `tab-${tab}` })).toBeDefined()
+      for (const tab of [1, 2, 3]) expect(await ui.find({ key: `tab-${tab}` })).toBeDefined()
       if (rows >= 4) {
         expect((await ui.find({ key: 'back' }))?.props.hotkey).toBeUndefined()
         await ui.press({ key: 'back' })

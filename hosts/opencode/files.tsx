@@ -18,6 +18,7 @@ import { insideRel, nativeRel, joinPath, toPosix } from '../../core/shared/paths
 import { activityColor } from './colors.ts'
 import { handToAgent } from './hand-off.ts'
 import type { JeiRpc } from './rpc.ts'
+import { Search } from './search.tsx'
 
 type Preview = Awaited<ReturnType<typeof loadPreview>>
 type Listing = { entries: DirEntry[]; ignored: string[]; failed?: boolean }
@@ -63,6 +64,7 @@ function readPreview(value: unknown): Preview {
 export function Files(props: {
   ctx: Plugin.Context; api: RpcClient<typeof JeiRpc>; sessionID: string; cwd: string; options: Options; git: Record<string, unknown>
   state: PaneState; dispatch: (action: PaneAction) => void; activity: ActivityLog; now: number; revision: number
+  quickCacheScopes: Set<string>; refresh: () => Promise<void>
   width: number; height: number; header: boolean; focused: boolean; bind: (run: (action: string) => void, editing: () => boolean) => void
 }) {
   const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set())
@@ -76,6 +78,8 @@ export function Files(props: {
   const [preview, setPreview] = createSignal<Preview>()
   const [previewRel, setPreviewRel] = createSignal('')
   const [top, setTop] = createSignal(0)
+  const [searchEditing, setSearchEditing] = createSignal<() => boolean>(() => false)
+  let searchAction: (action: string) => void = () => {}
   let treeTop = 0
   let previewTarget: { rel: string; line: number } | undefined
   let stopped = false
@@ -85,9 +89,11 @@ export function Files(props: {
   const selected = () => props.state.selected.files
   const isPreview = () => currentView(props.state) === 'files.preview'
   const relOf = (path: string) => insideRel(cwd(), path)
-  const editing = () => filtering() && !isPreview()
+  const searching = () => ['search', 'quickopen', 'search.replace'].includes(currentView(props.state))
+  const editing = () => !isPreview() && (filtering() && !searching() || searchEditing()())
+  const searchRows = () => isPreview() || searching() || filtering() && props.height < 4 ? 0 : props.height >= 6 ? 3 : Math.min(1, Math.max(0, props.height - 1))
   const inner = () => Math.max(0, props.width - 2)
-  const room = () => Math.max(0, props.height - (props.header || editing() ? 1 : 0))
+  const room = () => Math.max(0, props.height - searchRows() - (props.header || filtering() ? 1 : 0))
   const theme = () => props.ctx.theme
   const syntax = createMemo(() => SyntaxStyle.fromStyles(Object.fromEntries(Object.entries(theme().syntax ?? {}).map(([name, fg]) => [name, { fg: fg as RGBA }]))))
   createEffect(() => { const style = syntax(); onCleanup(() => style.destroy()) })
@@ -240,7 +246,11 @@ export function Files(props: {
       case 'toggle-markdown-source': return
     }
   }
-  const invoke = (action: string) => { void run(action).catch(() => props.ctx.ui.toast.show({ message: 'Unable to complete Files action.', variant: 'error' })) }
+  const invoke = (action: string) => {
+    if (!isPreview() && (searching() || action === 'search' || searchEditing()() && !['move-up', 'move-down'].includes(action))) { searchAction(action === 'search' && !searching() ? 'edit' : action === 'activate' && searchEditing()() ? 'submit' : action); return }
+    if (!isPreview() && searchEditing()()) searchAction('blur')
+    void run(action).catch(() => props.ctx.ui.toast.show({ message: 'Unable to complete Files action.', variant: 'error' }))
+  }
   props.bind(invoke, editing)
   const table = createMemo(() => fitTable(preview()?.rows ?? [], inner()))
   const notice = () => {
@@ -278,9 +288,11 @@ export function Files(props: {
     return RGBA.fromValues(fg.r + (accent.r - fg.r) * weight, fg.g + (accent.g - fg.g) * weight, fg.b + (accent.b - fg.b) * weight)
   }
   return <box flexDirection="column" flexGrow={1} minHeight={0}>
-    <Show when={props.header || editing()}>
-      <Show when={editing()} fallback={<text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitPath(isPreview() ? previewPath() || '' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text>}>
-        <box height={1} flexShrink={0} flexDirection="row"><text fg={theme().text.muted}>{fitEnd(' Filter: ', props.width)}</text><input width={Math.max(1, props.width - 9)} focused={props.focused} value={query()} onInput={setQuery} onSubmit={() => invoke('activate')} /></box>
+    <Show when={!isPreview() && (searching() || searchRows() > 0)}><Search {...props} height={searching() ? props.height : searchRows()} bind={(run, isEditing) => { searchAction = run; setSearchEditing(() => isEditing) }} /></Show>
+    <Show when={!searching()}>
+    <Show when={props.header || filtering()}>
+      <Show when={filtering() && !isPreview()} fallback={<text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitPath(isPreview() ? previewPath() || '' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text>}>
+        <box height={1} flexShrink={0} flexDirection="row"><text fg={theme().text.muted}>{fitEnd(' Filter: ', props.width)}</text><input width={Math.max(1, props.width - 14)} focused={props.focused && !searchEditing()()} value={query()} onInput={setQuery} onSubmit={() => invoke('activate')} /><text fg={theme().text.action.primary.base} onMouseDown={() => invoke('back')}> Back</text></box>
       </Show>
     </Show>
     <box flexGrow={1} minHeight={1} overflow="hidden" flexDirection="column">
@@ -293,5 +305,6 @@ export function Files(props: {
         </Show>}><box flexDirection="row" height={room()} overflow="hidden"><text width={2} fg={theme().text.action.primary.base}>{source().slice(top(), top() + room()).map((_, i) => top() + i + 1 === markedLine() ? '> ' : '  ').join('\n')}</text><code id="files-target-code" width={Math.max(0, inner() - 1)} height={room()} content={source().slice(top(), top() + room()).join('\n')} filetype={preview()?.language} syntaxStyle={syntax()} wrapMode="none" fg={theme().text.base} conceal={false} /></box></Show>
       </Show>
     </box>
+    </Show>
   </box>
 }
