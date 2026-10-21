@@ -1,3 +1,4 @@
+import { focusInput, inputValue } from './inputs.ts'
 import type { EngineInterface, RenderElement, Timer } from 'claude-code'
 import { KEYS } from '../../core/keys.ts'
 import { latest } from '../../core/latest.ts'
@@ -73,6 +74,7 @@ export async function searchEditing($: EngineInterface): Promise<boolean> {
   return ['search', 'quickopen', 'search.replace'].includes(view) && (await readSearch($, await readCwd($))).editing !== null
 }
 export async function leaveSearchEditor($: EngineInterface): Promise<boolean> {
+  focusInput(undefined)
   const root = await readCwd($), s = await readSearch($, root)
   if (!s.editing && !s.confirm) return false
   await updateSearch($, root, u => ({ ...u, editing: null, confirm: null }))
@@ -221,11 +223,12 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
       await $.ui.focus({ requestId: 'jei', key: 'search-row-match-0' }).catch(() => {})
     }
     const cancel = s.editing ? <Button key="search-cancel" plain label="Cancel" onPress={act($, async () => { await leaveSearchEditor($); await $.ui.focus({ requestId: 'jei', key: 'search-row-match-0' }).catch(() => {}) })} /> : null
-    const field = Input ? <Box flexDirection="row" width={Math.max(0, frame.columns - 1)}><Text> </Text><Text color={fieldColor}>│ </Text><Box flexGrow={1}><Input key={`search-${kind}`} submitLabel={kind === 'query' ? quick ? 'open' : 'search' : kind === 'replacement' ? 'review' : 'apply'} placeholder={placeholder} value={value} autoFocus={s.editing === kind ? true : undefined} onInput={value => act($, () => change(value))()} onSubmit={value => act($, () => submit(value))()} /></Box><Text> </Text>{cancel}{cancel && <Text> · </Text>}<Button key="search-clear" plain label="Clear" onPress={act($, clear)} /><Text color={fieldColor}> │</Text></Box>
+    const field = Input ? <Box flexDirection="row" width={Math.max(0, frame.columns - 1)}><Text> </Text><Text color={fieldColor}>│ </Text><Box flexGrow={1}><Input key={`search-${kind}`} submitLabel={kind === 'query' ? quick ? 'open' : 'search' : kind === 'replacement' ? 'review' : 'apply'} placeholder={placeholder} value={inputValue(`search-${kind}`, value)} autoFocus={s.editing === kind ? true : undefined} onInput={value => act($, () => change(value))()} onSubmit={value => act($, () => submit(value))()} /></Box><Text> </Text>{cancel}{cancel && <Text> · </Text>}<Button key="search-clear" plain label="Clear" onPress={act($, clear)} /><Text color={fieldColor}> │</Text></Box>
       : <Box flexDirection="row"><Text>{fitEnd(`${placeholder}: ${value} (input unavailable)`, Math.max(0, inner - (s.editing ? 6 : 0)))}</Text>{cancel}</Box>
     return <Box key="search-field" flexDirection="column">{searchRows >= 3 && text('┌' + '─'.repeat(Math.max(0, inner - 2)) + '┐', 'search-border-top', true)}{field}{searchRows >= 3 && text('└' + '─'.repeat(Math.max(0, inner - 2)) + '┘', 'search-border-bottom', true)}</Box>
   }
   async function clear() {
+    focusInput(undefined)
     await stopSearch($)
     await updateSearch($, root, u => ({ ...u, draft: '', text: '', matches: [], summary: '', editing: null }))
     await updatePane($, p => reducePane(p, { type: 'tab', tab: 'search' }))

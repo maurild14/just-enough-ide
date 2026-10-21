@@ -1,3 +1,4 @@
+import { inputValue } from './inputs.ts'
 import type { EngineInterface } from 'claude-code'
 import { branches, compare } from '../../core/git/service.ts'
 import { branchLine, type Branch } from '../../core/git/branches.ts'
@@ -101,7 +102,7 @@ export async function renderBranches($: EngineInterface, e: PaneRender, frame: F
   ]
   const question = ui.ask?.kind === 'history' && ui.ask.root === root ? ui.ask : null
   const pinned = question ? historyConfirmation($, e, frame, question) : await branchInput($, e, frame, root)
-  if (!question && historyUi.branchFiltering && Input) pinned.push(<Box key="branch-filter-row" flexDirection="row"><Text> </Text><Input key="branch-filter" value={historyUi.branchFilter} placeholder="Filter branches"
+  if (!question && historyUi.branchFiltering && Input) pinned.push(<Box key="branch-filter-row" flexDirection="row"><Text> </Text><Input key="branch-filter" value={inputValue('branch-filter', historyUi.branchFilter)} placeholder="Filter branches"
     onInput={(branchFilter: string) => historyAct($, () => updateHistory($, root, (historyUi) => ({ ...historyUi, branchFilter })))()}
     onSubmit={(branchFilter: string) => historyAct($, () => updateHistory($, root, (historyUi) => ({ ...historyUi, branchFilter, branchFiltering: false })))()} /></Box>)
   const room = Math.max(1, frame.bodyRows - pinned.length)

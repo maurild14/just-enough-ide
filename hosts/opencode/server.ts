@@ -1,7 +1,7 @@
 import { Plugin } from '@opencode/plugin'
 import { lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { prepareFsOp, planFsOp, verifyFsOp, type FsOp, type FsPreparation } from '../../core/fsops.ts'
-import { classifyTool } from '../../core/activity/classify.ts'
+import { classifyTool, type ActivityKind } from '../../core/activity/classify.ts'
 import { ActivityLog, allows } from '../../core/activity/log.ts'
 import { allFiles, listDir, loadPreview, openFile } from '../../core/files/service.ts'
 import { openUrlArgv } from '../../core/files/open.ts'
@@ -80,6 +80,7 @@ export default Plugin.define({
     const host = nodeHost((prompt, model) => ctx.generate.text({ prompt, ...(model ? { model: parseModel(model) } : {}) }).then((r) => r.text))
     const options = parseOptions(ctx.options)
     const activity = new ActivityLog()
+    const activeTools = new Map<string, { root: string; kind: ActivityKind; rels: string[] }>()
     const controller = new AbortController()
     let stopped = false
     let serial = 0
@@ -443,11 +444,23 @@ export default Plugin.define({
         const key = `${event.sessionID}\0${event.id}`
         if (windows.has(key)) { invalidate(); return }
         windows.set(key, agentWindow(event.sessionID))
+        const touch = classifyTool(event.tool, event.input)
+        if (touch && allows(options.activity, touch.kind)) {
+          const root = ctx.location.directory
+          const rels = [...new Set(touch.paths.map(path => insideRel(root, path)).filter((rel): rel is string => !!rel))]
+          activeTools.set(key, { root, kind: touch.kind, rels })
+          for (const rel of rels) { activity.start(rel, touch.kind, Date.now()); await emit('activity', { rel, kind: touch.kind, active: true }) }
+        }
         await windows.get(key)
       }))
       hooks.push(await ctx.tool.hook('execute.after', async (event) => {
         if (stopped) return
         const key = `${event.sessionID}\0${event.id}`
+        const active = activeTools.get(key); activeTools.delete(key)
+        if (active) for (const rel of active.rels) {
+          activity.finish(rel, active.kind, Date.now())
+          if (active.root === ctx.location.directory) await emit('activity', { rel, kind: active.kind, active: false })
+        }
         const pending = windows.get(key); windows.delete(key)
         try { await (await pending)?.() } catch { invalidate() }
         if (event.status !== 'completed') return

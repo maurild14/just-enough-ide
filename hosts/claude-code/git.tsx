@@ -1,3 +1,4 @@
+import { inputValue, resetInput } from './inputs.ts'
 import type { EngineInterface, RenderElement } from 'claude-code'
 import { commitPlan, discard, generateMessage, initRepo, runSteps, snapshot, stage, sync, unstage } from '../../core/git/service.ts'
 import type { GitSnapshot } from '../../core/git/service.ts'
@@ -344,6 +345,7 @@ async function commitNow($: EngineInterface, options: Options, confirmed: readon
     await setAsk($, null)
     try {
       await runHookAware($, fresh.root, plan.steps, plan.viaAgentShell)
+      resetInput('message')
       await updateGitUi($, (u) => ({ ...u, message: '' }))
       $.ui.toast(ui.mode === 'commit-push' ? 'Committed and pushed.' : 'Committed.')
     } catch (err) {
@@ -353,7 +355,8 @@ async function commitNow($: EngineInterface, options: Options, confirmed: readon
           return
         }
         // The commit landed; only its push is unfinished. The message is spent.
-        await updateGitUi($, (u) => ({ ...u, message: '' }))
+        resetInput('message')
+      await updateGitUi($, (u) => ({ ...u, message: '' }))
         $.ui.toast(`Committed. ${stillRunning(RUNNING_WHAT[err.step] ?? 'Push', err)}`)
         return
       }
@@ -424,7 +427,7 @@ async function generate($: EngineInterface, options: Options): Promise<void> {
       try {
         const text = await generateMessage(hostFor($, g.root), g.root, options.commitModel, stagedCount)
         if (text === '') $.ui.toast('The model gave no message.')
-        else await updateGitUi($, (u) => ({ ...u, message: text }))
+        else { resetInput('message'); await updateGitUi($, (u) => ({ ...u, message: text })) }
       } catch (err) {
         $.ui.toast(`Can't generate a message: ${trimDot(firstLine(err))}.`)
       }
@@ -750,7 +753,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
         <Input
           key="message"
           placeholder={placeholder}
-          value={ui.message}
+          value={inputValue('message', ui.message)}
           submitLabel="commit"
           onInput={setMessage}
           onSubmit={(value: string) =>

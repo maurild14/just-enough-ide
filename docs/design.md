@@ -16,7 +16,7 @@ JEI is drawn in character cells. There are no pixels and no fonts to pick, and t
 
 ## 2. Color roles
 
-Views use semantic tokens only. No view contains a literal RGB, hex or ANSI color. Both hosts supply theme colors (dark and light). Claude Code maps roles in `theme.ts`; OpenCode's activity accent mapping lives in `colors.ts` and uses the resolved context theme. When a host gives no value for a token, the fallback is the ANSI 16-color name shown below, so the terminal palette still applies.
+Views use semantic tokens only. No view contains a literal RGB, hex or ANSI color. Claude Code maps roles in `theme.ts`; OpenCode's `colors.ts` resolves the three activity hues through light/dark palettes so a theme's blue info color cannot turn a read blue. Other roles use resolved host theme colors. When a host gives no value for a token, the fallback is the ANSI 16-color name shown below, so the terminal palette still applies.
 
 | Token | Used for | Fallback |
 | --- | --- | --- |
@@ -204,10 +204,10 @@ The latest successful target and its ancestor chain stay visible while selected,
 
 ## 9. Motion: activity shimmer
 
-- When a row is touched, the name's foreground starts in the activity color and returns to `fg` in **8 steps of 250 ms (2 s in total)**. In truecolor, each step mixes linearly from the token's color to `fg` in the theme layer. With 16 colors there are **3 steps**: bold activity color (0–700 ms), activity color (700–1400 ms), dim activity color (1400–2000 ms).
+- Known file operands stay at full activity color while a tool is running, including overlapping calls. After the final completion, the name's foreground returns to `fg` in **8 steps of 250 ms (2 s in total)**. Result-only paths begin fading when reported. In truecolor, each step mixes linearly from the token's color to `fg` in the theme layer. With 16 colors there are **3 steps**: bold activity color (0–700 ms), activity color (700–1400 ms), dim activity color (1400–2000 ms).
 - When it ends, the gutter shows `•` in the dim activity color for the rest of the session. That marker is the only thing that persists.
 - Touching the row again restarts the fade. Only visible rows animate, and rows that scroll off show their end state when they return.
-- On the selected row, only the gutter marker shimmers, so the selection stays readable.
+- The entire name area (indentation, icon, name and padding) shimmers on selected and unselected rows; the status letter retains its status color. Selected active names stay bold/underlined. Claude avoids explicit inverse on the active name, retaining the native focus indicator; OpenCode uses the normal theme background while the selected name glows. Containing folders inherit the latest eligible active descendant's color at a softer strength (dim on Claude, 45% tint on OpenCode). Their inherited tint disappears after the fade. See ADR 0030.
 - `activity: none` shows nothing: no fade and no marker. The host's reduced-motion setting skips the fade and shows the marker straight away.
 - Claude Code paints with theme keys only, which cannot be mixed, so it always uses the 3-step form (`shimmerPhase` in `core/activity/log.ts`), redrawn every 250 ms only while a row glows.
 - There is no other animation: no spinners, no sliding, no blinking cursor except the host's own.

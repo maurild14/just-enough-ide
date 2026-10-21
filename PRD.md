@@ -174,7 +174,7 @@ When the agent touches a file, its row briefly glows and then settles:
 
 Each host adapter maps its own tool names to these three kinds (Claude Code: `Read`, `Edit`, `Write`, `NotebookEdit`, `Grep`, `Glob`, `Bash`, `PowerShell`; OpenCode: its tool ids from `ctx.tool.list()`, with the input-shape fallback of §4.3). The classification and the shell parsing live in `core/`.
 
-The shimmer decays over ~2 s and leaves a subtle marker for the rest of the session ("touched this session"). Option: show reads and writes / writes only / reads only / none.
+Known file operands glow from tool start through completion, including overlapping calls. The shimmer decays over ~2 s after the final completion and leaves a subtle marker for the rest of the session ("touched this session"). Result-only paths (such as grep/glob hits) begin glowing when reported. Option: show reads and writes / writes only / reads only / none.
 
 ### 5.3 Handing context to the agent
 
@@ -195,7 +195,7 @@ Resolved filesystem metadata must retain exact component identity. Static Window
 **Behavior**
 - Collapsible tree of the working directory, respecting `.gitignore` (toggle to show ignored/hidden).
 - Git status per file and rolled up per folder (modified, added, untracked, deleted, conflicted), with color and letter.
-- Activity shimmer (§5.2).
+- Activity shimmer (§5.2) colors the complete name area (icon, indentation and padding, including the selected row): purple for reads, orange for writes and green for Git file operands. The status letter keeps its Git color. Containing folders inherit a softer tint from the latest eligible active descendant. The two-second animation ends automatically; only the file's dim session marker remains. `activity` filters both names and markers; `followAgent` controls navigation independently. Both hosts retain selection readability in light/dark themes at 24/40/80/120 columns (ADR 0030).
 - **Follow agent** (option, default on): the tree scrolls to and expands what the agent touches. Off: the view stays where you put it; markers still show.
 - Filter by name (fuzzy) across the whole project, including unexpanded folders.
 - **Preview** inside the pane: syntax-colored code, rendered Markdown (toggle source), CSV/TSV as a table, images where the host and terminal support them. Large (>2 MB) and binary files show a notice.

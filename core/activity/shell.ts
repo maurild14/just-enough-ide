@@ -2,10 +2,14 @@ import type { Touch } from './classify.ts'
 
 const READERS = new Set(['cat', 'head', 'tail', 'less', 'more', 'bat', 'type', 'get-content', 'gc'])
 const SEARCHERS = new Set(['rg', 'grep'])
-const GIT_MUTATING = new Set(['commit', 'push', 'pull', 'checkout', 'switch', 'merge', 'rebase', 'reset'])
+const GIT_MUTATING = new Set(['add', 'restore', 'rm', 'mv', 'clean', 'commit', 'push', 'pull', 'checkout', 'switch', 'merge', 'rebase', 'reset'])
 
 // Flags that consume the next word (so it is not mistaken for a path).
 const VALUE_FLAGS: Record<string, ReadonlySet<string>> = {
+  add: new Set(['--pathspec-from-file']),
+  restore: new Set(['--source', '-s', '--pathspec-from-file']),
+  rm: new Set(['--pathspec-from-file']),
+  clean: new Set(['--exclude', '-e']),
   head: new Set(['-n', '-c']),
   tail: new Set(['-n', '-c']),
   'get-content': new Set(['-totalcount', '-tail', '-head', '-first', '-last', '-encoding', '-delimiter', '-readcount', '-filter', '-include', '-exclude']),
@@ -111,30 +115,36 @@ function readPaths(cmd: string, args: string[]): string[] {
 const GIT_VALUE_OPTS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--super-prefix', '--config-env'])
 
 /** First word that is not a global option or an option's value (`--opt=value` is one word). */
-function gitSubcommand(args: string[]): string | undefined {
+function gitSubcommand(args: string[]): number {
   for (let i = 0; i < args.length; i++) {
     const w = args[i]!
     if (GIT_VALUE_OPTS.has(w)) i++
-    else if (!w.startsWith('-')) return w
+    else if (!w.startsWith('-')) return i
   }
-  return undefined
+  return -1
 }
 
 /** Classify a command line by reading it; nothing is ever executed. */
 export function classifyShell(command: string): Touch | null {
   const reads: string[] = []
   let git = false
+  const gitPaths: string[] = []
   for (const seg of segments(command)) {
     const words = seg
     if (words.length === 0) continue
     const cmd = baseName(words[0]!)
     if (cmd === 'git') {
-      const sub = gitSubcommand(words.slice(1))
-      if (sub && GIT_MUTATING.has(sub)) git = true
+      const args = words.slice(1), index = gitSubcommand(args), sub = args[index]
+      if (sub && GIT_MUTATING.has(sub)) {
+        git = true
+        const tail = args.slice(index + 1), separator = tail.indexOf('--')
+        const paths = separator >= 0 ? tail.slice(separator + 1) : ['add', 'restore', 'rm', 'mv', 'clean'].includes(sub) ? readPaths(sub, tail) : []
+        for (const path of paths) if (!gitPaths.includes(path)) gitPaths.push(path)
+      }
     } else if (READERS.has(cmd) || SEARCHERS.has(cmd)) {
       for (const p of readPaths(cmd, words.slice(1))) if (!reads.includes(p)) reads.push(p)
     }
   }
-  if (git) return { kind: 'git', paths: [] }
+  if (git) return { kind: 'git', paths: gitPaths }
   return reads.length > 0 ? { kind: 'read', paths: reads } : null
 }

@@ -1,6 +1,6 @@
 import type { EngineInterface, Register } from 'claude-code'
 import { parseJeiArgument } from '../core/command.ts'
-import { reducePane } from '../core/pane.ts'
+import { currentView, reducePane } from '../core/pane.ts'
 import { parseOptions } from '../core/options.ts'
 import { reveal } from '../core/files/tree.ts'
 import { projectRel } from '../core/shared/paths.ts'
@@ -12,7 +12,8 @@ import { focusGit, scrollGitList } from '../hosts/claude-code/git.tsx'
 import { focusBranches, scrollBranches } from '../hosts/claude-code/branches.tsx'
 import { focusSearch, scrollSearch, stopSearch } from '../hosts/claude-code/search.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
-import { initPane, PANE_ID, readCwd, readPane, resetGitUi, resetFilesUi, resetSearch, setCwd, updatePane, updateTree, updateSearch } from '../hosts/claude-code/state.ts'
+import { focusInput, resetInputs } from '../hosts/claude-code/inputs.ts'
+import { initPane, PANE_ID, readCwd, readPane, readTree, resetActiveActivity, resetGitUi, resetFilesUi, resetSearch, setCwd, updatePane, updateTree, updateSearch } from '../hosts/claude-code/state.ts'
 
 const TITLE = 'JEI'
 
@@ -35,6 +36,8 @@ export const register: Register = (on, raw) => {
   let autoOpenArmed = false
 
   on('session.start', async ($, e, next) => {
+    resetInputs()
+    await resetActiveActivity($)
     await $.command.register({
       name: 'jei',
       description: 'Toggle the JEI pane: /jei [files|search|git|<path>]',
@@ -60,6 +63,7 @@ export const register: Register = (on, raw) => {
   })
 
   on('command.run', { command: 'jei' }, async ($, e) => {
+    resetInputs()
     const arg = parseJeiArgument(e.args ?? '') // a plugin's $.command.run may leave args out
     if (arg.toggle) {
       const mine = (await $.ui.panes()).find((p) => p.id === PANE_ID)
@@ -93,6 +97,8 @@ export const register: Register = (on, raw) => {
 
   // Observes only: a failure must never hold up the cd, so the catch passes it on.
   on('classic.CwdChanged', async ($, e, next) => {
+    resetInputs()
+    await resetActiveActivity($)
     await stopSearch($)
     await setCwd($, e.new_cwd)
     void refreshGit($).catch(() => undefined) // never holds up the cd
@@ -107,12 +113,20 @@ export const register: Register = (on, raw) => {
 
   // The ring landing on a Files or Git row selects it; the ring always moves on.
   on('ui.focus', { requestId: 'jei' }, async ($, e, next) => {
+    // A native arrow can finish its old ring move after Down removed Cancel.
+    if (e.element === 'files-cancel' && !(await readTree($)).editing) {
+      const pane = await readPane($)
+      if (currentView(pane) === 'files' && pane.selected.files !== undefined) e = { ...e, element: `row-${pane.selected.files}` }
+    }
+    focusInput(e.element)
     await focusFiles($, e.element)
     await focusGit($, e.element)
     await focusBranches($, e.element)
     await focusSearch($, e.element)
     return next(e)
   }).catch(($, e, next) => next(e))
+
+  on('ui.input', { requestId: 'jei' }, ($, e, next) => { if (e.kind === 'submit') focusInput(undefined); return next(e) })
 
   // Each view owns its window; ignored scrolls must leave the pinned frame in place.
   on('ui.scroll', { requestId: 'jei' }, async ($, e) => {

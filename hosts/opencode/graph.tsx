@@ -5,6 +5,7 @@ import { graphLine, layoutGraph, type GraphSpan } from '../../core/git/graph.ts'
 import type { LogCommit } from '../../core/git/log.ts'
 import type { CommitFile } from '../../core/git/commit.ts'
 import { latest } from '../../core/latest.ts'
+import { isAbort } from '../../core/shared/abort.ts'
 import type { DiffSource, PaneAction } from '../../core/pane.ts'
 import { cellWidth, fitEnd, fitPath } from '../../core/shared/fit.ts'
 import { insideRel, joinPath } from '../../core/shared/paths.ts'
@@ -88,7 +89,7 @@ export function createGraph(props: HistoryProps) {
   createEffect(() => {
     const root = props.root; const filter = ui().filter; const count = props.graphLimit * ui().pages; const sessionID = props.sessionID; props.revision
     setError('')
-    void untrack(() => load(root, filter, count, sessionID)).then(r => { if (!stopped && !r.stale) setLoaded(r.value) }).catch((error: unknown) => { if (!stopped) setError(`Can't load history: ${historyError(error)}`) })
+    void untrack(() => load(root, filter, count, sessionID)).then(r => { if (!stopped && !r.stale) setLoaded(r.value) }).catch((error: unknown) => { if (!stopped && !isAbort(error)) setError(`Can't load history: ${historyError(error)}`) })
   })
   const detail = latest(async (hash: string) => {
     const files = readFiles(await props.api.commitFiles({ hash }))

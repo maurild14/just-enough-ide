@@ -1,10 +1,14 @@
 import type { Plugin } from '@opencode/plugin/tui'
+import { RGBA } from '@opentui/core'
 import type { GraphSpan } from '../../core/git/graph.ts'
 
-// Closest resolved theme accents: info (read), warning (write), success (git).
-export const ACTIVITY_COLORS = { read: 'info', write: 'warning', git: 'success' } as const
+// Semantic activity hues keep their meaning even when a theme's info token is blue.
+const ACTIVITY_COLORS = {
+  dark: { read: '#c084fc', write: '#fb923c', git: '#4ade80' },
+  light: { read: '#7e22ce', write: '#c2410c', git: '#15803d' },
+} as const
 
-export const activityColor = (ctx: Plugin.Context, kind: keyof typeof ACTIVITY_COLORS) => ctx.theme.text.feedback[ACTIVITY_COLORS[kind]].base
+export const activityColor = (ctx: Plugin.Context, kind: 'read' | 'write' | 'git') => RGBA.fromHex(ACTIVITY_COLORS[ctx.themeMode === 'light' ? 'light' : 'dark'][kind])
 
 export function graphColor(ctx: Plugin.Context, span: GraphSpan) {
   const theme = ctx.theme.text

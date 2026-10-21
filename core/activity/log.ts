@@ -3,25 +3,50 @@ import type { ActivityKind } from './classify.ts'
 
 export const GLOW_MS = 2000
 
-type Row = { kind: ActivityKind; at: number }
+type Row = { kind: ActivityKind; at: number; active?: number }
 
 /** Per-session record of what the agent touched. The clock is always injected. */
 export class ActivityLog {
   private rows = new Map<string, Row>()
 
   touch(rel: string, kind: ActivityKind, now: number): void {
-    this.rows.set(rel, { kind, at: now })
+    const active = this.rows.get(rel)?.active
+    this.rows.set(rel, { kind, at: now, ...(active ? { active } : {}) })
+  }
+
+  start(rel: string, kind: ActivityKind, now: number): void {
+    const active = (this.rows.get(rel)?.active ?? 0) + 1
+    this.rows.set(rel, { kind, at: now, active })
+  }
+
+  finish(rel: string, kind: ActivityKind, now: number): void {
+    const active = (this.rows.get(rel)?.active ?? 1) - 1
+    this.rows.set(rel, { kind, at: now, ...(active > 0 ? { active } : {}) })
   }
 
   /** 1 at the touch, falling linearly to 0 over GLOW_MS. */
   glow(rel: string, now: number): number {
     const row = this.rows.get(rel)
     if (!row) return 0
+    if (row.active) return 1
     return Math.min(1, Math.max(0, 1 - (now - row.at) / GLOW_MS))
   }
 
   kindOf(rel: string): ActivityKind | null {
     return this.rows.get(rel)?.kind ?? null
+  }
+
+  /** Latest eligible touch; folders inherit only currently glowing descendants. */
+  forRow(rel: string, directory: boolean, now: number, setting: Options['activity']): { kind: ActivityKind; glow: number; inherited: boolean } | null {
+    const own = this.rows.get(rel)
+    let path = own && allows(setting, own.kind) ? rel : undefined
+    let latest = path === undefined || !this.glow(rel, now) ? -Infinity : own!.at
+    if (directory) for (const [child, row] of this.rows) {
+      if (child.startsWith(rel + '/') && row.at > latest && allows(setting, row.kind) && this.glow(child, now) > 0) {
+        path = child; latest = row.at
+      }
+    }
+    return path === undefined ? null : { kind: this.rows.get(path)!.kind, glow: this.glow(path, now), inherited: path !== rel }
   }
 
   touched(rel: string): boolean {
@@ -35,13 +60,13 @@ export class ActivityLog {
 
   toJSON(): Record<string, Row> {
     const out: Record<string, Row> = {}
-    for (const [rel, row] of this.rows) out[rel] = { kind: row.kind, at: row.at }
+    for (const [rel, row] of this.rows) out[rel] = { ...row }
     return out
   }
 
   static from(json: Record<string, Row>): ActivityLog {
     const log = new ActivityLog()
-    for (const [rel, row] of Object.entries(json)) log.touch(rel, row.kind, row.at)
+    for (const [rel, row] of Object.entries(json)) log.rows.set(rel, { ...row })
     return log
   }
 }

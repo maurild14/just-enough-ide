@@ -25,7 +25,7 @@ export type JeiPane = {
 }
 
 /** core/activity/log.ts ActivityLog JSON: rel path to its latest touch. */
-export type JeiActivity = Record<string, { kind: 'read' | 'write' | 'git'; at: number }>
+export type JeiActivity = Record<string, { kind: 'read' | 'write' | 'git'; at: number; active?: number }>
 
 /**
  * The Files tab's tree as the person left it. Folder listings are not state:

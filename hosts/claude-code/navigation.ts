@@ -2,7 +2,8 @@ import type { EngineInterface } from 'claude-code'
 import { currentView, reducePane } from '../../core/pane.ts'
 import { readGit, readGitUi, readHistory, readPane, readTree, updateGitUi, updateHistory, updatePane } from './state.ts'
 import { leaveSearchEditor, searchEditing, stopSearch } from './search.tsx'
-import { clearFileSearch, cancelFilesOperation } from './files.tsx'
+import { clearFileSearch, cancelFilesOperation, restoreFilesFocus } from './files.tsx'
+import { resetInputs } from './inputs.ts'
 
 /** The visible control and keyboard shortcut share the same one-level return. */
 export async function backContext($: EngineInterface) {
@@ -20,6 +21,7 @@ export async function backContext($: EngineInterface) {
 }
 
 export async function goBack($: EngineInterface): Promise<void> {
+  resetInputs()
   const pane = await readPane($)
   const view = currentView(pane)
   if (view === 'files' && (await readTree($)).operation) { await cancelFilesOperation($); return }
@@ -38,4 +40,5 @@ export async function goBack($: EngineInterface): Promise<void> {
   }
   if (view === 'files' && ((await readTree($)).filtering || (await readTree($)).editing)) { await clearFileSearch($); return }
   await updatePane($, state => reducePane(state, { type: 'back' }))
+  await restoreFilesFocus($)
 }

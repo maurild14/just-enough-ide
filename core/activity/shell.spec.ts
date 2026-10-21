@@ -1,6 +1,14 @@
 import { expect, test } from 'bun:test'
 import { classifyShell } from './shell.ts'
 
+test('Git file operands color actual paths without treating branch names or commit messages as files', () => {
+  expect(classifyShell('git -C /work/acme-app add -- "src/a b.ts"')).toEqual({ kind: 'git', paths: ['src/a b.ts'] })
+  expect(classifyShell('git restore src/a.ts')).toEqual({ kind: 'git', paths: ['src/a.ts'] })
+  expect(classifyShell('git restore --source HEAD src/a.ts')).toEqual({ kind: 'git', paths: ['src/a.ts'] })
+  expect(classifyShell('git commit -m "feat: update" -- src/a.ts')).toEqual({ kind: 'git', paths: ['src/a.ts'] })
+  expect(classifyShell('git checkout feature/menu')).toEqual({ kind: 'git', paths: [] })
+})
+
 test('readers', () => {
   expect(classifyShell('cat src/a.ts | head')).toEqual({ kind: 'read', paths: ['src/a.ts'] })
   expect(classifyShell('head -n 5 a.ts b.ts')).toEqual({ kind: 'read', paths: ['a.ts', 'b.ts'] })
@@ -29,7 +37,7 @@ test('pipelines and redirection', () => {
 
 test('git', () => {
   expect(classifyShell('git commit -m "x"')).toEqual({ kind: 'git', paths: [] })
-  expect(classifyShell('git add . && git push')).toEqual({ kind: 'git', paths: [] })
+  expect(classifyShell('git add . && git push')).toEqual({ kind: 'git', paths: ['.'] })
   for (const s of ['commit', 'push', 'pull', 'checkout', 'switch', 'merge', 'rebase', 'reset']) {
     expect(classifyShell(`git ${s}`)?.kind).toBe('git')
   }

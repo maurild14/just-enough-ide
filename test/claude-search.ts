@@ -10,6 +10,7 @@ export async function world($: Engine, on: On, projectRoot = ROOT) {
   const files: Record<string, string> = { 'src/account.ts': SOURCE, 'src/other.ts': 'export function other() { return load() }\n' }
   const runs: string[][] = [], fills: string[] = [], toasts: string[] = [], checks: unknown[] = [], calls: unknown[] = []
   const fillInputs: { text: string; mode: string }[] = []
+  const focuses: (string | undefined)[] = []
   const states: Record<string, unknown> = {}, writes: string[] = []
   const settings = { missing: false, repo: true, slow: false, slowQuery: 'load', closed: 0, failWrite: '', realRoot: projectRoot, largeList: false, shown: false }
   on('state.set', (_$, e, next) => { states[e.key] = e.value; writes.push(e.key); return next(e) })
@@ -19,7 +20,7 @@ export async function world($: Engine, on: On, projectRoot = ROOT) {
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.panes', () => ({ value: settings.shown ? [{ id: 'jei', title: 'JEI', isShown: true, isFocused: false, isPlaced: true }] : [] }))
   on('ui.close', () => { settings.shown = false; return { value: undefined } })
-  on('ui.focus', () => ({}))
+  on('ui.focus', (_$, e) => { focuses.push(e.element); return {} })
   on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
   on('prompt.fill', (_$, e) => { fills.push(e.text); fillInputs.push({ text: e.text, mode: e.mode }); return { isFilled: true, text: e.text, cursor: e.text.length } })
   const path = (p: string) => p.replaceAll('\\', '/').replace(/^[A-Za-z]:/, '').replace(/^\/\//, '/').replace(/\/$/, '')
@@ -60,5 +61,5 @@ export async function world($: Engine, on: On, projectRoot = ROOT) {
   on('tool.call', (_$, e) => { calls.push(e); return { result: {} as never, text: '' } })
   on('classic.CwdChanged', () => ({}))
   await $.classic.CwdChanged({ old_cwd: '/work', new_cwd: projectRoot })
-  return { clock, files, runs, fills, fillInputs, toasts, checks, calls, states, writes, settings }
+  return { clock, files, runs, fills, fillInputs, focuses, toasts, checks, calls, states, writes, settings }
 }

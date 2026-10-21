@@ -8,6 +8,15 @@ import type { Host } from '../host.ts'
 
 afterEach(cleanup)
 
+test('an aborted ignore check keeps the successfully read directory usable', async () => {
+  const repo = await makeRepo({ 'keep.txt': 'keep' })
+  const run = repo.host.run.bind(repo.host)
+  repo.host.run = (argv, options) => argv.includes('check-ignore') ? Promise.reject(new Error('jei: $.process.run(git) aborted.')) : run(argv, options)
+  const listed = await listDir(repo.host, repo.dir, '')
+  expect(listed.entries.some(entry => entry.name === 'keep.txt')).toBe(true)
+  expect(listed.ignored).toEqual([])
+})
+
 test('preview never reads through canonical Windows Unicode or case-distinct siblings', async () => {
   for (const sibling of ['K', 'K']) {
     const root = 'C:/fixture/k'; let reads = 0

@@ -36,15 +36,16 @@ function kind(value: unknown): ActivityKind {
 function readState(value: unknown) {
   const data = record(value)
   if (typeof data.cwd !== 'string') throw new Error('Invalid JEI state.')
-  const activity = new ActivityLog()
+  const rows: ReturnType<ActivityLog['toJSON']> = {}
   for (const [rel, raw] of Object.entries(record(data.activity))) {
     const row = record(raw)
     if (typeof row.at !== 'number' || !Number.isFinite(row.at)) throw new Error('Invalid JEI activity.')
-    activity.touch(rel, kind(row.kind), row.at)
+    if (row.active !== undefined && (typeof row.active !== 'number' || !Number.isSafeInteger(row.active) || row.active < 1)) throw new Error('Invalid JEI activity.')
+    rows[rel] = { kind: kind(row.kind), at: row.at, ...(row.active === undefined ? {} : { active: row.active }) }
   }
   const git = record(data.git)
   if (git.root !== null && typeof git.root !== 'string') throw new Error('Invalid JEI state.')
-  return { cwd: data.cwd, options: parseOptions(record(data.options)), git, activity }
+  return { cwd: data.cwd, options: parseOptions(record(data.options)), git, activity: ActivityLog.from(rows) }
 }
 
 export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<typeof JeiRpc> }): JSX.Element {
@@ -86,9 +87,11 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
       const result = await refresh()
       if (stopped || result.stale) return
       // Replay events received during this request without comparing host clocks.
+      const rows = result.value.activity.toJSON()
       for (const [rel, row] of Object.entries(activity().toJSON())) {
-        if ((live.get(rel) ?? 0) > before) result.value.activity.touch(rel, row.kind, row.at)
+        if ((live.get(rel) ?? 0) > before) rows[rel] = row
       }
+      result.value.activity = ActivityLog.from(rows)
       setSnapshot(result.value)
       setActivity(result.value.activity)
       setNow(Date.now())
@@ -107,9 +110,10 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
       const rel = snapshot() ? insideRel(snapshot()!.cwd, data.rel) : data.rel
       if (rel === null || !rel) throw new Error('Invalid JEI activity.')
       const activityKind = kind(data.kind)
+      if (data.active !== undefined && typeof data.active !== 'boolean') throw new Error('Invalid JEI activity.')
       if (!allows(options.activity, activityKind)) return
       live.set(rel, ++received)
-      activity().touch(rel, activityKind, Date.now())
+      activity()[data.active === true ? 'start' : data.active === false ? 'finish' : 'touch'](rel, activityKind, Date.now())
       setActivity(activity())
       setNow(Date.now())
       if (options.followAgent) dispatch({ type: 'select', view: 'files', id: rel })

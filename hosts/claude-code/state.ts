@@ -106,6 +106,9 @@ export function readActivity($: StateHost): Promise<JeiActivity> {
 export function updateActivity($: StateHost, fn: (a: JeiActivity) => JeiActivity): Promise<JeiActivity> {
   return update($, activity, fn)
 }
+export function resetActiveActivity($: StateHost): Promise<JeiActivity> {
+  return update($, activity, a => Object.fromEntries(Object.entries(a).map(([rel, row]) => [rel, { kind: row.kind, at: row.at }])))
+}
 export function readGit($: StateHost): Promise<JeiGit | null> {
   return read($, git)
 }

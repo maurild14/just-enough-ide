@@ -10,6 +10,8 @@ The test suite requires `rg` (ripgrep) on PATH, alongside Bun and Git. Runtime S
 
 Source: `PRD.md` §8.1 and `docs/design.md` §10. Run `bun run test`, `bun run typecheck` and `bun run check:docs` before finishing.
 
+ADR 0030 regressions cover real Git command-scope hook overrides, aborted ignore checks and history cache recovery, stable native input seeds, selected-row focus targets and replayed late Cancel focus after Down. Both renderers cover colored selected names, softer ancestor tints and expiration; OpenTUI sweeps all three activity kinds at 24/40/80/120 columns in light/dark themes. Active-tool counts cover overlaps and completion before decay. Windows live Claude checks retained the full commit text at 60 ms per key and Search edit-query focus. Post-create row focus and physical Down/Enter remain manual checks after the bounded live pass lost pane focus; renderer/kit checks do not certify those physical routes.
+
 ## Two runners, two names
 
 | Pattern | Runner | Where | Command |

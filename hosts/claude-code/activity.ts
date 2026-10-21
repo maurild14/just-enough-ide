@@ -10,7 +10,7 @@ import { latest } from '../../core/latest.ts'
 import type { Options } from '../../core/options.ts'
 import { currentView, reducePane } from '../../core/pane.ts'
 import { joinPath, projectRel, toPosix } from '../../core/shared/paths.ts'
-import { forgetAll, forgetFileList, forgetPaths, hostFor, refreshFileList } from './files.tsx'
+import { forgetAll, forgetFailedListings, forgetFileList, forgetPaths, hostFor, refreshFileList } from './files.tsx'
 import {
   bumpTick,
   gitState,
@@ -38,7 +38,7 @@ const MAX_PATHS = 200
 const MAX_TOUCHED = 500
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
 
-type Row = { kind: ActivityKind; at: number }
+type Row = { kind: ActivityKind; at: number; active?: number }
 
 const snapshots = new Map<string, ReturnType<typeof latest<Parameters<typeof snapshot>, Awaited<ReturnType<typeof snapshot>>>>>()
 type Tracking = { agent: AgentCommits; mutations: number; calls: number; epoch: number }
@@ -136,6 +136,7 @@ export function onRefresh(forget: () => void): void {
 
 /** Invalidate derived views even when the subsequent state read fails. */
 export function forgetViews(): void {
+  forgetFailedListings()
   for (const forget of forgetters) forget()
 }
 
@@ -227,20 +228,20 @@ function capped(json: Record<string, Row>): Record<string, Row> {
 }
 
 /** Records a touch: refresh what changed, glow what the option allows, follow it. */
-async function observe($: EngineInterface, touch: Touch, options: Options, shell: boolean): Promise<void> {
+async function observe($: EngineInterface, touch: Touch, options: Options, shell: boolean, phase: 'touch' | 'start' | 'finish' = 'touch'): Promise<void> {
   const root = await readCwd($)
   if (root === '') return
   const rels = [...new Set(touch.paths.map((p) => projectRel(root, p)).filter((r): r is string => r !== null && r !== ''))].slice(0, MAX_PATHS)
   // A shell command's effects are not all in its paths: refresh everything.
-  if (touch.kind !== 'read') scheduleRefresh($, rels, shell)
+  if (phase === 'touch' && touch.kind !== 'read') scheduleRefresh($, rels, shell)
   if (rels.length === 0 || !allows(options.activity, touch.kind)) return
   const now = await $.clock.now()
   await updateActivity($, (a) => {
     const log = ActivityLog.from(a)
-    for (const rel of rels) log.touch(rel, touch.kind, now)
+    for (const rel of rels) log[phase](rel, touch.kind, now)
     return capped(log.toJSON())
   })
-  if (options.followAgent) {
+  if (options.followAgent && phase !== 'finish') {
     const first = rels[0]!
     await updateTree($, (t) => ({ ...t, expanded: [...reveal(new Set(t.expanded), first)] }))
     // An open preview keeps what the person is reading.
@@ -287,11 +288,15 @@ export function registerActivity(on: On, options: Options): void {
   on('tool.call', async ($, e, next) => {
     if (next.origin.plugin === 'jei' && !SHELL_TOOLS.has(String(e.tool))) return next(e)
     const end = SHELL_TOOLS.has(String(e.tool)) ? await agentWindow($).catch(() => null) : null
+    const root = await readCwd($).catch(() => '')
+    const active = classifyTool(String(e.tool), e)
+    if (active) await observe($, active, options, false, 'start').catch(() => {})
     try {
       const ran = await next(e)
       void toolRan($, String(e.tool), e, ran, options).catch(() => undefined)
       return ran
     } finally {
+      if (active && await readCwd($).catch(() => '') === root) await observe($, active, options, false, 'finish').catch(() => {})
       if (end) await end().catch(() => undefined)
     }
   })

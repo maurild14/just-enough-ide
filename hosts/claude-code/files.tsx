@@ -32,6 +32,7 @@ import {
 } from './state.ts'
 import { activityColor, color, statusLook } from './theme.ts'
 import { refreshGit, forgetViews } from './activity.ts'
+import { focusInput, inputValue, resetInput } from './inputs.ts'
 
 export type PaneRender = RenderInput<'Pane'>
 
@@ -94,6 +95,7 @@ type Preview = Awaited<ReturnType<typeof loadPreview>> & { size?: number; messag
 const listings = new Map<string, Promise<Listing>>()
 /** Folders whose last read failed: dropped on the next toggle or refresh, never retried per frame. */
 const failed = new Set<string>()
+export function forgetFailedListings(): void { for (const key of failed) listings.delete(key); failed.clear() }
 /** Only the preview on screen is kept; showPreview clears it. */
 let current: { key: string; p: Promise<Preview> } | null = null
 const fileLists = new Map<string, Promise<string[]>>()
@@ -261,6 +263,16 @@ export async function cancelFilesOperation($: EngineInterface): Promise<void> {
   if (!held) return
   await releaseFilesPane($, held.prepared.root, held.id)
   await updateTree($, t => t.operation?.id !== held.id ? t : { ...t, operation: null, operationBusy: t.operation.working || t.operationBusy !== held.id ? t.operationBusy : null })
+  await restoreFilesFocus($)
+}
+
+/** Native focus survives view changes independently of the retained selection. */
+export async function restoreFilesFocus($: EngineInterface): Promise<void> {
+  focusInput(undefined)
+  const pane = await readPane($)
+  if (currentView(pane) !== 'files' || (await readTree($)).operation) return
+  const rel = pane.selected.files ?? lastIds[0]
+  if (rel !== undefined) await $.ui.focus({ requestId: 'jei', key: `${ROW_PREFIX}${rel}` }).catch(() => {})
 }
 
 async function beginFilesOperation($: EngineInterface, kind: FsOp, root: string, source: string): Promise<void> {
@@ -275,6 +287,7 @@ async function beginFilesOperation($: EngineInterface, kind: FsOp, root: string,
     const written = await updateTree($, t => t.filesRoot === root && t.operationBusy === id ? { ...t, editing: false, operation: { id, prepared, working: false, value: kind === 'rename' ? baseName(source) : kind === 'move' ? source : '' } } : t)
     if (written.filesRoot !== root || written.operationBusy !== id || written.operation?.id !== id) throw new Error('The project changed. Start again.')
     installed = true
+    resetInput('files-operation-input')
     if (kind !== 'delete') await $.ui.focus({ requestId: 'jei', key: 'files-operation-input' }).catch(() => {})
   } catch (error) { $.ui.toast(`Files operation failed: ${firstLine(error)}.`) }
   finally {
@@ -336,6 +349,7 @@ async function applyFilesOperation($: EngineInterface, id: string, value: string
     }
     await releaseFilesPane($, root, id)
     await updateTree($, t => ({ ...t, operation: t.operation?.id === id ? null : t.operation, operationBusy: t.operationBusy === id ? null : t.operationBusy }))
+    if (await readCwd($) === root) await restoreFilesFocus($)
     if (failure) $.ui.toast(failure)
     else if (notice && await readCwd($) === root) $.ui.toast(notice)
   }
@@ -434,7 +448,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     const cancel = <Button key="files-operation-cancel" plain label={frame.bodyRows < 2 ? 'Enlarge · Cancel' : 'Cancel'} onPress={act($, () => cancelFilesOperation($))} />
     if (frame.bodyRows < 3) return { header: line('Files'), body: [...(frame.bodyRows >= 2 ? [line('Enlarge the pane.', { dim: true })] : []), <Box key="files-operation-tiny">{cancel}</Box>], actions: [] }
     const title = held.prepared.kind === 'delete' ? held.prepared.sourceKind === 'dir' ? 'Delete recursively?' : 'Delete file?' : held.prepared.kind === 'new' ? 'New file or folder' : held.prepared.kind === 'rename' ? 'Rename' : 'Move to project path'
-    const input = held.prepared.kind === 'delete' ? line(fitPath(held.prepared.source, inner), {}, 'files-operation-path') : Input ? <Input key="files-operation-input" value={held.value} autoFocus submitLabel={held.prepared.kind === 'new' ? 'Create' : held.prepared.kind === 'rename' ? 'Rename' : 'Move'} onInput={value => act($, () => updateTree($, t => t.operation?.id === held.id ? { ...t, operation: { ...t.operation, value } } : t))()} onSubmit={value => act($, () => applyFilesOperation($, held.id, value))()} /> : line('Enlarge on a desktop surface.', { dim: true })
+    const input = held.prepared.kind === 'delete' ? line(fitPath(held.prepared.source, inner), {}, 'files-operation-path') : Input ? <Input key="files-operation-input" value={inputValue('files-operation-input', held.value)} autoFocus submitLabel={held.prepared.kind === 'new' ? 'Create' : held.prepared.kind === 'rename' ? 'Rename' : 'Move'} onInput={value => act($, () => updateTree($, t => t.operation?.id === held.id ? { ...t, operation: { ...t.operation, value } } : t))()} onSubmit={value => act($, () => applyFilesOperation($, held.id, value))()} /> : line('Enlarge on a desktop surface.', { dim: true })
     const label = held.prepared.kind === 'delete' ? 'Delete' : held.prepared.kind === 'new' ? 'Create' : held.prepared.kind === 'rename' ? 'Rename' : 'Move'
     return { header: line('Files'), body: [line(title, { color: color(held.prepared.kind === 'delete' ? 'warning' : 'fg') }, 'files-operation-title'), input, <Box key="files-operation-buttons" flexDirection="row"><Text> </Text>{held.working ? <Text dimColor>Working… · </Text> : <Box flexDirection="row"><Button key={held.prepared.kind === 'delete' ? 'files-operation-confirm' : 'files-operation-submit'} plain label={label} onPress={act($, () => applyFilesOperation($, held.id, held.prepared.kind === 'delete' ? undefined : held.value, held.prepared.kind === 'delete'))} /><Text> · </Text></Box>}{cancel}</Box>], actions: [] }
   }
@@ -543,11 +557,11 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     const best = filterRows(await filesOf(host, root), value, 1)[0]
     if (best && await readCwd($) === root && currentView(await readPane($)) === 'files' && (await readTree($)).filter === value) await updatePane($, p => reducePane(p, { type: 'select', view: 'files', id: best }))
   }
-  const cancel = tree.editing ? <Button key="files-cancel" plain label="Cancel" onPress={act($, async () => { await updateTree($, t => ({ ...t, editing: false })); await $.ui.focus({ requestId: 'jei', key: `row-${selected ?? ''}` }).catch(() => {}) })} /> : null
+  const cancel = tree.editing ? <Button key="files-cancel" plain label="Cancel" onPress={act($, async () => { focusInput(undefined); await updateTree($, t => ({ ...t, editing: false })); await $.ui.focus({ requestId: 'jei', key: `row-${selected ?? lastIds[0] ?? ''}` }).catch(() => {}) })} /> : null
   const filterHeader = <Box key="files-search-field" flexDirection="column">
     {(frame.searchRows ?? 0) >= 3 && line('┌' + '─'.repeat(Math.max(0, inner - 2)) + '┐', { color: color('accent') })}
     <Box flexDirection="row" width={Math.max(0, frame.columns - 1)}><Text> </Text><Text color={color('accent')}>│ </Text><Box flexGrow={1}>
-      {Input ? <Input key="filter" submitLabel="open" placeholder="Find files by name" value={tree.filter} autoFocus={tree.editing ? true : undefined}
+      {Input ? <Input key="filter" submitLabel="open" placeholder="Find files by name" value={inputValue('filter', tree.filter)} autoFocus={tree.editing ? true : undefined}
         onInput={value => act($, () => change(value))()} onSubmit={value => act($, async () => { await change(value); const best = filterRows(await filesOf(host, root), value, 1)[0]; await updateTree($, t => ({ ...t, editing: false })); if (best && value && await readCwd($) === root && currentView(await readPane($)) === 'files') await showPreview($, best) })()} /> : <Text>{fitEnd(tree.filter || 'Find files by name', Math.max(0, inner - 18))}</Text>}
     </Box><Text> </Text>{cancel}{cancel && <Text> · </Text>}<Button key="files-clear" plain label="Clear" onPress={act($, () => clearFileSearch($))} /><Text color={color('accent')}> │</Text></Box>
     {(frame.searchRows ?? 0) >= 3 && line('└' + '─'.repeat(Math.max(0, inner - 2)) + '┘', { color: color('accent') })}
@@ -580,18 +594,19 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     const left = nameRoom >= 1 ? `${indent}${icon} ${fitPath(label, nameRoom)}` : fitEnd(`${indent}${icon} ${label}`, room)
     const s = status.get(rel)
     const look = s === undefined ? undefined : statusLook(s)
-    const kind = log.kindOf(rel)
-    const phase = shimmerPhase(log.glow(rel, now))
+    const activity = log.forRow(rel, opts.isDir, now, options.activity)
+    const kind = activity?.kind
+    const phase = shimmerPhase(activity?.glow ?? 0)
     const isSel = rel === selected
     // The focus ring marks the row it is on; any other selected row is inverted.
     const inverse = isSel && !(frame.isFocused && focused === `${ROW_PREFIX}${rel}`)
     const nameLook: Look =
-      phase !== 'none' && !isSel && kind !== null
-        ? { color: activityColor(kind), dim: phase === 'dim', bold: phase === 'bold', inverse }
+      phase !== 'none' && kind !== undefined
+        ? { color: activityColor(kind), dim: opts.isDir || phase === 'dim', bold: !opts.isDir && (phase === 'bold' || isSel), inverse: false }
         : { dim: opts.isDir, bold: false, inverse }
-    const mark = phase !== 'none' ? 'glow' : log.touched(rel) ? 'mark' : 'gut'
+    const mark = phase !== 'none' ? 'glow' : activity && !activity.inherited ? 'mark' : 'gut'
     const markLook: Look | null =
-      kind === null || mark === 'gut' ? null : { color: activityColor(kind), dim: mark === 'mark' || phase === 'dim', bold: phase === 'bold', inverse: false }
+      kind === undefined || mark === 'gut' ? null : { color: activityColor(kind), dim: opts.isDir || mark === 'mark' || phase === 'dim', bold: !opts.isDir && phase === 'bold', inverse: false }
     return (
       <Box key={`line-${rel}`} flexDirection="row">
         <Box key={`${mark}-${rel}`}>
@@ -599,8 +614,8 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
             {inner > 0 ? (markLook ? '•' : ' ') : ''}
           </Text>
         </Box>
-        <Button key={`${ROW_PREFIX}${rel}`} plain onPress={act($, () => press(rel, opts.isDir))}>
-          <Text color={nameLook.color} dimColor={nameLook.dim} weight={nameLook.bold ? 'bold' : undefined} inverse={nameLook.inverse}>
+        <Button key={`${ROW_PREFIX}${rel}`} plain autoFocus={!tree.editing && (isSel || selected === undefined && !items.some(item => item.isRow)) ? true : undefined} onPress={act($, () => press(rel, opts.isDir))}>
+          <Text color={nameLook.color} dimColor={nameLook.dim} weight={nameLook.bold ? 'bold' : undefined} underline={isSel && phase !== 'none'} inverse={nameLook.inverse}>
             {padEnd(left, room)}
           </Text>
           {opts.sw > 0 && (
@@ -686,6 +701,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
 }
 
 export async function clearFileSearch($: EngineInterface): Promise<void> {
+  focusInput(undefined)
   const tree = await readTree($)
   await updateTree($, t => ({ ...t, filter: '', filtering: false, editing: false, origin: undefined }))
   if (tree.origin) await updatePane($, p => reducePane(p, { type: 'select', view: 'files', id: tree.origin! }))

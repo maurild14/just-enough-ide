@@ -558,6 +558,20 @@ test('completed tools emit project-relative activity and state keeps the touch',
   ])
 })
 
+test('tool start and completion carry overlapping active counts through state and RPC events', async () => {
+  const server = await start(makeTemp())
+  const first = { sessionID: 'session-a', id: 'read-1', tool: 'read', input: { path: 'src/a.ts' }, status: 'completed' as const }
+  const second = { ...first, id: 'read-2' }
+  await server.before(first); await server.before(second)
+  expect((await server.call('state') as any).activity['src/a.ts'].active).toBe(2)
+  expect(server.emitted).toContainEqual({ name: 'activity', data: { rel: 'src/a.ts', kind: 'read', active: true } })
+  await server.tool({ ...first, status: 'error' })
+  expect((await server.call('state') as any).activity['src/a.ts'].active).toBe(1)
+  await server.tool(second)
+  expect((await server.call('state') as any).activity['src/a.ts'].active).toBeUndefined()
+  expect(server.emitted).toContainEqual({ name: 'activity', data: { rel: 'src/a.ts', kind: 'read', active: false } })
+})
+
 test('activity options filter touches and failed or outside-root tools emit nothing', async () => {
   jest.useFakeTimers()
   for (const [setting, kinds] of [

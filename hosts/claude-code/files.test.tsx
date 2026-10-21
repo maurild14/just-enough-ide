@@ -33,6 +33,24 @@ const posix = (p: string) => p.replaceAll('\\', '/').replace(/^[A-Za-z]:/, '')
 
 const FILES = ['README.md', 'people.csv', 'logo.bin', 'big.log', 'empty.txt', 'src/index.ts', 'src/api/user.ts']
 
+test('returning from preview restores native focus to the selected Files row', async ($, on) => {
+  on('ui.focus', () => ({}))
+  await world($, on)
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  await ui.press({ key: 'row-README.md' }); await ui.press({ key: 'back' })
+  expect((await ui.find({ key: 'row-README.md' }))?.props.autoFocus).toBe(true)
+  await ui.unmount()
+})
+
+test('Down from a short filename query retains native list arrow routing', async ($, on) => {
+  on('ui.focus', () => ({}))
+  await world($, on)
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  await ui.input({ key: 'filter', text: 'user', kind: 'change' })
+  expect(await ui.find({ key: 'arrow-scroll-range' })).toBeDefined()
+  await ui.unmount()
+})
+
 test('Files native Windows confirmation refuses a canonical Unicode sibling before effects', async ($, on) => {
   on('ui.focus', () => ({}))
   const seen = await world($, on, true, undefined, path => path.replace(ROOT, path.includes('/src') ? 'C:/fixture/K' : 'C:/fixture/k'))
@@ -739,6 +757,36 @@ test('a Read glows its row and follows the agent; the glow ends after 2 s', asyn
   expect(await rowKeys(ui)).toContain('row-src/api')
   const name = await ui.find({ key: 'row-src/api/user.ts' })
   expect(name).toBeDefined()
+  const look = (key: string) => ui.find({ key }).then(node => (node?.children[0] as { props: Record<string, unknown> }).props)
+  for (const width of WIDTHS) {
+    await ui.redraw(paneProps(width))
+    expect((await look('row-src/api/user.ts')).color).toBe('autoAccept')
+    expect((await look('row-src/api/user.ts')).underline).toBe(true)
+    expect((await look('row-src/api')).color).toBe('autoAccept')
+    expect((await look('row-src/api')).dimColor).toBe(true)
+    for (const drawn of lineWidths(await ui.drawn() as Node)) expect(drawn).toBeLessThanOrEqual(width)
+  }
+  await clock.advance(2250)
+  expect(await ui.find({ key: 'glow-src/api/user.ts' })).toBeUndefined()
+  expect(await ui.find({ key: 'mark-src/api/user.ts' })).toBeDefined()
+  expect((await look('row-src/api/user.ts')).color).toBeUndefined()
+  expect((await look('row-src/api')).color).toBeUndefined()
+  await ui.unmount()
+})
+
+test('an active native Read holds its filename glow until the tool finishes', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  let release!: () => void, entered!: () => void
+  const held = new Promise<void>(resolve => { release = resolve }), began = new Promise<void>(resolve => { entered = resolve })
+  on('tool.call', async () => { entered(); await held; return { result: {} as never, text: 'ok' } })
+  await world($, on)
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const reading = $.tool.call({ tool: 'Read', file_path: `${ROOT}/src/api/user.ts` } as never)
+  try {
+    await began
+    await clock.advance(10_000)
+    expect(await ui.find({ key: 'glow-src/api/user.ts' })).toBeDefined()
+  } finally { release(); await reading }
   await clock.advance(2250)
   expect(await ui.find({ key: 'glow-src/api/user.ts' })).toBeUndefined()
   expect(await ui.find({ key: 'mark-src/api/user.ts' })).toBeDefined()

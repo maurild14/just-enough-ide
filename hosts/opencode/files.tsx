@@ -355,12 +355,14 @@ export function Files(props: {
     const left = `${indent}${icon} ${fitPath(item.label, inner() - cellWidth(indent) - 2 - cellWidth(tail))}`
     return padEnd(fitEnd(left, inner() - cellWidth(tail)), inner() - cellWidth(tail))
   }
-  const color = (rel: string, marker = false) => {
-    const kind = props.activity.kindOf(rel)
-    if (!kind || (!marker && (rel === selected() || !props.activity.glow(rel, props.now)))) return theme().text.base
-    const accent = parseColor(activityColor(props.ctx, kind)); const fg = parseColor(theme().text.base)
-    const glow = props.activity.glow(rel, props.now)
-    const weight = marker && !glow ? 1 : Math.ceil(glow * 8) / 8
+  const rowActivity = (item: ReturnType<typeof items>[number]) => props.activity.forRow(item.rel, !!(item.row && 'isDir' in item.row && item.row.isDir), props.now, props.options.activity)
+  const color = (item: ReturnType<typeof items>[number], marker = false) => {
+    const directory = !!(item.row && 'isDir' in item.row && item.row.isDir)
+    const activity = rowActivity(item)
+    if (!activity || !marker && !activity.glow) return theme().text.base
+    const accent = parseColor(activityColor(props.ctx, activity.kind)); const fg = parseColor(theme().text.base)
+    const glow = activity.glow
+    const weight = (marker && !glow ? 1 : Math.ceil(glow * 8) / 8) * (directory ? 0.45 : 1)
     return RGBA.fromValues(fg.r + (accent.r - fg.r) * weight, fg.g + (accent.g - fg.g) * weight, fg.b + (accent.b - fg.b) * weight)
   }
   return <box flexDirection="column" flexGrow={1} minHeight={0}>
@@ -383,9 +385,9 @@ export function Files(props: {
     </Show>
     <Show when={props.header}><text height={1} flexShrink={0} fg={theme().text.muted}>{' ' + fitPath(isPreview() ? previewPath() || '' : toPosix(props.cwd).split('/').pop() || 'Files', inner())}</text></Show>
     <box flexGrow={1} minHeight={1} overflow="hidden" flexDirection="column">
-      <Show when={isPreview()} fallback={<For each={window()}>{(item) => <text height={1} flexShrink={0} width={props.width} bg={item.rel === selected() ? theme().background?.action.primary.base : undefined}
+      <Show when={isPreview()} fallback={<For each={window()}>{(item) => <text height={1} flexShrink={0} width={props.width} bg={item.rel === selected() ? rowActivity(item)?.glow ? theme().background?.base : theme().background?.action.primary.base : undefined}
         onMouseDown={() => { if (item.row && !('more' in item.row)) { props.dispatch({ type: 'select', view: 'files', id: item.rel }); invoke('activate') } }}>
-        <span style={{ fg: color(item.rel, true), dim: props.activity.touched(item.rel) && !props.activity.glow(item.rel, props.now) }}>{props.activity.touched(item.rel) ? '•' : ' '}</span><span style={{ fg: filtering() && filesError() ? theme().text.feedback.error.base : color(item.rel) }}>{rowText(item)}</span><span style={{ fg: statusColor(item) }}>{statusSuffix(item)}</span>
+        <span style={{ fg: color(item, true), dim: !!rowActivity(item) && !rowActivity(item)?.glow }}>{rowActivity(item) ? '•' : ' '}</span><span style={{ fg: filtering() && filesError() ? theme().text.feedback.error.base : color(item), bold: item.rel === selected() && !!rowActivity(item)?.glow, underline: item.rel === selected() && !!rowActivity(item)?.glow }}>{rowText(item)}</span><span style={{ fg: statusColor(item) }}>{statusSuffix(item)}</span>
       </text>}</For>}>
         <Show when={targetLine() !== undefined && preview()?.text !== undefined} fallback={<Show when={preview()?.kind === 'code' || preview()?.kind === 'markdown'} fallback={<For each={notice() ? [notice()] : table().slice(top(), top() + room())}>{(line) => <text height={1} flexShrink={0} fg={preview()?.kind === 'error' ? theme().text.feedback.error.base : theme().text.muted}>{' ' + fitEnd(line, inner())}</text>}</For>}>
           <code id="files-code" ref={(el) => { code = el; el.scrollY = top() }} width={inner()} height={room()} marginLeft={1} content={preview()?.text ?? ''} filetype={preview()?.language ?? (preview()?.kind === 'markdown' ? 'markdown' : undefined)} syntaxStyle={syntax()} wrapMode="char" fg={theme().text.base} conceal={false} />

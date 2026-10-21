@@ -4,6 +4,33 @@ import { findKey, lineWidths, type Node } from './measure.ts'
 
 const focus = (element: string) => ({ component: 'Pane' as const, requestId: 'jei', plugin: 'jei', element, origin: { kind: 'person' as const } })
 
+test('native editing keeps the input seed stable while persisting the latest whole text', async ($, on) => {
+  const seen = await world($, on)
+  await $.command.run(command('search'))
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  await $.ui.focus(focus('search-query'))
+  for (const text of ['f', 'fe', 'feat: comment the menu renderer']) {
+    await ui.input({ key: 'search-query', text, kind: 'change' })
+    expect((await ui.find({ key: 'search-query' }))?.props.value).toBe('')
+  }
+  expect(JSON.stringify(seen.states.searches)).toContain('feat: comment the menu renderer')
+  await $.ui.focus(focus('tab-1'))
+  expect((await ui.find({ key: 'search-query' }))?.props.value).toBe('feat: comment the menu renderer')
+  await ui.unmount()
+})
+
+test('Search edit requests focus on the mounted editor rather than its preceding drawing', async ($, on) => {
+  const seen = await world($, on)
+  await $.command.run(command('search'))
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
+  await ui.press({ key: 'key-f' })
+  expect((await ui.find({ key: 'search-query' }))?.props.autoFocus).toBe(true)
+  // Editing must retain arrow routing even when the result list fits the viewport.
+  expect(await ui.find({ key: 'arrow-scroll-range' })).toBeDefined()
+  await ui.unmount()
+})
+
 for (const tab of ['files', 'search'] as const) test(`${tab} editor controls retain focus and geometry until activated`, { timeoutMs: 60_000 }, async ($, on) => {
   await world($, on)
   const input = tab === 'files' ? 'filter' : 'search-query', field = tab === 'files' ? 'files-search-field' : 'search-field'
@@ -50,6 +77,17 @@ test('Files arrows leave query editing on the highlighted result before moving',
     await scroll(-1); expect(selected()).toBe('src/alpha-0.ts')
     await ui.press({ key: 'files-clear' }); await ui.unmount()
   }
+})
+
+test('a late native Cancel focus after Down is routed to the selected filename result', async ($, on) => {
+  const seen = await world($, on)
+  await $.command.run(command('files'))
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  await ui.input({ key: 'filter', text: 'account', kind: 'change' })
+  await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: 1, bodyRows: 24, contentRows: 25, origin: { kind: 'person' } })
+  await $.ui.focus(focus('files-cancel'))
+  expect(seen.focuses.at(-1)).toBe('row-src/account.ts')
+  await ui.unmount()
 })
 
 test('leaving a Search or Files input restores tab hotkeys without submitting', async ($, on) => {

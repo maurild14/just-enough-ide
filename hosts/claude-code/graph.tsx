@@ -1,3 +1,5 @@
+import { inputValue, resetInput } from './inputs.ts'
+import { isAbort } from '../../core/shared/abort.ts'
 import type { EngineInterface, RenderElement } from 'claude-code'
 import { KEYS } from '../../core/keys.ts'
 import type { Options } from '../../core/options.ts'
@@ -51,6 +53,7 @@ export async function historyAction($: EngineInterface, q: Omit<Question, 'kind'
 }
 
 export async function newBranch($: EngineInterface, root: string, start: string | null): Promise<void> {
+  resetInput('new-branch')
   await updateHistory($, root, (historyUi) => ({ ...historyUi, newBranch: { start, name: '' } }))
   await $.ui.focus({ requestId: 'jei', key: 'new-branch' }).catch(() => undefined)
 }
@@ -69,7 +72,7 @@ export async function branchInput($: EngineInterface, e: PaneRender, frame: File
     await historyAction($, { root, operation: 'create', target: name, start })
   })
   return [
-    <Box key="branch-input-row" flexDirection="row"><Text> </Text>{Input ? <Input key="new-branch" value={historyUi.newBranch.name}
+    <Box key="branch-input-row" flexDirection="row"><Text> </Text>{Input ? <Input key="new-branch" value={inputValue('new-branch', historyUi.newBranch.name)}
       placeholder={`New branch name${start ? ` from ${start.slice(0, 7)}` : ''}`} onInput={(name: string) => historyAct($, () => updateHistory($, root, (historyUi) => ({ ...historyUi, newBranch: { start, name } })))()}
       onSubmit={(name: string) => historyAct($, async () => { await updateHistory($, root, (historyUi) => ({ ...historyUi, newBranch: { start, name } })); submit() })()} />
       : <Text>{fitEnd('New branch name requires an input surface.', frame.inner)}</Text>}</Box>,
@@ -105,7 +108,10 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
     const key = `${g.root}\0${historyUi.filter}\0${historyUi.pages}\0${options.graphLimit}`
     try {
       let p = cache.get(key)
-      if (!p) { p = graph(hostFor($, g.root), g.root, parseGraphFilter(historyUi.filter), options.graphLimit * historyUi.pages); cache.set(key, p) }
+      if (!p) {
+        p = graph(hostFor($, g.root), g.root, parseGraphFilter(historyUi.filter), options.graphLimit * historyUi.pages).catch(error => { if (cache.get(key) === p) cache.delete(key); throw error })
+        cache.set(key, p)
+      }
       const loaded = await p
       commits = loaded.commits
       selected ??= commits.length ? 'group-graph' : workingSelection ?? 'group-graph'
@@ -140,7 +146,7 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
       }
       if (loaded.more) row('graph-more', 'Load more', historyAct($, () => updateHistory($, g.root, (historyUi) => ({ ...historyUi, pages: historyUi.pages + 1 }))))
       if (!commits.length) row('graph-empty', historyUi.filter ? 'No commits match this filter.' : 'No commits yet.', undefined, 'muted')
-    } catch (error) { row('graph-error', `Can't load history: ${firstLine(error)}.`, undefined, 'error') }
+    } catch (error) { if (!isAbort(error)) row('graph-error', `Can't load history: ${firstLine(error)}.`, undefined, 'error') }
   }
   selected ??= closed ? 'group-graph' : workingSelection ?? 'group-graph'
   row('group-graph', `${closed ? '▸' : '▾'} Graph${historyUi.filter ? ' (filtered)' : ''}`, historyAct($, async () => {
@@ -160,7 +166,7 @@ export async function renderGraph($: EngineInterface, e: PaneRender, frame: File
   action('filter', async () => { await updateHistory($, g.root, (historyUi) => ({ ...historyUi, filtering: true, draft: historyUi.filter })); await $.ui.focus({ requestId: 'jei', key: 'graph-filter' }).catch(() => undefined) })
   action('fetch', () => busy($, 'fetching…', () => fetchAll(hostFor($, g.root), g.root)).catch((err: unknown) => $.ui.toast(`Fetch failed: ${firstLine(err).replace(/\.+$/, '')}.`)))
   const pinned = await branchInput($, e, frame, g.root)
-  if (historyUi.filtering && Input) pinned.push(<Box key="graph-filter-row" flexDirection="row"><Text> </Text><Input key="graph-filter" placeholder="Filter: text, author:, path:, branch:*" value={historyUi.draft}
+  if (historyUi.filtering && Input) pinned.push(<Box key="graph-filter-row" flexDirection="row"><Text> </Text><Input key="graph-filter" placeholder="Filter: text, author:, path:, branch:*" value={inputValue('graph-filter', historyUi.draft)}
     onInput={(draft: string) => historyAct($, () => updateHistory($, g.root, (historyUi) => ({ ...historyUi, draft })))()}
     onSubmit={(filter: string) => historyAct($, async () => { await updateHistory($, g.root, (historyUi) => ({ ...historyUi, filter, draft: filter, filtering: false, pages: 1 })); await updatePane($, (s) => ({ ...s, selected: { ...s.selected, git: 'group-graph' } })) })()} /></Box>)
   return { items, actions, pinned, commitSelected: !!selectedCommit, defaultSelection: commits.length || closed ? 'group-graph' : workingSelection ?? 'group-graph' }

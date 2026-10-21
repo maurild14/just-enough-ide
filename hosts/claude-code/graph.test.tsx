@@ -2,6 +2,17 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, ROOT, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
 
+test('aborted history reads stay silent and their rejected cache can recover', async ($, on) => {
+  const r = await historyWorld($, on)
+  r.logAbort = true
+  const ui = await historyPane($, 80)
+  expect((await ui.findAll({ type: 'Text' })).some(node => node.text.includes("Can't load history"))).toBe(false)
+  r.logAbort = false
+  await ui.redraw(props(80))
+  expect(await ui.find({ key: `graph-${A}` })).toBeDefined()
+  await ui.unmount()
+})
+
 test('focusing the history filter preserves the selected graph row', async ($, on) => {
   const r = await historyWorld($, on)
   const ui = await historyPane($, 80)

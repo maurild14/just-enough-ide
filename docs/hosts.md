@@ -16,6 +16,8 @@ Minimum version **2.1.302**. CI also runs against the latest release. The mod AP
 
 Claude Code 2.1.306 injects a command-scope `core.hooksPath` pointing to the null device into plugin Git processes. Hook detection reads all scoped values, excludes that host-only disabling override, and inspects the common Git directory's hooks. Repository/global hook configuration and real hook files still require the normal hook-aware execution path; JEI never changes the runner's hook policy.
 
+Native inputs keep a stable rendered seed while editing so delayed state redraws cannot replace newer local keystrokes. Whole text still persists in session state; submit/blur and programmatic clears release the seed. Files explicitly restores native row focus after preview Back, tab return and inline operations. Filename/Search editors retain the arrow scroll range for short lists. A failed ignore check preserves directory entries, failed listing caches retry on refresh, and canceled history reads are silent and evicted. OpenCode uses synchronous reactive input values and revision-based listing recovery; it also suppresses transport cancellation in history. See ADR 0030.
+
 Retained v0.1 working-diff state is normalized by shared core `normalizePane` at Claude state reads/updates and OpenCode panel/command memory loads. It preserves selections and flags across reload; drawing performs no migration writes. See `docs/decisions/0012-git-history-evidence-and-state.md`.
 
 | Need | API |

@@ -25,7 +25,7 @@ function emptyConfig(): string {
   return join(configDir, 'gitconfig')
 }
 function dropConfig(): void {
-  if (configDir !== null) rmSync(configDir, { recursive: true, force: true })
+  if (configDir !== null) rmSync(configDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
   configDir = null
 }
 process.on('exit', dropConfig)

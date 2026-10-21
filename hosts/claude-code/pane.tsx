@@ -1,4 +1,5 @@
 import type { EngineInterface, RenderElement, RenderInput } from 'claude-code'
+import { resetInputs } from './inputs.ts'
 import { hintLine, KEYS, type Tab, type View } from '../../core/keys.ts'
 import type { Options } from '../../core/options.ts'
 import { currentView, reducePane } from '../../core/pane.ts'
@@ -6,7 +7,7 @@ import { toPosix } from '../../core/shared/paths.ts'
 import { cellWidth, fitEnd } from '../../core/shared/fit.ts'
 import { tabBar, TAB_NAMES } from '../../core/shared/tabs.ts'
 import { renderDiff } from './diff.tsx'
-import { renderFiles, type FilesAction } from './files.tsx'
+import { renderFiles, restoreFilesFocus, type FilesAction } from './files.tsx'
 import { renderGit } from './git.tsx'
 import { renderBranches } from './branches.tsx'
 import { readCwd, readPane, readTree, updatePane, updateSearch } from './state.ts'
@@ -164,13 +165,14 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   }
 
   const select = (tab: Tab) => () => {
-    void (async () => { await stopSearch($); await updateSearch($, root, s => ({ ...s, editing: tab === 'search' && !s.text ? 'query' : null })); await updatePane($, (s) => reducePane(s, { type: 'tab', tab })) })().catch((err: unknown) => {
+    resetInputs()
+    void (async () => { await stopSearch($); await updateSearch($, root, s => ({ ...s, editing: tab === 'search' && !s.text ? 'query' : null })); await updatePane($, (s) => reducePane(s, { type: 'tab', tab })); if (tab === 'files') await restoreFilesFocus($) })().catch((err: unknown) => {
       $.ui.log(`jei: tab switch failed: ${err instanceof Error ? err.message : String(err)}`)
     })
   }
 
   // The host sends arrows to ui.scroll only when the tree exceeds its viewport.
-  const scrollable = content?.scrollable === true && frame.bodyRows > 0
+  const scrollable = (content?.scrollable === true || back.editing && compactEditor) && frame.bodyRows > 0
   const viewportHeight = scrollable || e.props.placement === 'dock' ? rows : undefined
 
   // Text takes no key, so each named row is a keyed Box holding one Text.

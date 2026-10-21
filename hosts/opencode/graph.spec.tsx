@@ -5,6 +5,16 @@ import { paneMemory } from './pane.tsx'
 import { cellWidth } from '../../core/shared/fit.ts'
 import { hintLine, KEYS } from '../../core/keys.ts'
 
+test('a canceled history read stays silent and recovers on the next changed event', async () => {
+  const f = historyFixture()
+  f.handlers.graph = async () => { throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }) }
+  const r = await f.mount()
+  expect(r.captureCharFrame()).not.toContain("Can't load history")
+  f.handlers.graph = async () => ({ commits: [commit], more: false })
+  f.emit('changed', {}); await r.flush()
+  expect(r.captureCharFrame()).toContain('feat: update app')
+})
+
 for (const action of ['stage', 'unstage', 'discard'] as const) test(`working selection remains reachable after ${action} with history`, async () => {
   const f = historyFixture(); const [, update] = paneMemory(f.ctx)
   const entry = (path: string, staged = false) => ({ path, index: staged ? 'modified' : null, worktree: staged ? null : 'modified' })

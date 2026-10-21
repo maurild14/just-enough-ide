@@ -31,8 +31,8 @@ export async function listDir(host: Host, root: string, rel: string): Promise<{ 
   if (paths.length === 0) return { entries, ignored: [] }
   // check-ignore rejects literal pathspec magic; it matches the given paths as plain paths anyway.
   // Exit 1 means nothing is ignored; any other failure is treated the same (the tree still works).
-  const res = await host.run(gitArgv(root, IGNORED_ARGS), { env: { ...GIT_ENV, GIT_LITERAL_PATHSPECS: '0' }, stdin: paths.join('\0') + '\0' })
-  const ignored = res.exitCode === 0 ? res.stdout.split('\0').filter((p) => p !== '') : []
+  const res = await host.run(gitArgv(root, IGNORED_ARGS), { env: { ...GIT_ENV, GIT_LITERAL_PATHSPECS: '0' }, stdin: paths.join('\0') + '\0' }).catch(() => null)
+  const ignored = res?.exitCode === 0 ? res.stdout.split('\0').filter((p) => p !== '') : []
   return { entries, ignored }
 }
 

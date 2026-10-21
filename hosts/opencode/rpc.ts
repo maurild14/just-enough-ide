@@ -67,7 +67,7 @@ const options = {
 const activityKind = { enum: ['read', 'write', 'git'] } as const
 const activity = {
   type: 'object', additionalProperties: {
-    type: 'object', properties: { kind: activityKind, at: { type: 'number' } }, required: ['kind', 'at'], additionalProperties: false,
+    type: 'object', properties: { kind: activityKind, at: { type: 'number' }, active: { type: 'integer', minimum: 1 } }, required: ['kind', 'at'], additionalProperties: false,
   },
 } as const
 const diffFile = {
@@ -225,7 +225,7 @@ export const JeiRpc = Rpc.define({
     quickOpenFiles: { input: empty, output: { type: 'object', properties: { files: strings }, required: ['files'], additionalProperties: false } },
   },
   events: {
-    activity: { schema: { type: 'object', properties: { rel: text, kind: activityKind }, required: ['rel', 'kind'], additionalProperties: false } },
+    activity: { schema: { type: 'object', properties: { rel: text, kind: activityKind, active: flag }, required: ['rel', 'kind'], additionalProperties: false } },
     changed: { schema: empty },
     searchMatches: { schema: { type: 'object', properties: { sessionID: text, id: text, matches: { type: 'array', items: match, maxItems: 200 } }, required: ['sessionID', 'id', 'matches'], additionalProperties: false } },
     searchDone: { schema: { type: 'object', properties: { sessionID: text, id: text, engine: { enum: ['rg', 'git grep'] }, error: nullableText, ms: { type: 'number', minimum: 0 }, truncated: flag }, required: ['sessionID', 'id', 'engine', 'error', 'ms', 'truncated'], additionalProperties: false } },
