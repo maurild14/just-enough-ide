@@ -215,6 +215,7 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
       if (quick) { const best = rankFiles(parseQuery(value).name, files, ranking, 1)[0]; if (best) await showPreview($, best, parseQuery(value).line ?? undefined); return }
       if (kind === 'query') await updateSearch($, root, u => ({ ...u, text: value }))
       if (!value && kind === 'query') { await clear(); return }
+      await updateSearch($, root, u => ({ ...u, subject: { ...u.subject, search: 'match-0' } }))
       await updatePane($, p => reducePane(p, { type: 'select', view: 'search', id: 'match-0' }))
       await restartSearch($, true)
       await $.ui.focus({ requestId: 'jei', key: 'search-row-match-0' }).catch(() => {})

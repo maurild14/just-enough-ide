@@ -110,6 +110,26 @@ test('Search mention uses the highlighted result after submitting another query'
   }
 })
 
+test('Search Mention command uses the first result after a delayed new query', { timeoutMs: 15_000 }, async ($, on) => {
+  const seen = await world($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    await $.command.run(command('search'))
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(24) })
+    await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
+    await $.ui.focus(focus('search-row-match-1'))
+    seen.settings.slow = true; seen.settings.slowQuery = 'save'
+    await ui.input({ key: 'search-query', text: 'save', kind: 'submit' }); await seen.clock.advance(150)
+    expect((seen.states.searches as Record<string, { busy: boolean }>)[ROOT]!.busy).toBe(true)
+    await seen.clock.advance(3000); seen.settings.slow = false
+    expect((seen.states.searches as Record<string, { busy: boolean }>)[ROOT]!.busy).toBe(false)
+    expect((seen.states.pane as { selected: { search: string } }).selected.search).toBe('match-0')
+    expect(await ui.find({ key: 'search-row-command-mention' })).toBeDefined()
+    await $.ui.focus(focus('search-row-command-mention')); await ui.press({ key: 'search-row-command-mention' })
+    expect(seen.fillInputs.at(-1)).toEqual({ text: 'src/account.ts:2 (return save())', mode: 'insert' })
+    await ui.unmount()
+  }
+})
+
 test('Quick Open mention uses the highlighted file after its ranking changes', async ($, on) => {
   const seen = await world($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
