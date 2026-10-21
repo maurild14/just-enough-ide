@@ -6,15 +6,31 @@
 
 JEI is a pane with three tabs (**Files**, **Search**, **Git**) that sits next to the agent's conversation. You watch what the agent reads and edits, search the project without spending tokens, review the changes and commit them, without leaving the session. Both hosts get the same features and the same keys from one codebase.
 
-<!-- screenshots / GIFs: added by the maintainer from the acme-app sample before the public release -->
+[![JEI following the agent: the file tree marks index.html while Claude edits it](media/jei-agent.gif)](media/jei-agent.gif)
 
 ## Features
 
 - **Files:** a lazy file tree with git status and a shimmer on the files the agent reads (purple), writes (orange) or touches through git (green). Follows the agent, finds filenames as you type, previews code, Markdown and CSV/TSV, mentions a file in the prompt, opens it in your editor, and creates, renames, moves and deletes files (delete always asks first).
+
+  [![Finding files by name and previewing a CSV table and a script](media/jei-files.gif)](media/jei-files.gif)
+
+  [![Creating, renaming and deleting a file, with a confirmation before the delete](media/jei-file-ops.gif)](media/jei-file-ops.gif)
+
 - **Search:** literal, case-insensitive search across the project with streamed results and include/exclude globs. Send one result or all of them to the agent, or replace with a reviewed, confirmed plan that changes only exact-case matches and refuses files that changed since the search. Quick Open finds files by fuzzy name, ranked by recent and agent-touched paths; append `:42` to jump to a line.
+
+  [![Searching the project, previewing a match and reviewing a replacement that skips case variants](media/jei-search.gif)](media/jei-search.gif)
+
 - **Git:** a repository row with branch and Sync, Staged and Changes with stage, unstage and confirmed discard, Commit, Commit & Push and Amend, and ✦ Generate for a commit message from your own model. Files that look like secrets (`.env`, private keys) need an explicit confirmation before they are committed.
+
+  [![Opening a diff, staging the file and committing it from the pane](media/jei-git.gif)](media/jei-git.gif)
+
 - **Graph and Branches:** colored lanes and ref badges, inline commit files and diffs, copy hash, Ask, confirmed checkout and revert, links to GitHub/GitLab, markers on the commits your agent made, filters (`author:`, `path:`, `branch:`), create and switch branches, and compare with the main branch.
+
+  [![Expanding a merge commit in the Graph and opening the branch list](media/jei-graph.gif)](media/jei-graph.gif)
+
 - **Diff view:** a unified diff with hunk and file navigation, Ask about the change, and open in your editor.
+
+  ![A unified diff of one file in the pane](media/screenshot-diff.png)
 
 ## Install
 
