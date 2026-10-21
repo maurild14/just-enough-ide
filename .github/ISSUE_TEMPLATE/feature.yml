@@ -20,6 +20,6 @@ body:
     id: tab
     attributes:
       label: Which tab
-      options: [Files, Search, Symbols, Git, Other]
+      options: [Files, Search, Git, Other]
     validations:
       required: true

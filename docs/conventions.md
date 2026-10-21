@@ -48,7 +48,7 @@ For lexical user, process and RPC paths, use `nativeRel(root, path, host.platfor
 
 ## Commits
 
-[Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `test:`, `chore:`, `ci:`, with an optional scope (`feat(core): ...`). release-please reads them to cut releases. One logical change per commit, with docs in the same commit as the code they describe. Commits use the maintainer's GitHub noreply identity.
+[Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `test:`, `chore:`, `ci:`, with an optional scope (`feat(core): ...`). release-please reads them to cut releases. One logical change per commit, with docs in the same commit as the code they describe. Commits use the maintainer's GitHub noreply identity and carry no AI tool, model or session attribution trailers; the history was rewritten once before the first public release to remove them.
 
 ## Paths
 

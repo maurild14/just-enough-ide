@@ -63,6 +63,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 - No secrets, tokens, personal paths, usernames or real names in code, fixtures or docs. Fixtures use the sample repo `acme-app` and Ana Rivera / Leo Park `@example.com`.
 - Do not mention other projects, their authors or repositories anywhere.
 - Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, `ci:`). Everything is written in English.
+- Commit messages carry no AI tool, model or session attribution trailers (no `Co-Authored-By` or session lines for tools).
 
 ## Workflow
 

@@ -93,17 +93,17 @@ publishing. There is no npm token; provenance is attached automatically.
 
 One-time setup by the maintainer:
 
-- The manifest (`.release-please-manifest.json`) starts at `0.1.0`, so
-  release-please treats 0.1.0 as released and proposes the next version.
-  `CHANGELOG.md` already holds the hand-written 0.1.0 entry. Bootstrap once:
-  1. Publish 0.1.0 by hand from a clean checkout of the release commit
-     (`npm publish --access public`); npm can only attach a trusted publisher
-     to a package that exists.
-  2. Create a GitHub Release `v0.1.0` on that commit (not just a tag), so the
+- The manifest (`.release-please-manifest.json`) starts at `0.4.0`, so
+  release-please treats 0.4.0 as released and proposes the next version.
+  `CHANGELOG.md` already holds the hand-written 0.4.0 entry. Bootstrap once:
+  1. Publish 0.4.0 by hand from a clean checkout of the release commit, with
+     npm 2FA on (`npm publish --access public`); npm can only attach a trusted
+     publisher to a package that exists.
+  2. Create a GitHub Release `v0.4.0` on that commit (not just a tag), so the
      release is visible to people and to release-please.
   3. Add `"bootstrap-sha": "<that commit>"` at the top level of
      `release-please-config.json` in a `chore:` commit. release-please then
-     collects changelog commits only after 0.1.0 instead of walking the whole
+     collects changelog commits only after 0.4.0 instead of walking the whole
      history. It ignores the key once its first release PR is merged; remove
      it then.
 - On npmjs.com, in the `opencode-jei` package settings, add a trusted

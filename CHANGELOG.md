@@ -1,19 +1,14 @@
 # Changelog
 
-## Unreleased — 0.2
+## 0.4.0
 
-* Graph and Branches on both hosts: fitted lanes, inline commit files, historical diffs, copy/Ask, checkout/revert confirmation, supported web links, filter, fetch and explicit paging.
-* Branch switching/creation with fresh dirty/detached confirmation and comparisons pinned to the selected branch hashes.
-* Conservative session/repository agent commit markers from before/after tool evidence; JEI mutations and ambiguous overlaps are excluded.
-* Full-hash/ref validation across OpenCode RPC; native dialogs and clipboard fallback. Merge reverts remain unsupported. No version bump or release is made by this entry.
-
-## 0.1.0
-
-First release, published by hand (see `CONTRIBUTING.md`, Releases).
+First public release, published by hand (see `CONTRIBUTING.md`, Releases). Versions 0.1 to 0.3 were internal milestones and were never published.
 
 ### Features
 
-* A pane docked beside a Claude Code or OpenCode session, with the same keys and behavior on both hosts.
-* Files: a file tree with git status letters, agent activity glow, a fuzzy file filter, previews (code, Markdown, CSV and TSV, images on Claude Code), mention in the prompt and open in the editor.
-* Git: Staged and Changes groups, stage, unstage and confirmed discard, Commit, Commit & Push and Amend, a generated commit message, Sync with a merge or rebase choice on divergence, a diff view with hunk and file navigation, and a confirmation before committing files that look sensitive.
-* Search and Symbols tabs are placeholders in this release.
+* A pane docked beside a Claude Code or OpenCode session with three tabs, Files, Search and Git, and the same keys and behavior on both hosts.
+* Files: a lazy file tree with git status, an agent activity shimmer, follow-the-agent, live filename search, previews (code, Markdown, CSV and TSV), mention in the prompt, open in the editor, and new, rename, move and always-confirmed delete.
+* Search: literal, case-insensitive project search with streamed results, include/exclude globs, one/all hand-off to the agent, a `git grep` fallback without ripgrep, and a reviewed, confirmed replacement that changes only exact-case matches and refuses changed files. Quick Open ranks files by recent and agent-touched paths and accepts `:line`.
+* Git: Staged and Changes with stage, unstage and confirmed discard, Commit, Commit & Push and Amend, a generated commit message from your own model, Sync with a merge or rebase choice on divergence, and an exact confirmation before committing files that look sensitive.
+* Graph and Branches: colored lanes and ref badges, inline commit files and diffs, copy hash, Ask, confirmed checkout and revert, GitHub/GitLab links, agent commit markers, filters, explicit paging and fetch, branch switch and create with dirty/detached confirmation, and comparison with the main branch.
+* Diff view with hunk and file navigation, Ask and open in editor.

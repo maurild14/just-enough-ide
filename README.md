@@ -1,48 +1,20 @@
 # JEI — Just Enough IDE
 
+<!-- logo: added by the maintainer before the public release -->
+
 > The parts of an IDE you still need when the AI writes the code: a file tree, project search and a full Git panel, docked beside your Claude Code or OpenCode session.
 
-JEI is a pane with three tabs (Files, Search, Git) that sits next to the agent's conversation. You watch what the agent reads and edits, review its changes and commit them, without leaving the session. Both hosts get the same features and the same keys from one codebase.
+JEI is a pane with three tabs (**Files**, **Search**, **Git**) that sits next to the agent's conversation. You watch what the agent reads and edits, search the project without spending tokens, review the changes and commit them, without leaving the session. Both hosts get the same features and the same keys from one codebase.
 
-<!-- screenshots: added by the maintainer from acme-app before the public release -->
+<!-- screenshots / GIFs: added by the maintainer from the acme-app sample before the public release -->
 
-## What this checkout includes
+## Features
 
-- **Files:** a lazy file tree with git status, a shimmer on the files the agent reads (purple), writes (orange) or touches through git (green), follow-the-agent, a filter, previews (code, Markdown, CSV/TSV), mention into the agent, open in your editor, and new, rename, move and always-confirmed delete operations.
-- **Git:** a repository row (branch, Sync with your remote), Changes with stage, unstage and discard (always confirmed), commit, Commit & Push and amend, a ✦ Generate commit message from your own model, and a check before secrets such as `.env` or private keys are committed.
-- **Diff view:** a unified diff that replaces the pane, with hunk and file navigation, Ask about the change, and open in editor.
-- **Graph:** colored lanes and distinct reference badges above Staged and Changes, subjects with right-aligned final hashes, inline changed files, commit diffs, copy hash, Ask, confirmed checkout/revert, supported GitHub/GitLab links, session agent markers, filters and explicit paging. Fetch runs only when requested.
-- **Branches:** distinct colors for current, local and remote names, dirty/detached switch confirmation, create from HEAD or a selected commit, and pinned comparisons with the main branch.
-- **Search:** literal, case-insensitive content search with streamed results, include/exclude globs, one/all hand-off, and reviewed, confirmed exact-case UTF-8 replacement with changed-file refusal.
-- **Quick Open:** fuzzy files ranked by touched and recent paths, with `:line` previews.
-- **Keys:** `1`–`3` switch Files, Search and Git; every view lists its keys on the last line.
-
-The v0.4 cleanup and Files operations are implemented in this checkout. Polish and publication remain deferred; see the milestones in [PRD.md §11](PRD.md#11-milestones).
-
-| View | Keys |
-| --- | --- |
-| Git | `enter` expand/open, `s` stage, `u` unstage, `d` discard, `c` commit mode, `g` generate, `e` sync |
-| Graph | `y` copy hash, `a` Ask, `b` branches, `f` filter, `t` fetch, `n` new branch from the selected commit |
-| Branches | `enter` switch, `n` new branch from HEAD, `c` compare, `f` filter |
-| Diff | `n/p` hunk, `j/k` file, `a` Ask, `o` editor |
-| Files | `s` or `f` find filenames live, arrows select, `enter` preview, `n` new, `r` rename, `m` move, `d` confirm delete, Clear restore tree |
-| Search | `b` Files, `f` edit query, `enter` preview, `a` add result, `s` send all, `i` globs, `p` replace, `q` Quick Open |
-| Quick Open | `enter` preview, `a` mention, `q` Search; append `:42` for a line |
-| Replace | `enter` apply file, `y` apply all, `a` Ask; every application confirms the reviewed plan |
-
-Use `q` or the visible Back control to return one level on both hosts; OpenCode also accepts Esc. Claude Code reserves Esc for the prompt. A typed `q` remains text in an editor. Comparisons return through diff, comparison files and Branches while preserving selection. Graph filters accept text plus `author:`, `path:` and `branch:` fields (`branch:*` includes all branches). Merge commits cannot be reverted by JEI.
-
-Search and Quick Open reserve `q` for their mode toggle. Submit or Cancel leaves query editing so list shortcuts and tab digits work again. Compact list controls keep actions reachable when their hint does not fit.
-
-Search retains at most 2,000 result lines and an estimated 16 MiB of result data. Replace requires a complete search and a review within its estimated 32 MiB snapshot budget; narrow the search when either limit is reached. Previews show the changed lines with context, and every application confirms the reviewed plan.
-
-Search and Quick Open keep separate query text. Claude Code reports an explicit retryable error when its file list exceeds the host's 4 MiB output limit; streaming file enumeration remains deferred.
-
-Files keeps an outlined filename field above the project name. Press `s` or `f` and type to update results immediately; basename prefixes rank first, with forgiving path matches afterward. Arrows leave editing and move through results; Enter previews and Back restores the query and selected file. Clear restores the original expanded tree and selection. Cancel only leaves editing.
-
-New takes one name under the selected folder or selected file's parent; a trailing `/` creates a folder. Rename takes a basename, and Move takes the exact project-relative destination including its name. Delete names the selected file or folder and always asks first; folder deletion is recursive. Existing destinations, missing parents and unsafe paths are refused. Success refreshes Files and Git, reveals the result and clears the filename filter; cancellation and refusal keep the filter.
-
-Search (`2`) finds text inside files after Enter, with include/exclude globs, hand-off and reviewed replacement. Matching is literal and case-insensitive. Clear stays in Search; `b` returns to Files. Replace changes only exact text including case; other case variants show `case-differs`. Unknown default-tab values use Files, and unknown command words reveal a path in Files. Cancel and Clear have visible spacing and a separator in both fields.
+- **Files:** a lazy file tree with git status and a shimmer on the files the agent reads (purple), writes (orange) or touches through git (green). Follows the agent, finds filenames as you type, previews code, Markdown and CSV/TSV, mentions a file in the prompt, opens it in your editor, and creates, renames, moves and deletes files (delete always asks first).
+- **Search:** literal, case-insensitive search across the project with streamed results and include/exclude globs. Send one result or all of them to the agent, or replace with a reviewed, confirmed plan that changes only exact-case matches and refuses files that changed since the search. Quick Open finds files by fuzzy name, ranked by recent and agent-touched paths; append `:42` to jump to a line.
+- **Git:** a repository row with branch and Sync, Staged and Changes with stage, unstage and confirmed discard, Commit, Commit & Push and Amend, and ✦ Generate for a commit message from your own model. Files that look like secrets (`.env`, private keys) need an explicit confirmation before they are committed.
+- **Graph and Branches:** colored lanes and ref badges, inline commit files and diffs, copy hash, Ask, confirmed checkout and revert, links to GitHub/GitLab, markers on the commits your agent made, filters (`author:`, `path:`, `branch:`), create and switch branches, and compare with the main branch.
+- **Diff view:** a unified diff with hunk and file navigation, Ask about the change, and open in your editor.
 
 ## Install
 
@@ -55,11 +27,11 @@ In a Claude Code session:
 /plugin install jei@jei
 ```
 
-Then run `/tui fullscreen` so the pane can dock beside the transcript, and `/jei` to toggle it. In the Claude Code desktop app, run the same two commands in a session prompt; the pane draws there too and works by click. Mods do not load in desktop WSL sessions, the VS Code chat panel or `claude -p`.
+Then run `/tui fullscreen` so the pane can dock beside the transcript, and `/jei` to toggle it. In the Claude Code desktop app, run the same commands in a session prompt; the pane works there by click too. Mods do not load in desktop WSL sessions, the VS Code chat panel or `claude -p`.
 
 ### OpenCode 2.x
 
-Add the npm package to `opencode.json` (or `opencode.jsonc`); OpenCode installs it with Bun on next start:
+Add the npm package to `opencode.json` (or `opencode.jsonc`); OpenCode installs it with Bun on the next start:
 
 ```json
 { "plugins": ["opencode-jei"] }
@@ -67,13 +39,29 @@ Add the npm package to `opencode.json` (or `opencode.jsonc`); OpenCode installs 
 
 ## Requirements
 
-- Claude Code 2.1.302 or newer, with `/tui fullscreen` and at least 110 columns for docking.
-- OpenCode 2.x, version 2.0.32 or newer (the 1.x line is not supported).
-- On both: `git` on your PATH. Optional: `rg` (ripgrep) for streamed Search and a Nerd Font for icons. Without rg, repository Search falls back to Git grep's first occurrence per line in tracked files; hidden/untracked coverage differs from rg. Outside a repository it shows installation help.
+- Claude Code 2.1.302 or newer, in `/tui fullscreen` with at least 110 columns to dock; or OpenCode 2.0.32 or newer (1.x is not supported).
+- `git` on your PATH.
+- Recommended: `rg` ([ripgrep](https://github.com/BurntSushi/ripgrep)) for streamed Search. Without it, Search inside a repository falls back to `git grep` (tracked files, first match per line).
+- Optional: a Nerd Font for file icons.
+
+## Keys
+
+`1`–`3` switch tabs. Every view lists its keys on its last line. `q` or the visible Back control goes back one level; OpenCode also accepts Esc (Claude Code reserves Esc for its prompt). Inside a text field, letters are text.
+
+| View | Keys |
+| --- | --- |
+| Files | `s`/`f` find filenames, `enter` preview, `a` mention, `o` open in editor, `n` new (end with `/` for a folder), `r` rename, `m` move, `d` delete, `h` hidden files |
+| Search | `f` edit query, `enter` preview, `a` send result, `s` send all, `i` globs, `p` replace, `q` Quick Open, `b` back to Files |
+| Quick Open | `enter` preview, `a` mention, `q` back to Search |
+| Replace | `enter` apply to file, `y` apply all, `a` Ask; every apply confirms |
+| Git | `enter` expand/open, `s` stage, `u` unstage, `d` discard, `c` commit mode, `g` generate, `e` sync |
+| Graph | `y` copy hash, `a` Ask, `b` branches, `f` filter, `t` fetch, `n` branch from commit |
+| Branches | `enter` switch, `n` new branch, `c` compare, `f` filter |
+| Diff | `n`/`p` hunk, `j`/`k` file, `a` Ask, `o` editor |
 
 ## Configuration
 
-The same keys on both hosts. On Claude Code, set them in `/config` (on/off settings are `on`/`off` pickers). On OpenCode, pass them as plugin options:
+The same keys on both hosts. On Claude Code, set them in `/config`. On OpenCode, pass them as plugin options:
 
 ```json
 { "plugins": [{ "package": "opencode-jei", "options": { "defaultTab": "git" } }] }
@@ -89,21 +77,21 @@ The same keys on both hosts. On Claude Code, set them in `/config` (on/off setti
 | `editorCommand` | text | empty | Command that opens a file; `{path}` and `{line}` are replaced. Empty uses the system default |
 | `commitModel` | text | empty | Model for ✦ Generate; empty uses the host default |
 | `smartCommit` | on / off | on | Commit with nothing staged stages everything first |
-| `graphLimit` | number | 200 | Commits loaded per page in the Graph (from 0.2) |
+| `graphLimit` | number | 200 | Commits loaded per page in the Graph |
 
-## Privacy
+## Privacy and security
 
-- JEI is local. It sends nothing over the network itself.
+- JEI is local. It sends nothing over the network itself and has no telemetry.
 - The only model calls are the ones you start (✦ Generate and Ask), through your own host session and provider.
 - `git fetch`, `pull` and `push` talk only to your own remotes, and only when you ask. JEI never fetches in the background.
-- Before a smart commit stages everything, files that look like secrets are listed and need your confirmation.
+- Every process runs as an argument list, never through a shell. File operations, previews and replacements stay inside the project root, and destructive actions always confirm.
 - The npm package is published from GitHub Actions with npm trusted publishing and provenance; no npm token exists.
 
-Details: [docs/security.md](docs/security.md). Security reports: [SECURITY.md](SECURITY.md).
+Details: [docs/security.md](docs/security.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Product behavior lives in [PRD.md](PRD.md) and the engineering docs in [docs/](docs/README.md).
 
 ## License
 

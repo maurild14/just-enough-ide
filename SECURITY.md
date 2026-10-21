@@ -18,5 +18,11 @@ open. It sends nothing over the network itself. The only model calls are the
 ones you start (Generate and Ask), through your own host session and provider,
 and `git fetch`, `pull` and `push` talk to your own remotes.
 
-In scope: command or argument injection in the processes JEI starts, writes
-outside the project root, and staging or exposing files that look like secrets.
+In scope: command or argument injection in the processes JEI starts; reads,
+writes, renames, moves or deletes outside the project root (including through
+links or path aliases); destructive actions that run without a confirmation;
+and staging or exposing files that look like secrets.
+
+Out of scope: what your agent, your host or your own Git hooks do, and races
+with other programs writing the same files at the same moment (see
+`docs/decisions/0028-safe-files-operations.md`).

@@ -1,6 +1,6 @@
 # JEI — Just Enough IDE
 
-**Product requirements and technical spec · v0.1 draft**
+**Product requirements and technical spec · v0.4**
 
 > The parts of an IDE you still need when the AI writes the code: a file tree, project search and a full Git panel, docked beside your Claude Code or OpenCode session.
 
@@ -400,7 +400,7 @@ Every milestone ships on **both hosts**.
 | **0.1** | `core/` + `Host` interface · pane shell + tabs + hint line · Files (tree, git status, shimmer, follow, preview, mention, open) · Git: repository row, Changes (stage/unstage/discard, commit, ✦), diff view |
 | **0.2** | Git: Graph (lanes, expand commit, commit actions, agent ✦ markers, filter) · Branches (switch, create, compare with main) |
 | **0.3** | Search (rg streaming, send to the agent, replace with preview) · Quick Open. Symbols was withdrawn; ADR 0027 removes its implementation and compatibility contracts. |
-| **0.4** | Task 1: remove Symbols, exact Replace and current docs · Task 2: review · Task 3: file operations in Files. Polish, GIFs, launch and publication are deferred. |
+| **0.4** | Symbols removal, exact-case Replace, file operations in Files (new, rename, move, delete) · polish, public README, release 0.4.0 as the first public release |
 
 Later candidates (not committed): Problems panel (tsc/eslint per file), Test Explorer, npm scripts & ports, TODO list of what the agent left, review queue ("unreviewed" files), blame-by-prompt.
 
