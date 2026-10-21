@@ -192,15 +192,27 @@ for (const platform of ['linux', 'darwin', 'win32'] as const) test(`${platform} 
       expect(command!.argv.slice(0, 5)).toEqual(['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command'])
       expect(command!.argv.at(-1)).not.toContain(name)
       expect(command!.argv.at(-1)).toContain('-ErrorAction Stop')
-      expect(command!.env).toBeDefined()
+      expect(command!.env).toEqual({
+        JEI_FS_SOURCE: kind === 'new' ? 'C:\\acme-app' : 'C:\\acme-app\\src\\file.txt',
+        JEI_FS_DESTINATION: kind === 'delete' ? '' : kind === 'rename' ? "C:\\acme-app\\src\\ spaced [x] ' $;é" : kind === 'move' ? "C:\\acme-app\\other\\ spaced [x] ' $;é" : "C:\\acme-app\\ spaced [x] ' $;é",
+      })
       if (kind === 'new') { expect(command!.argv.at(-1)).toContain('New-Item'); expect(command!.argv.at(-1)).not.toContain('-LiteralPath') }
       else expect(command!.argv.at(-1)).toContain('-LiteralPath')
+      if (kind === 'delete') expect(command!.argv.at(-1)).toBe("$ErrorActionPreference='Stop'; Remove-Item -LiteralPath $env:JEI_FS_SOURCE -Force -ErrorAction Stop")
     } else {
       expect(command!.argv).toContain('--')
       expect(command!.argv.at(-1)).toBe(kind === 'delete' ? `${f.root}/src/file.txt` : kind === 'rename' ? `${f.root}/src/${name}` : kind === 'move' ? `${f.root}/other/${name}` : `${f.root}/${name}`)
       if (kind === 'move' || kind === 'rename') expect(command!.argv.slice(0, 3)).toEqual(['mv', '-n', '--'])
     }
   }
+  const directory = await fsops.planFsOp(f.host, await fsops.prepareFsOp(f.host, f.root, { kind: 'delete', source: 'src' }))
+  const command = fsops.fsOpCommand(directory, platform)!
+  if (platform === 'win32') {
+    expect(command).toEqual({
+      argv: ['powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', "$ErrorActionPreference='Stop'; Remove-Item -LiteralPath $env:JEI_FS_SOURCE -Recurse -Force -ErrorAction Stop"],
+      env: { JEI_FS_SOURCE: 'C:\\acme-app\\src', JEI_FS_DESTINATION: '' },
+    })
+  } else expect(command.argv).toEqual(['rm', '-r', '--', '/acme-app/src'])
 })
 
 test('postconditions reject a skipped successful mv and a changed canonical destination', async () => {

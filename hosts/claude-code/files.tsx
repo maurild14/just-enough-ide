@@ -97,6 +97,7 @@ const failed = new Set<string>()
 /** Only the preview on screen is kept; showPreview clears it. */
 let current: { key: string; p: Promise<Preview> } | null = null
 const fileLists = new Map<string, Promise<string[]>>()
+const fileListEpochs = new Map<string, number>()
 const at = (root: string, rel: string) => `${root}\u0000${rel}`
 const guardedAllFiles = latest(allFiles)
 
@@ -174,15 +175,17 @@ export function forgetAll(root: string): void {
 
 /** Drops the filter's file list; it is re-read when the filter next draws. */
 export function forgetFileList(root: string): void {
+  fileListEpochs.set(root, (fileListEpochs.get(root) ?? 0) + 1)
   fileLists.delete(root)
 }
 
 /** Re-reads the project file list behind the filter; only the latest call lands. */
 export async function refreshFileList(host: Host, root: string): Promise<void> {
+  const epoch = fileListEpochs.get(root)
   try {
     const r = await guardedAllFiles(host, root)
-    if (!r.stale) fileLists.set(root, Promise.resolve(r.value))
-  } catch (err) { fileLists.delete(root); throw err }
+    if (!r.stale && fileListEpochs.get(root) === epoch) fileLists.set(root, Promise.resolve(r.value))
+  } catch (err) { if (fileListEpochs.get(root) === epoch) fileLists.delete(root); throw err }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,7 +314,7 @@ async function applyFilesOperation($: EngineInterface, id: string, value: string
     selected = visibleTreePath(requested)
     if (selected !== requested) notice = `Operation completed: ${plan.destination === null ? plan.source : requested}. .git is hidden; showing its parent.`
     const target = selected
-    await publishFilesTree($, root, id, t => ({ ...t, filter: '', filtering: false, editing: false, origin: undefined, revealed: target || undefined, expanded: [...new Set([...t.expanded.filter(rel => rel !== plan.source && !rel.startsWith(plan.source + '/')), ...parentDirs(target)])] }))
+    await publishFilesTree($, root, id, t => ({ ...t, filter: '', filtering: false, editing: false, origin: undefined, revealed: target || undefined, expanded: [...new Set([...(plan.kind === 'new' ? t.expanded : t.expanded.filter(rel => rel !== plan.source && !rel.startsWith(plan.source + '/'))), ...parentDirs(target)])] }))
     await publishFilesPane($, root, id, p => reducePane(p, { type: 'select', view: 'files', id: target }))
   } catch (error) { failure = `Files operation failed: ${firstLine(error)}.` }
   finally {

@@ -238,6 +238,8 @@ export function Files(props: {
       if (data.root !== root || data.kind !== kind || data.source !== source || typeof data.planId !== 'string' || typeof data.parent !== 'string' || !['file', 'dir', null].includes(data.sourceKind as string | null)) throw new Error('Invalid Files operation reply.')
       const next: FilesEdit = { planId: data.planId, root, kind, source, sourceKind: data.sourceKind as FilesEdit['sourceKind'], parent: data.parent, value: kind === 'rename' ? source.slice(source.lastIndexOf('/') + 1) : kind === 'move' ? source : '', working: false }
       setEditing(false); setOperation(next); save(d => { d.operation = next })
+    } catch (error) {
+      props.ctx.ui.toast.show({ message: error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message.split(/\r?\n/)[0]! : 'Unable to prepare Files operation.', variant: 'error' })
     } finally { if (!operation()) save(d => { d.operationBusy = false }) }
   }
   async function applyOperation() {
@@ -246,9 +248,8 @@ export function Files(props: {
     setOperation({ ...held, working: true })
     let attempted = false, completed = false, failure = '', notice = ''
     try {
-      if (!operationController || operationController.signal.aborted) operationController = new AbortController()
       attempted = true // A rejected remote reply may follow a completed effect.
-      const data = record(await props.api.fsApply({ sessionID: props.sessionID, planId: held.planId, ...(held.kind === 'delete' ? {} : { value: held.value }), confirmed: held.kind === 'delete' }, { signal: operationController?.signal }))
+      const data = record(await props.api.fsApply({ sessionID: props.sessionID, planId: held.planId, ...(held.kind === 'delete' ? {} : { value: held.value }), confirmed: held.kind === 'delete' }))
       if (typeof data.ok !== 'boolean' || typeof data.attempted !== 'boolean' || typeof data.rel !== 'string') throw new Error('Invalid Files operation reply.')
       attempted = data.attempted; completed = data.ok
       if (typeof data.error === 'string') failure = data.error
@@ -258,7 +259,7 @@ export function Files(props: {
         if (selected !== data.rel) notice = `Operation completed: ${held.kind === 'delete' ? held.source : data.rel}. .git is hidden; showing its parent.`
         setQuery(''); setFiltering(false); setEditing(false); origin = undefined
         setRevealed(selected || undefined)
-        setExpanded(reveal(new Set([...expanded()].filter(rel => rel !== held.source && !rel.startsWith(held.source + '/'))), selected))
+        setExpanded(reveal(held.kind === 'new' ? expanded() : new Set([...expanded()].filter(rel => rel !== held.source && !rel.startsWith(held.source + '/'))), selected))
         props.dispatch({ type: 'select', view: 'files', id: selected })
       }
     } catch (error) { failure = error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message.split(/\r?\n/)[0]! : 'Unable to complete Files operation.' }

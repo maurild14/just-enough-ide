@@ -1,6 +1,6 @@
 # 0029: Canonical filesystem identity
 
-> Purpose: separate canonical metadata identity from lexical path aliases · Status: accepted · Last reviewed: 2026-10-21
+> Purpose: separate canonical metadata identity from lexical path aliases · Status: current · Last reviewed: 2026-10-21
 
 Status: accepted
 

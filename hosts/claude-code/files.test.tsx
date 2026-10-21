@@ -297,6 +297,8 @@ async function world($: Engine, on: On, operations = false, onRun?: (argv: reado
   let refreshFailure = false
   let effectHold: Promise<void> | undefined
   let effectEntered = false
+  let fileListHold: Promise<void> | undefined
+  let fileListEntered = false
   const create = (path: string, kind: 'file' | 'dir') => {
     const parent = path.slice(0, path.lastIndexOf('/')), name = path.slice(path.lastIndexOf('/') + 1)
     TREE[parent]!.push(kind === 'dir' ? dir(name) : file(name, 0))
@@ -358,7 +360,11 @@ async function world($: Engine, on: On, operations = false, onRun?: (argv: reado
     if (argv.includes('--show-toplevel')) return ok(`${ROOT}\n`)
     if (argv.includes('--absolute-git-dir')) return ok(`${ROOT}/.git\n`)
     if (argv.includes('check-ignore')) return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
-    if (argv.includes('ls-files') && argv.includes('-co')) return ok((operations ? Object.entries(TREE).flatMap(([parent, entries]) => entries.filter(e => e.kind === 'file').map(e => `${parent}/${e.name}`.slice(ROOT.length + 1))) : FILES).join('\0') + '\0')
+    if (argv.includes('ls-files') && argv.includes('-co')) {
+      const snapshot = (operations ? Object.entries(TREE).flatMap(([parent, entries]) => entries.filter(e => e.kind === 'file').map(e => `${parent}/${e.name}`.slice(ROOT.length + 1))) : FILES).join('\0') + '\0'
+      if (fileListHold) { fileListEntered = true; await fileListHold }
+      return ok(snapshot)
+    }
     if (argv.includes('status')) return ok('# branch.oid 1111111111111111111111111111111111111111\0# branch.head main\0' + '1 .M N... 100644 100644 100644 1111111111111111111111111111111111111111 1111111111111111111111111111111111111111 src/api/user.ts\0')
     return ok('')
   })
@@ -373,7 +379,7 @@ async function world($: Engine, on: On, operations = false, onRun?: (argv: reado
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('classic.CwdChanged', () => ({}))
   await $.classic.CwdChanged({ old_cwd: '/work', new_cwd: ROOT })
-  return { lists, runs, fills, toasts, effects, setOperationFailure(value: typeof operationFailure) { operationFailure = value }, setRefreshFailure(value: boolean) { refreshFailure = value }, holdEffects(value: Promise<void> | undefined) { effectHold = value }, get effectEntered() { return effectEntered } }
+  return { lists, runs, fills, toasts, effects, setOperationFailure(value: typeof operationFailure) { operationFailure = value }, setRefreshFailure(value: boolean) { refreshFailure = value }, holdEffects(value: Promise<void> | undefined) { effectHold = value }, get effectEntered() { return effectEntered }, holdFileList(value: Promise<void> | undefined) { fileListHold = value; fileListEntered = false }, get fileListEntered() { return fileListEntered } }
 }
 
 for (const phase of ['post-refresh', 'tree-retry', 'pane-retry'] as const) test(`Files completion refuses ${phase} publication after a native cwd change`, { timeoutMs: 60_000 }, async ($, on) => {
@@ -434,6 +440,64 @@ for (const scenario of ['hidden', 'capped', 'hidden-parent', 'git-fallback'] as 
     }
     await ui.unmount()
   } finally { for (const key of Object.keys(TREE)) delete TREE[key]; Object.assign(TREE, JSON.parse(savedTree)); for (const key of Object.keys(CONTENT)) delete CONTENT[key]; Object.assign(CONTENT, JSON.parse(savedContent)) }
+})
+
+test('Files mutation invalidation wins over an already started old filename-list refresh', { timeoutMs: 60_000 }, async ($, on) => {
+  const clock = mock.clock(on, { now: 10_000 })
+  answerTools(on)
+  const savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT), seen = await world($, on, true)
+  let release!: () => void
+  const oldList = new Promise<void>(resolve => { release = resolve })
+  try {
+    const ui = await mountAt($)
+    await ui.press({ key: 'key-f' }); await ui.input({ key: 'filter', text: 'user', kind: 'change' }); await ui.press({ key: 'files-cancel' })
+    await ui.press({ key: 'key-r' })
+    seen.holdFileList(oldList)
+    await $.tool.call({ tool: 'Write', file_path: `${ROOT}/src/index.ts`, content: 'x' } as never)
+    await clock.advance(300)
+    expect(seen.fileListEntered).toBe(true)
+    await ui.input({ key: 'files-operation-input', text: 'renamed.txt', kind: 'submit' })
+    expect(CONTENT[`${ROOT}/src/api/renamed.txt`]).toBe(USER_TS)
+    seen.holdFileList(undefined); release(); await clock.settle()
+    await ui.press({ key: 'key-f' }); await ui.input({ key: 'filter', text: 'renamed', kind: 'change' })
+    expect(await ui.find({ key: 'row-src/api/renamed.txt' })).toBeTruthy()
+    await ui.input({ key: 'filter', text: 'user', kind: 'change' })
+    expect(await ui.find({ key: 'row-src/api/user.ts' })).toBeUndefined()
+    await ui.unmount()
+  } finally { release(); await clock.settle(); for (const key of Object.keys(TREE)) delete TREE[key]; Object.assign(TREE, JSON.parse(savedTree)); for (const key of Object.keys(CONTENT)) delete CONTENT[key]; Object.assign(CONTENT, JSON.parse(savedContent)) }
+})
+
+for (const surface of SURFACES) test(`Files new entry retains expanded descendants on ${surface}`, async ($, on) => {
+  on('ui.focus', () => ({}))
+  const savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT)
+  await world($, on, true)
+  try {
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    await ui.press({ key: 'row-src' }); await ui.press({ key: 'row-src/api' })
+    expect(await ui.find({ key: 'row-src/api/user.ts' })).toBeTruthy()
+    await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src', origin: { kind: 'person' } })
+    await ui.press({ key: 'key-n' }); await ui.input({ key: 'files-operation-input', text: 'added.txt', kind: 'submit' })
+    expect(await ui.find({ key: 'row-src/added.txt' })).toBeTruthy()
+    expect(await ui.find({ key: 'row-src/api/user.ts' })).toBeTruthy()
+    await ui.unmount()
+  } finally { for (const key of Object.keys(TREE)) delete TREE[key]; Object.assign(TREE, JSON.parse(savedTree)); for (const key of Object.keys(CONTENT)) delete CONTENT[key]; Object.assign(CONTENT, JSON.parse(savedContent)) }
+})
+
+test('Files cancel and refused rename retain the filename filter on both native surfaces', async ($, on) => {
+  const seen = await world($, on, true)
+  for (const surface of SURFACES) {
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    await ui.press({ key: 'key-f' }); await ui.input({ key: 'filter', text: 'user', kind: 'change' }); await ui.press({ key: 'files-cancel' })
+    await ui.press({ key: 'key-r' }); await ui.press({ key: 'files-operation-cancel' })
+    expect((await ui.find({ key: 'filter' }))?.props.value).toBe('user')
+    expect(await ui.find({ key: 'row-src/api/user.ts' })).toBeTruthy()
+    await ui.press({ key: 'key-r' }); await ui.input({ key: 'files-operation-input', text: 'run.sh', kind: 'submit' })
+    expect(seen.toasts.at(-1)).toContain('already exists')
+    expect((await ui.find({ key: 'filter' }))?.props.value).toBe('user')
+    expect(await ui.find({ key: 'row-src/api/user.ts' })).toBeTruthy()
+    expect(seen.effects).toEqual([])
+    await ui.press({ key: 'files-clear' }); await ui.unmount()
+  }
 })
 
 test('Files mutations refresh caches/state, select surviving targets and never simulate failed or skipped moves', { timeoutMs: 60_000 }, async ($, on) => {

@@ -1,8 +1,8 @@
 # Architecture
 
-Resolved filesystem metadata uses pure `canonicalRel` in `core/shared/paths.ts` (ADR 0029); lexical input/RPC paths retain `nativeRel`. Exact canonical components guard Files validation/postconditions/results, preview reads, Search admission and replacement reads/final writes. Windows separator and ASCII drive-letter normalization never folds directory or Unicode identity.
-
 > Purpose: how JEI is split between a host-independent core and two thin host adapters, and how data moves · Status: current · Last reviewed: 2026-10-21
+
+Resolved filesystem metadata uses pure `canonicalRel` in `core/shared/paths.ts` (ADR 0029); lexical input/RPC paths retain `nativeRel`. Exact canonical components guard Files validation/postconditions/results, preview reads, Search admission and replacement reads/final writes. Windows separator and ASCII drive-letter normalization never folds directory or Unicode identity.
 
 The layout is fixed; modules appear as plan Tasks 3-17 are built (see `docs/quality.md`). Source: `PRD.md` §4.1 and §8.
 
@@ -73,7 +73,7 @@ Both native hosts consume the v0.3 `core/search/` services. `rg.ts` contains arg
 
 ADR 0023 bounds accepted Search results at an estimated 16 MiB of UTF-16 text/path strings plus range/record overhead, and incrementally retained replacement snapshots at an estimated 32 MiB. These are retention estimates rather than exact heap limits. A truncated search or oversized review refuses replacement completely with narrowing guidance. Empty literal replacement queries and multiline Search patterns are refused; empty regex remains intentional. Transient engine/parser data, RPC/session duplication and retained roots remain outside these budgets.
 
-ADR 0020 adds `nativeRel(root, path, platform)` for Search's input and real-path boundaries while preserving older helper behavior. `parseRgLine` takes an optional platform; services always supply `host.platform`. POSIX colons stay literal, and unsupported POSIX backslashes are omitted/refused before they could alias slash filenames. Direct replacement uses `unsupported-path`. Git fallback retains empty first matches only after two complete successful streams and JS verification at the reported index; other complete but unverifiable pairs produce an explicit error.
+ADR 0020 adds `nativeRel(root, path, platform)` for Search's lexical input/process/RPC paths while preserving older helper behavior. ADR 0029 uses `canonicalRel` for resolved metadata and real-path confinement, preserving exact component identity. `parseRgLine` takes an optional platform; services always supply `host.platform`. POSIX colons stay literal, and unsupported POSIX backslashes are omitted/refused before they could alias slash filenames. Direct replacement uses `unsupported-path`. Git fallback retains empty first matches only after two complete successful streams and JS verification at the reported index; other complete but unverifiable pairs produce an explicit error.
 
 Rg submatch conversion collects requested byte boundaries and indexes them during one traversal of the line, with work linear in line bytes plus submatch count. It preserves original range order, UTF-16 indexes, CRLF stripping and single-offset `byteToIndex` behavior, without rescanning a prefix for every boundary.
 

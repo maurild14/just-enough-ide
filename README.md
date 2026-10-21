@@ -6,9 +6,9 @@ JEI is a pane with three tabs (Files, Search, Git) that sits next to the agent's
 
 <!-- screenshots: added by the maintainer from acme-app before the public release -->
 
-## What 0.3 ships
+## What this checkout includes
 
-- **Files:** a lazy file tree with git status, a shimmer on the files the agent reads (purple), writes (orange) or touches through git (green), follow-the-agent, a filter, previews (code, Markdown, CSV/TSV), mention into the agent, and open in your editor.
+- **Files:** a lazy file tree with git status, a shimmer on the files the agent reads (purple), writes (orange) or touches through git (green), follow-the-agent, a filter, previews (code, Markdown, CSV/TSV), mention into the agent, open in your editor, and new, rename, move and always-confirmed delete operations.
 - **Git:** a repository row (branch, Sync with your remote), Changes with stage, unstage and discard (always confirmed), commit, Commit & Push and amend, a ✦ Generate commit message from your own model, and a check before secrets such as `.env` or private keys are committed.
 - **Diff view:** a unified diff that replaces the pane, with hunk and file navigation, Ask about the change, and open in editor.
 - **Graph:** colored lanes and distinct reference badges above Staged and Changes, subjects with right-aligned final hashes, inline changed files, commit diffs, copy hash, Ask, confirmed checkout/revert, supported GitHub/GitLab links, session agent markers, filters and explicit paging. Fetch runs only when requested.
@@ -17,9 +17,7 @@ JEI is a pane with three tabs (Files, Search, Git) that sits next to the agent's
 - **Quick Open:** fuzzy files ranked by touched and recent paths, with `:line` previews.
 - **Keys:** `1`–`3` switch Files, Search and Git; every view lists its keys on the last line.
 
-Coming next (see the milestones in [PRD.md §11](PRD.md#11-milestones)):
-
-- **0.4:** File operations and the first public release.
+The v0.4 cleanup and Files operations are implemented in this checkout. Polish and publication remain deferred; see the milestones in [PRD.md §11](PRD.md#11-milestones).
 
 | View | Keys |
 | --- | --- |
@@ -27,7 +25,7 @@ Coming next (see the milestones in [PRD.md §11](PRD.md#11-milestones)):
 | Graph | `y` copy hash, `a` Ask, `b` branches, `f` filter, `t` fetch, `n` new branch from the selected commit |
 | Branches | `enter` switch, `n` new branch from HEAD, `c` compare, `f` filter |
 | Diff | `n/p` hunk, `j/k` file, `a` Ask, `o` editor |
-| Files | `s` or `f` find filenames live, arrows select, `enter` preview, Clear restore tree |
+| Files | `s` or `f` find filenames live, arrows select, `enter` preview, `n` new, `r` rename, `m` move, `d` confirm delete, Clear restore tree |
 | Search | `b` Files, `f` edit query, `enter` preview, `a` add result, `s` send all, `i` globs, `p` replace, `q` Quick Open |
 | Quick Open | `enter` preview, `a` mention, `q` Search; append `:42` for a line |
 | Replace | `enter` apply file, `y` apply all, `a` Ask; every application confirms the reviewed plan |
@@ -41,6 +39,8 @@ Search retains at most 2,000 result lines and an estimated 16 MiB of result data
 Search and Quick Open keep separate query text. Claude Code reports an explicit retryable error when its file list exceeds the host's 4 MiB output limit; streaming file enumeration remains deferred.
 
 Files keeps an outlined filename field above the project name. Press `s` or `f` and type to update results immediately; basename prefixes rank first, with forgiving path matches afterward. Arrows leave editing and move through results; Enter previews and Back restores the query and selected file. Clear restores the original expanded tree and selection. Cancel only leaves editing.
+
+New takes one name under the selected folder or selected file's parent; a trailing `/` creates a folder. Rename takes a basename, and Move takes the exact project-relative destination including its name. Delete names the selected file or folder and always asks first; folder deletion is recursive. Existing destinations, missing parents and unsafe paths are refused. Success refreshes Files and Git, reveals the result and clears the filename filter; cancellation and refusal keep the filter.
 
 Search (`2`) finds text inside files after Enter, with include/exclude globs, hand-off and reviewed replacement. Matching is literal and case-insensitive. Clear stays in Search; `b` returns to Files. Replace changes only exact text including case; other case variants show `case-differs`. Unknown default-tab values use Files, and unknown command words reveal a path in Files. Cancel and Clear have visible spacing and a separator in both fields.
 

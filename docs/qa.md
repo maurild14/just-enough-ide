@@ -6,9 +6,11 @@ The specs cover logic and rendered frames (`docs/testing.md`). They cannot see r
 
 Record failures as issues or rows in `docs/quality.md`; a release ships only when every item passes or has a logged, accepted reason.
 
+Files-only checks require no model request. If a live Claude model is necessary, use `claude --plugin-dir <path to jei> --model haiku --effort low`, at most one smoke pass for the task, with minimal input.
+
 ## 1. Load and open (both hosts)
 
-- [ ] Claude Code: `claude --plugin-dir <path to jei>`, then `/tui fullscreen` in a terminal of at least 110 columns; the pane docks beside the transcript.
+- [ ] Claude Code: `claude --plugin-dir <path to jei> --model haiku --effort low`, then `/tui fullscreen` in a terminal of at least 110 columns; the pane docks beside the transcript.
 - [ ] OpenCode: the checkout is listed as a local plugin in `opencode.json`; after a restart the panel opens once on session start (`startOpen: on`) and not again in the same session.
 - [ ] `/jei` toggles the pane; `/jei files`, `/jei search`, `/jei git` open on that tab; `/jei <path>` opens Files revealing the path.
 - [ ] Keys `1` to `3` switch tabs while the pane is focused; clicking a tab works where the host has a mouse.
@@ -26,6 +28,12 @@ Record failures as issues or rows in `docs/quality.md`; a release ships only whe
 - [ ] `a` mention: Claude Code inserts the text into the prompt; OpenCode opens an editable dialog and sends it.
 - [ ] `o` opens the file in the editor (`editorCommand` empty and set with `{path}` / `{line}`).
 - [ ] Shimmer while the agent works: ask the agent to read a file (purple), edit one (orange), then commit (green); the row fades over about 2 s and keeps a "touched" marker. `followAgent: on` reveals the touched file.
+- [ ] On both hosts, on Windows and on macOS or Linux, use disposable files/folders to exercise `n`, `r`, `m`, `d`: New under a selected folder/file parent/root, trailing `/` for a folder, Rename as a basename, and Move as an exact project-relative destination including basename. Check spaces, brackets, apostrophes, backticks, Unicode and leading dashes; on POSIX also check a colon name. New keeps already expanded descendants.
+- [ ] Delete names the file and always asks first; a nonempty folder explicitly says recursive. Cancel/Back before submit or confirmation changes no contents. Confirm removes only the owned target and selects a surviving parent/row. Inputs own letters/digits. Cancel and refused submit retain the filename filter; success clears it.
+- [ ] Refuse existing file/folder/dangling-link destinations, missing parents, project-root aliases, absolute/outside/traversal paths, direct source links and outside symlink/junction parents. Preserve source and destination contents plus an outside sentinel for every refusal. Test a root opened through a link separately; never change platform settings to enable a case-sensitive directory or symlink.
+- [ ] Resize operation editors and recursive confirmations before/after input at 24/40/80/120 columns and five total rows. Smaller panes keep an honest enlargement notice and usable Cancel, and cannot submit hidden controls. Check actual keyboard focus and paint on both hosts, including Claude desktop.
+- [ ] After create/rename/move/delete, verify Files, Git, previews, filename search and retained Quick Open refresh without reopening. The actual result/surviving parent stays selected; hidden/ignored/capped results become visible without changing visibility settings, while `.git` uses explicit visible-parent feedback.
+- [ ] Cancel or leave Files during a held operation, then return: busy stays held through the actual response/refresh, execution and refresh failures remain truthful, and a late result cannot replace a newer selection or another project's state. Change the project before confirmation and verify no stale effect. A failed/refused action shows its first reason and permits retry.
 
 ## 3. Git
 

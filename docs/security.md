@@ -6,7 +6,7 @@ Source: `PRD.md` §9. To report a vulnerability, follow `SECURITY.md`.
 
 New Claude Search operations reject unresolved double-slash project roots before source or process access. Canonical filesystem metadata must prove rooted Windows drive/native UNC or single-leading-slash POSIX grammar; a backslash in a POSIX component is insufficient. See ADR 0021.
 
-Shared Files previews validate both the lexical relative path and the target/root realpaths with `nativeRel(..., host.platform)` before reading. POSIX literal-backslash targets and case-distinct double-slash siblings cannot alias an in-root slash/UNC path. This applies to Quick Open previews as well as ordinary Files and cross-tab line targets; legacy path-helper defaults remain unchanged.
+Shared Files previews validate lexical paths with `nativeRel(..., host.platform)` and resolved target/root metadata with `canonicalRel(..., host.platform)` before reading (ADR 0029). Canonical identity compares components exactly; only Windows separators and the ASCII drive letter normalize. POSIX literal-backslash targets and Unicode/case-distinct canonical siblings cannot alias an in-root path. This applies to Quick Open previews as well as ordinary Files and cross-tab line targets; legacy lexical helper defaults remain unchanged.
 
 ## Privacy model
 

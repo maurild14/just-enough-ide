@@ -69,7 +69,7 @@ function fixture(options: Record<string, unknown> = {}) {
   let allFiles = async (): Promise<unknown> => ({ files: ['src/usage.ts', 'README.md', 'src/api/user.ts', '.env'] })
   let operationSerial = 0
   let pendingOperation: { kind: string; source: string; parent: string } | undefined
-  let fsApply: ((input: { value?: string }) => Promise<unknown>) | undefined
+  let fsApply: ((input: { value?: string }, options?: { signal?: AbortSignal }) => Promise<unknown>) | undefined
   let prepareReply: Promise<unknown> | undefined
   let directory = '/acme-app'
   let stateReads = 0
@@ -82,9 +82,9 @@ function fixture(options: Record<string, unknown> = {}) {
     async quickOpenFiles() { calls.push({ method: 'quickOpenFiles', input: {} }); return { files: Object.entries(tree).flatMap(([parent, entries]) => entries.filter(raw => (raw as { kind: string }).kind === 'file').map(raw => `${parent ? parent + '/' : ''}${(raw as { name: string }).name}`)) } },
     async open(input: unknown) { calls.push({ method: 'open', input }); return opener(input) },
     async fsPrepare(input: { kind: string; source: string }) { calls.push({ method: 'fsPrepare', input }); const sourceKind = tree[input.source] ? 'dir' : 'file', parent = input.kind === 'new' && sourceKind === 'dir' ? input.source : input.source.slice(0, Math.max(0, input.source.lastIndexOf('/'))); pendingOperation = { ...input, parent }; return prepareReply ?? { planId: String(++operationSerial), root: directory, ...input, sourceKind: input.source ? sourceKind : null, parent } },
-    async fsApply(input: { value?: string }) {
+    async fsApply(input: { value?: string }, options?: { signal?: AbortSignal }) {
       calls.push({ method: 'fsApply', input })
-      if (fsApply) return fsApply(input)
+      if (fsApply) return fsApply(input, options)
       const operation = pendingOperation!, source = operation.source, sourceParent = source.slice(0, Math.max(0, source.lastIndexOf('/')))
       const sourceName = source.slice(source.lastIndexOf('/') + 1), sourceEntry = tree[sourceParent]?.find(raw => (raw as { name: string }).name === sourceName) as { name: string; kind: string } | undefined
       const value = input.value ?? '', destination = operation.kind === 'move' ? value : `${operation.parent ? operation.parent + '/' : ''}${value.replace(/\/$/, '')}`
@@ -128,7 +128,7 @@ function fixture(options: Record<string, unknown> = {}) {
     setAllFiles(fn: typeof allFiles) { allFiles = fn },
     setOpen(fn: typeof opener) { opener = fn },
     setFsApply(fn: typeof fsApply) { fsApply = fn },
-    setPrepareReply(reply: Promise<unknown>) { prepareReply = reply }, setCwd(value: string) { directory = value }, get stateReads() { return stateReads },
+    setPrepareReply(reply?: Promise<unknown>) { prepareReply = reply }, setCwd(value: string) { directory = value }, get stateReads() { return stateReads },
     emit(name: string, data: unknown = {}) { for (const fn of listeners.get(name) ?? []) fn({ data }) },
   }
 }
@@ -142,6 +142,15 @@ test('Files sorts directories first, expands/collapses and toggles hidden entrie
   f.key('enter'); await r.flush(); expect(r.captureCharFrame()).not.toContain('api')
   f.key('h'); await r.flush(); frame = r.captureCharFrame()
   expect(frame).toContain('.env'); expect(frame).toContain('dist'); expect(frame).not.toContain('.git')
+})
+
+test('Files new entry retains already expanded descendant folders', async () => {
+  const f = fixture(), r = await f.mount()
+  f.select('src/api/user.ts'); await r.flush(); expect(r.captureCharFrame()).toContain('user.ts')
+  f.select('src'); await r.flush(); f.key('n'); await r.flush()
+  await r.mockInput.typeText('added.txt'); f.key('enter'); await r.flush()
+  expect(r.captureCharFrame()).toContain('added.txt')
+  expect(r.captureCharFrame()).toContain('user.ts')
 })
 
 test('Files operation inline editor and recursive confirmation own input and cancel in the public pane', async () => {
@@ -232,6 +241,18 @@ test('Files native mutations refresh listing/all-files/state, keep targets and r
   expect(f.notices.at(-1)).toMatchObject({ message: 'Operation completed. Refresh failed: Status read failed.', variant: 'error' })
 })
 
+test('Files preparation shows the first refusal line, performs no effect and releases its owner for retry', async () => {
+  const f = fixture(), r = await f.mount(40, 5)
+  let refuse!: (error: unknown) => void
+  f.setPrepareReply(new Promise((_resolve, reject) => { refuse = reject }))
+  f.key('d'); await r.flush(); refuse({ type: 'refused', message: 'Select an existing regular file or folder.\nPrivate diagnostic.' }); await r.flush()
+  expect(f.notices.at(-1)).toMatchObject({ message: 'Select an existing regular file or folder.', variant: 'error' })
+  expect(f.calls.some(call => call.method === 'fsApply')).toBe(false)
+  expect(r.renderer.root.findDescendantById('files-operation-confirm')).toBeUndefined()
+  f.setPrepareReply(); f.key('n'); await r.flush()
+  expect(r.renderer.root.findDescendantById('files-operation-input')).toBeDefined()
+})
+
 test('Files preparation busy and stale-root replies cannot open an editor or mutate another project', async () => {
   const f = fixture(), r = await f.mount(24, 5)
   let release!: (reply: unknown) => void
@@ -259,16 +280,33 @@ test('own Files mutations invalidate a retained Quick Open cache while Search is
   expect(f.calls.filter(call => call.method === 'quickOpenFiles')).toHaveLength(2)
 })
 
-test('Files keeps an in-flight owner on cancel and ignores its late selection', async () => {
-  const f = fixture(), r = await f.mount(40, 5)
+for (const detach of ['cancel', 'unmount'] as const) for (const result of ['error', 'refresh-error'] as const) test(`Files ${detach} retains a signal-aware apply through its actual ${result} reply`, async () => {
+  const f = fixture(), r = await f.mount(80, 10)
   let release!: (value: unknown) => void
-  f.setFsApply(() => new Promise(resolve => { release = resolve }))
-  f.key('n'); await r.flush(); await r.mockInput.typeText('late.txt'); f.key('enter'); await r.flush()
-  f.key('esc'); await r.flush(); const before = paneMemory(f.ctx)[0].panes['session-a']!.selected.files
+  let aborted = false
+  f.setFsApply((_input, options) => new Promise((resolve, reject) => {
+    release = resolve
+    options?.signal?.addEventListener('abort', () => { aborted = true; reject(new DOMException('The operation was aborted.', 'AbortError')) }, { once: true })
+  }))
+  f.select('src'); await r.flush(); f.key('d'); await r.flush(); f.key('enter'); await r.flush()
+  expect(f.calls.filter(call => call.method === 'fsApply').at(-1)?.input).toMatchObject({ confirmed: true })
+  if (detach === 'cancel') f.key('esc')
+  else {
+    expect(r.captureCharFrame().split('\n')[0]).toContain('2')
+    await r.mockMouse.click(r.captureCharFrame().split('\n')[0]!.indexOf('2') + 1, 0); await r.flush()
+    expect(paneMemory(f.ctx)[0].panes['session-a']!.tab).toBe('search')
+    await r.mockMouse.click(r.captureCharFrame().split('\n')[0]!.indexOf('1') + 1, 0); await r.flush()
+    expect(paneMemory(f.ctx)[0].panes['session-a']!.tab).toBe('files')
+  }
+  await r.flush(); const before = paneMemory(f.ctx)[0].panes['session-a']!.selected.files
+  expect(aborted).toBe(false)
   f.key('n'); await r.flush(); expect(f.calls.filter(call => call.method === 'fsPrepare')).toHaveLength(1)
-  release({ ok: true, attempted: true, rel: 'late.txt' }); await r.flush()
+  expect(f.notices.at(-1)).toMatchObject({ message: 'A Files operation is already running.' })
+  release(result === 'error' ? { ok: false, attempted: true, rel: '', error: 'Delete failed: access denied.' } : { ok: true, attempted: true, rel: '', refreshError: 'Status unavailable.' }); await r.flush()
+  expect(f.notices.at(-1)).toMatchObject({ message: result === 'error' ? 'Delete failed: access denied.' : 'Operation completed. Refresh failed: Status unavailable.', variant: 'error' })
   expect(paneMemory(f.ctx)[0].panes['session-a']!.selected.files).toBe(before)
   expect(f.calls.filter(call => call.method === 'fsApply')).toHaveLength(1)
+  f.key('n'); await r.flush(); expect(f.calls.filter(call => call.method === 'fsPrepare')).toHaveLength(2)
 })
 
 test('f filters unexpanded paths, ranks usr first, and Esc returns to the tree', async () => {

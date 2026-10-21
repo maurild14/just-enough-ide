@@ -1,8 +1,8 @@
 # Hosts
 
-Canonical metadata is compared through `canonicalRel`, separate from lexical `nativeRel` (ADR 0029). Host-resolved actual casing permits typed parent aliases and linked roots; ambiguous metadata fails closed. Actual Windows sibling/junction server tests preserve outside contents; Claude kit tests simulate resolved Windows metadata and refuse before confirmation/effects. These checks use no platform settings and do not claim real UNC or case-sensitive-directory execution.
-
 > Purpose: verified API facts, limits and version floors for Claude Code mods and OpenCode 2.x plugins · Status: current · Last reviewed: 2026-10-21
+
+Canonical metadata is compared through `canonicalRel`, separate from lexical `nativeRel` (ADR 0029). Host-resolved actual casing permits typed parent aliases and linked roots; ambiguous metadata fails closed. Actual Windows sibling/junction server tests preserve outside contents; Claude kit tests simulate resolved Windows metadata and refuse before confirmation/effects. These checks use no platform settings and do not claim real UNC or case-sensitive-directory execution.
 
 Source: `PRD.md` §4.2 to §4.4, verified in October 2026. Both APIs are young; a host's exported types are the contract. If a fact here turns out wrong, fix this file and say so in the commit.
 
@@ -138,6 +138,8 @@ Both hosts use pure `core/fsops.ts` for literal input validation, fresh uncached
 Installed Claude declarations verify `fs.write(path,text): Promise<void>` without exclusive-create flags and with implicit parent creation, `fs.list` preserving links as other, resolved `fs.stat`, and `ProcessRunInit.env`. New files use exactly `$.fs.write(path,'')` after checks. Other effects use checked argv. Windows fixes the executable as powershell.exe and selects constant program text, transporting paths only through JEI_FS_SOURCE/JEI_FS_DESTINATION environment variables. Move-Item/Remove-Item use LiteralPath; actual New-Item has no LiteralPath, so verified literal directory creation uses Path. Errors terminate and exit codes are checked. POSIX uses nonrecursive mkdir, mv -n and rm with -- and absolute operands; postconditions catch exit-zero skipped moves. ADR 0028 records the narrow exception and tested literal-creation evidence.
 
 OpenCode adds closed fsPrepare/fsApply methods. Preparation stores evidence server-side behind a random token bound to session/root; one latest plan per scope and a 32-plan cap bound pending work. Apply rejects extra/malformed data, stale/replayed/restarted tokens, unconfirmed delete, canceled work and changed roots/evidence before effects. Node uses exclusive wx writeFile, nonrecursive mkdir, checked rename and rm with force:false. Effects and state refresh stay on the server; the TUI uses existing native inline inputs/clickable controls and no filesystem API. Both adapters invalidate listings, previews and all-files after every attempted effect, distinguish completed execution from refresh failure, and never retry effects automatically.
+
+OpenCode preparation uses the installed RPC AbortSignal and shows the original first refusal line. Submitted/confirmed fsApply transport stays alive through its actual result and immediate refresh; Cancel or unmount detaches selection publication while busy remains held. Both hosts retain expanded descendants after New. Claude's per-root all-files invalidation epoch prevents an older in-flight refresh from restoring a pre-mutation filename list.
 
 Five-row editor/confirmation trees and actual OpenTUI frames are tested at 24/40/80/120 columns through resize, with enlargement/Cancel at smaller sizes. SDK prompt/confirm mocks are not layout evidence. Windows junction tests preserve outside children during recursive deletion; file-symlink EPERM and unexecuted other operating systems remain explicit QA limits. Path APIs cannot guarantee atomic no-overwrite against unrelated concurrent writers or prove inode identity through a race.
 
