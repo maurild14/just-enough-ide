@@ -30,7 +30,7 @@ Views use semantic tokens only. No view contains a literal RGB, hex or ANSI colo
 | `untracked` | `U` | green, dim |
 | `conflict` | `C` | magenta, bold |
 | `warning` | Detached HEAD, no upstream, results truncated, hook mode | yellow |
-| `error` | Failed operations | red |
+| `error` | Failed operations, replacement editor outline | red |
 | `activity.read` | Shimmer for reads (purple) | magenta |
 | `activity.write` | Shimmer for writes (orange) | yellow |
 | `activity.git` | Shimmer for git actions (green) | green |
@@ -141,6 +141,8 @@ Files, Search and Quick Open use their editor's Cancel while typing, at every he
 Search/Quick Open reserve `q` for their mode toggle (ADR 0019); previews and Replace retain Back. A preview returns to its originating tab/subview and carries the requested line. Claude Code uses a bounded source window with a visible target gutter, including Markdown/CSV/TSV line targets. Fallback summaries identify `git grep`; it returns only the first occurrence per line. A true truncation flag shows `Results truncated.`. The fallback's bounded buffer can truncate before 2,000 results.
 
 Claude Search pins the outlined content query above the project name, with optional include/exclude text, file groups, accent match spans and the summary. Matching is literal and case-insensitive. `Include/exclude: src/** !**/*.test.ts` and `Replace with` are secondary editors; Submit returns focus to the list or opens replacement review. Replacement file headers apply only after confirmation; their chevrons collapse bounded native diff windows. `Not replaced` lists actual reasons, and partial writes report their successful count before refresh.
+
+The replacement editor uses the host's red error color for its entire outline on both hosts, including compact side borders. Entering with p changes the outline immediately; leaving the replacement editor restores the normal accent outline. The `Replace with` label also identifies the mode without color.
 
 On both hosts, Up from the first Search or Quick Open result focuses the query with its draft intact. Down from the editor returns to the retained result without skipping it. Refocusing the field does not submit a query or cancel a running content search; Enter submits the edited content query.
 

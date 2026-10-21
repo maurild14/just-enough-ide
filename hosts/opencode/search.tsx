@@ -229,7 +229,7 @@ export function Search(props: {
   }
   return <box flexDirection="column" flexGrow={1} flexShrink={0} minHeight={0} overflow="hidden">
     <Show when={!replacing()} fallback={<Show when={props.header}><text height={1}>{' Replace preview'}</text></Show>}>
-      <box id="search-field" height={fieldRows()} flexShrink={0} flexDirection="row" border={fieldRows() === 3 ? true : ['left', 'right']} borderColor={theme().text.action.primary.base}>
+      <box id="search-field" height={fieldRows()} flexShrink={0} flexDirection="row" border={fieldRows() === 3 ? true : ['left', 'right']} borderColor={field() === 'replacement' ? theme().text.feedback.error.base : theme().text.action.primary.base}>
         <input id={`search-${field()}`} width={Math.max(1, props.width - 2 - (editing() ? 16 : 7))} focused={props.focused && editing() !== null} value={fieldValue()} placeholder={field() === 'replacement' ? 'Replace with' : field() === 'globs' ? 'Include/exclude: src/** !**/*.test.ts' : quick() ? 'Go to file' : 'Search · Enter'} onInput={change} onSubmit={() => { void submit().catch(fail) }} onMouseDown={() => setEditing(field())} on:focused={() => setEditing(field())} on:blurred={() => setEditing(null)} />
         <text fg={theme().text.action.primary.base} onMouseDown={clear}> Clear </text>
         <Show when={editing()}><text fg={theme().text.muted}>·</text><text fg={theme().text.action.primary.base} onMouseDown={() => invoke('back')}> Cancel </text></Show>
