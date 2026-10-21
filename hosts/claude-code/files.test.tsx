@@ -105,9 +105,8 @@ test('Files changed cwd and changed source after confirmation refuse with zero p
   await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src', origin: { kind: 'person' } })
   await ui.press({ key: 'key-d' })
   await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: '/work/other-app' })
-  await ui.press({ key: 'files-operation-confirm' })
+  expect(await ui.find({ key: 'files-operation-confirm' })).toBeUndefined()
   expect(seen.runs.some(argv => argv[0] === 'rm')).toBe(false)
-  expect(seen.toasts.at(-1)).toContain('project changed')
   await $.classic.CwdChanged({ old_cwd: '/work/other-app', new_cwd: ROOT })
   await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src/api/user.ts', origin: { kind: 'person' } })
   await ui.press({ key: 'key-d' })
@@ -180,9 +179,10 @@ test('Files holds its effect owner across cwd change/cancel and cannot release o
     const pending = ui.input({ key: 'files-operation-input', text: 'first.txt', kind: 'submit' })
     await clock.settle()
     expect(seen.effectEntered).toBe(true)
+    await ui.press({ key: 'files-operation-cancel' })
     await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: other })
     const before = selected
-    await ui.press({ key: 'files-operation-cancel' }); await ui.press({ key: 'key-n' })
+    await ui.press({ key: 'key-n' })
     expect(seen.toasts.at(-1)).toContain('already running')
     expect(seen.effects).toHaveLength(1)
     await clock.advance(100); await pending
@@ -226,7 +226,7 @@ function jei(args: string) {
 }
 
 /** Answers the files, git and the session beneath the plugin. Returns the calls it saw. */
-async function world($: Engine, on: On, operations = false) {
+async function world($: Engine, on: On, operations = false, onRun?: (argv: readonly string[]) => Promise<void>) {
   on('session.id', () => ({ value: 'files-test-session' }))
   const lists: string[] = []
   const runs: string[][] = []
@@ -271,8 +271,9 @@ async function world($: Engine, on: On, operations = false) {
     if (text === undefined) return { deny: `ENOENT: ${path}` }
     return { value: e.as === 'bytes' ? { base64: btoa(text) } : text }
   })
-  on('process.run', (_$, e) => {
+  on('process.run', async (_$, e) => {
     const argv = [...e.argv]
+    await onRun?.(argv)
     runs.push(argv)
     const ok = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
     if (refreshFailure && argv.includes('status')) return { value: { exitCode: 1, stdout: '', stderr: 'Status unavailable.', isStdoutTruncated: false, isStderrTruncated: false } }
@@ -314,6 +315,66 @@ async function world($: Engine, on: On, operations = false) {
   await $.classic.CwdChanged({ old_cwd: '/work', new_cwd: ROOT })
   return { lists, runs, fills, toasts, effects, setOperationFailure(value: typeof operationFailure) { operationFailure = value }, setRefreshFailure(value: boolean) { refreshFailure = value }, holdEffects(value: Promise<void> | undefined) { effectHold = value }, get effectEntered() { return effectEntered } }
 }
+
+for (const phase of ['post-refresh', 'tree-retry', 'pane-retry'] as const) test(`Files completion refuses ${phase} publication after a native cwd change`, { timeoutMs: 60_000 }, async ($, on) => {
+  on('ui.focus', () => ({}))
+  const clock = mock.clock(on, { now: 0 })
+  const other = '/work/other-app', savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT)
+  let effected = false, changed = false, current = ROOT, misses = 0
+  let pending: Promise<unknown> | undefined
+  const leaks: string[] = []
+  on('state.set', async ($, event, next) => {
+    const treeWrite = event.key === 'tree' && event.value.expanded.includes('docs') && !event.previous?.expanded.includes('docs')
+    const paneWrite = event.key === 'pane' && event.value.selected.files === 'docs/race.txt'
+    if (effected && !changed && (phase === 'tree-retry' && treeWrite || phase === 'pane-retry' && paneWrite)) {
+      changed = true; await clock.sleep(100)
+    }
+    const result = await next(event)
+    if (current === other && (treeWrite || paneWrite) && result.value?.isSet === false) misses++
+    if (result.value?.isSet) {
+      if (event.key === 'cwd') current = event.value
+      if (current === other && (treeWrite || paneWrite || phase === 'post-refresh' && event.key === 'pane' && !!event.value.selected.files)) leaks.push(event.key)
+    }
+    return result
+  })
+  await world($, on, true, async argv => {
+    if (effected && phase === 'post-refresh' && !changed && argv.includes('status')) { changed = true; await clock.sleep(100) }
+    if (argv[0] === 'rm' || argv[0] === 'mv') effected = true
+  }); TREE[other] = []
+  try {
+    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
+    await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: `row-${phase === 'post-refresh' ? 'README.md' : 'src/api/user.ts'}`, origin: { kind: 'person' } })
+    await ui.press({ key: phase === 'post-refresh' ? 'key-d' : 'key-m' })
+    pending = phase === 'post-refresh' ? ui.press({ key: 'files-operation-confirm' }) : ui.input({ key: 'files-operation-input', text: 'docs/race.txt', kind: 'submit' })
+    await clock.settle(); expect(changed).toBe(true)
+    await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: other }); expect(current).toBe(other)
+    await clock.advance(100); await pending
+    if (phase !== 'post-refresh') expect(misses).toBeGreaterThan(0)
+    expect(leaks).toEqual([]); expect(TREE[other]).toEqual([])
+    await ui.unmount()
+  } finally { await clock.advance(100); await pending?.catch(() => {}); for (const key of Object.keys(TREE)) delete TREE[key]; Object.assign(TREE, JSON.parse(savedTree)); for (const key of Object.keys(CONTENT)) delete CONTENT[key]; Object.assign(CONTENT, JSON.parse(savedContent)) }
+})
+
+for (const scenario of ['hidden', 'capped', 'hidden-parent', 'git-fallback'] as const) test(`Files successful ${scenario} destination has a visible native row or explicit fallback`, { timeoutMs: 60_000 }, async ($, on) => {
+  on('ui.focus', () => ({}))
+  const savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT), seen = await world($, on, true)
+  TREE[ROOT]!.push(dir('.private'), dir('.git')); TREE[`${ROOT}/.private`] = []; TREE[`${ROOT}/.git`] = []
+  if (scenario === 'capped') TREE[ROOT]!.push(...Array.from({ length: 501 }, (_, i) => file(`entry${String(i).padStart(3, '0')}.txt`)))
+  try {
+    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
+    const moving = scenario === 'hidden-parent' || scenario === 'git-fallback', destination = scenario === 'hidden' ? '.new.txt' : scenario === 'capped' ? 'zzz-new.txt' : scenario === 'hidden-parent' ? '.private/after.txt' : '.git/after.txt'
+    await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: `row-${moving ? 'src/api/user.ts' : 'README.md'}`, origin: { kind: 'person' } })
+    await ui.press({ key: moving ? 'key-m' : 'key-n' }); await ui.input({ key: 'files-operation-input', text: destination, kind: 'submit' })
+    if (scenario === 'git-fallback') { expect(seen.toasts.at(-1)).toContain(destination); expect(seen.toasts.at(-1)).toContain('.git is hidden'); expect((await ui.findAll({ type: 'Button' })).some(row => row.key?.startsWith('row-') && row.children.some(child => typeof child === 'object' && child !== null && 'props' in child && (child.props as { inverse?: boolean }).inverse))).toBe(true) }
+    else {
+      expect(await ui.find({ key: `row-${destination}` })).toBeTruthy()
+      if (scenario === 'capped') { await ui.press({ key: 'key-h' }); await ui.press({ key: 'key-h' }) }
+      else await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src', origin: { kind: 'person' } })
+      expect(await ui.find({ key: `row-${destination}` })).toBeUndefined()
+    }
+    await ui.unmount()
+  } finally { for (const key of Object.keys(TREE)) delete TREE[key]; Object.assign(TREE, JSON.parse(savedTree)); for (const key of Object.keys(CONTENT)) delete CONTENT[key]; Object.assign(CONTENT, JSON.parse(savedContent)) }
+})
 
 test('Files mutations refresh caches/state, select surviving targets and never simulate failed or skipped moves', { timeoutMs: 60_000 }, async ($, on) => {
   on('ui.focus', () => ({}))

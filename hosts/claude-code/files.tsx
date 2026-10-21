@@ -6,7 +6,7 @@ import { fitTable } from '../../core/files/csv.ts'
 import { iconFor } from '../../core/files/icons.ts'
 import { mentionText } from '../../core/files/mention.ts'
 import { allFiles, listDir, loadPreview, openFile } from '../../core/files/service.ts'
-import { filterRows, treeRows, type TreeRow } from '../../core/files/tree.ts'
+import { filterRows, treeRows, visibleTreePath, type TreeRow } from '../../core/files/tree.ts'
 import { folderStatus, type FileStatus, type StatusEntry } from '../../core/git/status.ts'
 import type { DirEntry, Host } from '../../core/host.ts'
 import { latest } from '../../core/latest.ts'
@@ -28,6 +28,7 @@ import {
   updatePane,
   updatePreview,
   updateTree,
+  claimFilesPane, releaseFilesPane, filesPaneOwned, publishFilesPane, publishFilesTree,
 } from './state.ts'
 import { activityColor, color, statusLook } from './theme.ts'
 import { refreshGit, forgetViews } from './activity.ts'
@@ -253,20 +254,24 @@ export async function scrollFiles($: EngineInterface, by: number): Promise<boole
 let operationSerial = 0
 
 export async function cancelFilesOperation($: EngineInterface): Promise<void> {
-  await updateTree($, t => ({ ...t, operation: null, operationBusy: t.operation?.working || t.operationBusy !== t.operation?.id ? t.operationBusy : null }))
+  const held = (await readTree($)).operation
+  if (!held) return
+  await releaseFilesPane($, held.prepared.root, held.id)
+  await updateTree($, t => t.operation?.id !== held.id ? t : { ...t, operation: null, operationBusy: t.operation.working || t.operationBusy !== held.id ? t.operationBusy : null })
 }
 
 async function beginFilesOperation($: EngineInterface, kind: FsOp, root: string, source: string): Promise<void> {
   let acquired = false
   const id = String(++operationSerial)
-  await updateTree($, t => { acquired = !t.operationBusy; return acquired ? { ...t, operationBusy: id } : t })
-  if (!acquired) { $.ui.toast('A Files operation is already running.'); return }
+  if (!await claimFilesPane($, root, id)) { $.ui.toast('A Files operation is already running.'); return }
+  await updateTree($, t => { acquired = t.filesRoot === root && !t.operationBusy; return acquired ? { ...t, operationBusy: id } : t })
+  if (!acquired) { await releaseFilesPane($, root, id); $.ui.toast('A Files operation is already running.'); return }
   try {
     const prepared = await prepareFsOp(await projectHost($, root), root, { kind, source })
     if (await readCwd($) !== root || currentView(await readPane($)) !== 'files' || (await readTree($)).operationBusy !== id) throw new Error('The project changed. Start again.')
-    await updateTree($, t => t.operationBusy === id ? { ...t, editing: false, operation: { id, prepared, working: false, value: kind === 'rename' ? baseName(source) : kind === 'move' ? source : '' } } : t)
+    await updateTree($, t => t.filesRoot === root && t.operationBusy === id ? { ...t, editing: false, operation: { id, prepared, working: false, value: kind === 'rename' ? baseName(source) : kind === 'move' ? source : '' } } : t)
     if (kind !== 'delete') await $.ui.focus({ requestId: 'jei', key: 'files-operation-input' }).catch(() => {})
-  } catch (error) { await updateTree($, t => t.operationBusy === id ? { ...t, operationBusy: null } : t); $.ui.toast(`Files operation failed: ${firstLine(error)}.`) }
+  } catch (error) { await releaseFilesPane($, root, id); await updateTree($, t => t.operationBusy === id ? { ...t, operationBusy: null } : t); $.ui.toast(`Files operation failed: ${firstLine(error)}.`) }
 }
 
 async function applyFilesOperation($: EngineInterface, id: string, value: string | undefined, confirmed = false): Promise<void> {
@@ -276,10 +281,10 @@ async function applyFilesOperation($: EngineInterface, id: string, value: string
   await updateTree($, t => { acquired = t.operationBusy === id && t.operation?.id === id && !t.operation.working; return acquired && t.operation ? { ...t, operation: { ...t.operation, working: true } } : t })
   if (!acquired) return
   const root = held.prepared.root
-  let attempted = false, completed = false, failure = ''
+  let attempted = false, completed = false, failure = '', notice = '', selected: string | undefined
   try {
     const host = await projectHost($, root)
-    const active = async () => { if (await readCwd($) !== root || (await readTree($)).operation?.id !== id || currentView(await readPane($)) !== 'files') throw new Error('The Files operation was canceled or the project changed.') }
+    const active = async () => { if (await readCwd($) !== root || !await filesPaneOwned($, root, id) || (await readTree($)).operation?.id !== id || currentView(await readPane($)) !== 'files') throw new Error('The Files operation was canceled or the project changed.') }
     await active()
     const plan = await planFsOp(host, held.prepared, value)
     const fresh = await planFsOp(host, held.prepared, value)
@@ -293,13 +298,13 @@ async function applyFilesOperation($: EngineInterface, id: string, value: string
       const result = await host.run(command.argv, { cwd: root, env: command.env })
       if (result.exitCode !== 0) throw new Error(result.stderr || result.stdout || `Process exited with ${result.exitCode}.`)
     }
-    await verifyFsOp(host, plan)
+    const requested = await verifyFsOp(host, plan)
     completed = true
-    if (await readCwd($) === root && (await readTree($)).operation?.id === id) {
-      const selected = plan.destination ?? plan.parent
-      await updateTree($, t => ({ ...t, filter: '', filtering: false, editing: false, origin: undefined, expanded: [...new Set([...t.expanded.filter(rel => rel !== plan.source && !rel.startsWith(plan.source + '/')), ...parentDirs(selected)])] }))
-      await updatePane($, p => reducePane(p, { type: 'select', view: 'files', id: selected }))
-    }
+    selected = visibleTreePath(requested)
+    if (selected !== requested) notice = `Operation completed: ${plan.destination === null ? plan.source : requested}. .git is hidden; showing its parent.`
+    const target = selected
+    await publishFilesTree($, root, id, t => ({ ...t, filter: '', filtering: false, editing: false, origin: undefined, revealed: target || undefined, expanded: [...new Set([...t.expanded.filter(rel => rel !== plan.source && !rel.startsWith(plan.source + '/')), ...parentDirs(target)])] }))
+    await publishFilesPane($, root, id, p => reducePane(p, { type: 'select', view: 'files', id: target }))
   } catch (error) { failure = `Files operation failed: ${firstLine(error)}.` }
   finally {
     if (attempted) {
@@ -309,17 +314,19 @@ async function applyFilesOperation($: EngineInterface, id: string, value: string
           await refreshGit($)
           const listing = await listingOf(await projectHost($, root), root, '')
           if (listing.failed) throw new Error('Cannot read the project folder.')
-          if (completed && held.prepared.kind === 'delete' && (await readTree($)).operation?.id === id && (await readPane($)).selected.files === '') {
+          if (completed && selected === '') {
             const tree = await readTree($)
             const first = treeRows({ root, expanded: new Set(), listings: new Map([['', listing.entries]]), ignored: new Set(listing.ignored), showHidden: tree.showHidden, status: new Map(), glow: () => 0, touched: () => false, limit: ENTRY_LIMIT })[0]
-            if (first && !('more' in first)) await updatePane($, pane => reducePane(pane, { type: 'select', view: 'files', id: first.rel }))
+            if (first && !('more' in first)) await publishFilesPane($, root, id, pane => pane.selected.files === '' ? reducePane(pane, { type: 'select', view: 'files', id: first.rel }) : pane)
           }
         } catch (error) { failure = `${failure || (completed ? 'Operation completed.' : 'Operation attempted.')} Refresh failed: ${firstLine(error)}.` }
       }
       await bumpTick($)
     }
+    await releaseFilesPane($, root, id)
     await updateTree($, t => ({ ...t, operation: t.operation?.id === id ? null : t.operation, operationBusy: t.operationBusy === id ? null : t.operationBusy }))
     if (failure) $.ui.toast(failure)
+    else if (notice && await readCwd($) === root) $.ui.toast(notice)
   }
 }
 
@@ -544,7 +551,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     { key: 'a', run: act($, () => mention($, selected)) },
     { key: 'o', run: act($, () => openRel($, options, root, selected)) },
     { key: 'f', run: act($, begin) },
-    { key: 'h', run: act($, () => updateTree($, (t) => ({ ...t, showHidden: !t.showHidden }))) },
+    { key: 'h', run: act($, () => updateTree($, (t) => ({ ...t, showHidden: !t.showHidden, revealed: undefined }))) },
   ]
 
   type Item = { id: string; isRow: boolean; el: RenderElement }
@@ -636,6 +643,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
       glow: (rel) => log.glow(rel, now),
       touched: (rel) => log.touched(rel),
       limit: ENTRY_LIMIT,
+      revealed: tree.filesRoot === root && tree.revealed === selected ? tree.revealed : undefined,
     })
     const sw = statusW(rows.map((r) => r.rel))
     rows.forEach((r, i) => {

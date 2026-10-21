@@ -22,6 +22,18 @@ function input(over: Partial<TreeInput> = {}): TreeInput {
 }
 
 describe('treeRows', () => {
+  test('a successful reveal pins only its hidden/ignored ancestor chain within each folder cap', () => {
+    const entries = Array.from({ length: 501 }, (_, i) => d(`folder${String(i).padStart(3, '0')}`))
+    const listings = new Map([['', [...entries, d('zzz-parent'), d('.git')]], ['zzz-parent', [d('.private')]], ['zzz-parent/.private', [f('.result.txt'), f('.other.txt')]]])
+    const args = input({ listings, expanded: new Set(['zzz-parent', 'zzz-parent/.private']), ignored: new Set(['zzz-parent']), limit: 500 })
+    const rows = treeRows({ ...args, revealed: 'zzz-parent/.private/.result.txt' })
+    expect(rows.some(row => row.rel === 'zzz-parent/.private/.result.txt')).toBe(true)
+    expect(rows.some(row => row.rel === 'zzz-parent/.private/.other.txt')).toBe(false)
+    expect(rows.filter(row => row.depth === 0 && !('more' in row))).toHaveLength(500)
+    expect(rows.some(row => row.rel === '.git')).toBe(false)
+    expect(treeRows(args).some(row => row.rel === 'zzz-parent')).toBe(false)
+  })
+
   test('dirs first, then case-insensitive name; .git never shown', () => {
     const rows = treeRows(input())
     expect(rows.map((r) => ('name' in r ? r.name : '?'))).toEqual(['Docs', 'src', 'A.md', 'b.ts'])

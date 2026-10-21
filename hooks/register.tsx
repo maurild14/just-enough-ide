@@ -40,8 +40,8 @@ export const register: Register = (on, raw) => {
       description: 'Toggle the JEI pane: /jei [files|search|git|<path>]',
     })
     await stopSearch($, true)
-    await setCwd($, e.cwd)
     autoOpenArmed = (await initPane($, options.defaultTab)) && options.startOpen
+    await setCwd($, e.cwd)
     await resetGitUi($)
     await resetFilesUi($)
     await resetSearch($)

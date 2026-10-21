@@ -64,19 +64,41 @@ export function readCwd($: StateHost): Promise<string> {
   return read($, cwd)
 }
 export function updatePane($: StateHost, fn: (s: PaneState) => PaneState): Promise<PaneState> {
-  return update($, pane, (state) => fn(normalizePane(state)))
+  return update($, pane, (state) => ({ ...fn(normalizePane(state)), filesScope: state.filesScope }))
 }
 export function updateTree($: StateHost, fn: (t: JeiTree) => JeiTree): Promise<JeiTree> {
   return update($, tree, fn)
 }
-export function setCwd($: StateHost, dir: string): Promise<string> {
+export async function setCwd($: StateHost, dir: string): Promise<string> {
+  // Invalidate both publication atoms before cwd changes: pending CAS writes must retry their scope checks.
+  await update($, tree, t => t.filesRoot === dir ? t : { ...t, filesRoot: dir, revealed: undefined, operation: null, operationBusy: t.operation?.working || !t.operation ? t.operationBusy : null })
+  await update($, pane, p => p.filesScope?.root === dir ? p : { ...p, filesScope: { root: dir, owner: null } })
   return update($, cwd, () => dir)
+}
+export async function claimFilesPane($: StateHost, root: string, id: string): Promise<boolean> {
+  let claimed = false
+  await update($, pane, p => { claimed = p.filesScope?.root === root && !p.filesScope.owner; return claimed ? { ...p, filesScope: { root, owner: id } } : p })
+  return claimed
+}
+export function releaseFilesPane($: StateHost, root: string, id: string): Promise<JeiPane> {
+  return update($, pane, p => p.filesScope?.root === root && p.filesScope.owner === id ? { ...p, filesScope: { root, owner: null } } : p)
+}
+export async function filesPaneOwned($: StateHost, root: string, id: string): Promise<boolean> {
+  const scope = (await read($, pane)).filesScope
+  return scope?.root === root && scope.owner === id
+}
+export function publishFilesPane($: StateHost, root: string, id: string, fn: (p: PaneState) => PaneState): Promise<JeiPane> {
+  return update($, pane, p => p.filesScope?.root === root && p.filesScope.owner === id ? { ...fn(normalizePane(p)), filesScope: p.filesScope } : p)
+}
+export function publishFilesTree($: StateHost, root: string, id: string, fn: (t: JeiTree) => JeiTree): Promise<JeiTree> {
+  return update($, tree, t => t.filesRoot === root && t.operationBusy === id && t.operation?.id === id ? fn(t) : t)
 }
 export function readTree($: StateHost): Promise<JeiTree> {
   return read($, tree)
 }
-export function resetFilesUi($: StateHost): Promise<JeiTree> {
-  return update($, tree, t => ({ ...t, operation: null, operationBusy: null }))
+export async function resetFilesUi($: StateHost): Promise<void> {
+  await update($, tree, t => ({ ...t, operation: null, operationBusy: null }))
+  await update($, pane, p => ({ ...p, filesScope: p.filesScope ? { ...p.filesScope, owner: null } : undefined }))
 }
 export function readActivity($: StateHost): Promise<JeiActivity> {
   return read($, activity)

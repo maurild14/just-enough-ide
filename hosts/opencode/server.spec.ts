@@ -216,6 +216,21 @@ test('Files attempted postcheck failure refreshes, consumes the token and serial
   } finally { release(); mock.mockRestore() }
 })
 
+test.skipIf(process.platform !== 'win32')('Windows Files results use real entry casing for aliases including .git', async () => {
+  const root = makeTemp('acme-app'); writeFiles(root, { 'src/source.txt': 'keep', '.git/keep': 'keep' })
+  const server = await start(root)
+  const call = (name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>
+  const move = async (source: string, value: string) => {
+    const plan = await call('fsPrepare', { sessionID: 'a', kind: 'move', source })
+    return call('fsApply', { sessionID: 'a', planId: plan.planId, value, confirmed: false })
+  }
+  expect(await move('src/source.txt', 'SRC/renamed.txt')).toMatchObject({ ok: true, rel: 'src/renamed.txt' })
+  expect(await move('src/renamed.txt', '.GIT/after.txt')).toMatchObject({ ok: true, rel: '.git/after.txt' })
+  const deletion = await call('fsPrepare', { sessionID: 'a', kind: 'delete', source: '.GIT/after.txt' })
+  expect(await call('fsApply', { sessionID: 'a', planId: deletion.planId, confirmed: true })).toMatchObject({ ok: true, rel: '.git' })
+  expect(readFileSync(join(root, '.git/keep'), 'utf8')).toBe('keep')
+})
+
 test('Files tokens from an old server instance cannot authorize a different restarted plan', async () => {
   const root = makeTemp('acme-app'), oldServer = await start(root)
   const call = (server: Awaited<ReturnType<typeof start>>, name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>

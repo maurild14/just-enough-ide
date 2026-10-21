@@ -14,6 +14,8 @@ export type JeiDiffSource =
 
 /** core/pane.ts PaneState. */
 export type JeiPane = {
+  /** Adapter publication scope; preserved outside core normalization. */
+  filesScope?: { root: string; owner: string | null }
   tab: JeiTab
   stack: JeiView[]
   selected: Partial<Record<JeiView, string>>
@@ -30,6 +32,8 @@ export type JeiActivity = Record<string, { kind: 'read' | 'write' | 'git'; at: n
  * the adapter reads them through a cache refreshed on file events.
  */
 export type JeiTree = {
+  filesRoot?: string
+  revealed?: string
   expanded: string[]
   showHidden: boolean
   /** The filter Input is open (`f`). */

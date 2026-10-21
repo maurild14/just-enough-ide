@@ -15,6 +15,8 @@ export type TreeInput = {
   touched: (rel: string) => boolean
   /** Entries shown per folder before a { more } row. */
   limit: number
+  /** One successful target, only while selected; preserve filters and the folder cap. */
+  revealed?: string
 }
 
 export type TreeRow =
@@ -41,14 +43,17 @@ function compare(a: DirEntry, b: DirEntry): number {
  */
 export function treeRows(input: TreeInput): TreeRow[] {
   const out: TreeRow[] = []
+  const revealed = new Set(input.revealed ? [...parentDirs(input.revealed), input.revealed] : [])
   const walk = (dir: string, depth: number): void => {
     const visible = (input.listings.get(dir) ?? []).filter((e) => {
       if (e.name === '.git') return false
-      if (input.showHidden) return true
+      if (input.showHidden || revealed.has(joinPath(dir, e.name))) return true
       return !e.name.startsWith('.') && !input.ignored.has(joinPath(dir, e.name))
     })
     visible.sort(compare)
     const shown = visible.slice(0, Math.max(0, input.limit))
+    const target = visible.find(e => revealed.has(joinPath(dir, e.name)))
+    if (target && shown.length && !shown.includes(target)) { shown[shown.length - 1] = target; shown.sort(compare) }
     for (const e of shown) {
       const rel = joinPath(dir, e.name)
       const isDir = e.kind === 'dir'
@@ -69,6 +74,12 @@ export function treeRows(input: TreeInput): TreeRow[] {
   }
   walk('', 0)
   return out
+}
+
+/** .git is always excluded; a completed operation there reveals its nearest displayable parent. */
+export function visibleTreePath(rel: string): string {
+  const parts = rel.split('/'), git = parts.indexOf('.git')
+  return git < 0 ? rel : parts.slice(0, git).join('/')
 }
 
 /** Fuzzy filter over every known path, best first, at most `max`. */

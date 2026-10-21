@@ -17,6 +17,28 @@ afterEach(() => { for (const r of renderers.splice(0)) r.renderer.destroy() })
 const file = (name: string) => ({ name, kind: 'file', size: 10 })
 const dir = (name: string) => ({ name, kind: 'dir', size: 0 })
 
+for (const scenario of ['hidden', 'capped', 'ignored-parent', 'git-fallback'] as const) test(`Files successful ${scenario} target is visibly revealed within the cap`, async () => {
+  const f = fixture()
+  f.tree['.git'] = []
+  if (scenario === 'capped') f.tree['']!.push(...Array.from({ length: 501 }, (_, i) => file(`entry${String(i).padStart(3, '0')}.txt`)))
+  const r = await f.mount(40, 5)
+  const destination = scenario === 'hidden' ? '.new.txt' : scenario === 'capped' ? 'zzz-new.txt' : scenario === 'ignored-parent' ? 'dist/after.txt' : '.git/after.txt'
+  if (scenario === 'ignored-parent' || scenario === 'git-fallback') { f.select('src/api/user.ts'); await r.flush(); f.key('m') } else { f.select('README.md'); await r.flush(); f.key('n') }
+  await r.flush(); const input = r.renderer.root.findDescendantById('files-operation-input') as InputRenderable
+  input.value = ''; input.focus(); await r.mockInput.typeText(destination); f.key('enter'); await r.flush()
+  if (scenario === 'git-fallback') {
+    const selected = paneMemory(f.ctx)[0].panes['session-a']!.selected.files!
+    expect(selected).not.toContain('.git'); expect(selected).toBeTruthy(); expect(r.captureCharFrame()).toContain(selected.split('/').at(-1)!)
+    expect(JSON.stringify(f.notices)).toContain('.git/after.txt')
+  } else {
+    expect(paneMemory(f.ctx)[0].panes['session-a']!.selected.files).toBe(destination)
+    expect(r.captureCharFrame()).toContain(destination.split('/').at(-1)!)
+    if (scenario === 'capped') { f.key('h'); await r.flush(); f.key('h'); await r.flush() }
+    else { f.select('src'); await r.flush() }
+    expect(r.captureCharFrame()).not.toContain(destination.split('/').at(-1)!)
+  }
+})
+
 function fixture(options: Record<string, unknown> = {}) {
   const layers: (() => Layer)[] = []
   const listeners = new Map<string, Set<(event: { data: unknown }) => void>>()

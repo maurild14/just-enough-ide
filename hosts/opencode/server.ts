@@ -208,7 +208,7 @@ export default Plugin.define({
             else await writeFile(destination!, '', { flag: 'wx', encoding: 'utf8' })
           } else if (plan.kind === 'delete') await rm(joinPath(root, plan.source), { recursive: plan.targetKind === 'dir', force: false })
           else await rename(joinPath(root, plan.source), destination!)
-          await verifyFsOp(host, plan)
+          rel = await verifyFsOp(host, plan)
         } catch (failure) {
           if (!attempted) throw failure
           error = failure instanceof Error ? failure.message.split(/\r?\n/)[0]! : 'Unable to complete Files operation.'

@@ -8,7 +8,7 @@ import { fitTable } from '../../core/files/csv.ts'
 import { iconFor } from '../../core/files/icons.ts'
 import { mentionText } from '../../core/files/mention.ts'
 import type { loadPreview } from '../../core/files/service.ts'
-import { filterRows, reveal, treeRows } from '../../core/files/tree.ts'
+import { filterRows, reveal, treeRows, visibleTreePath } from '../../core/files/tree.ts'
 import { folderStatus, type FileStatus, type StatusEntry } from '../../core/git/status.ts'
 import type { DirEntry } from '../../core/host.ts'
 import { latest } from '../../core/latest.ts'
@@ -68,9 +68,10 @@ export function Files(props: {
   width: number; height: number; header: boolean; focused: boolean; bind: (run: (action: string) => void, editing: () => boolean) => void
   refresh: () => Promise<void>
 }) {
-  const [saved, save] = props.ctx.storage.memory<{ expanded: string[]; hidden: boolean; query: string; origin?: string; top: number; originTop: number; operation?: FilesEdit; operationBusy?: boolean }>(`jei.files.${props.sessionID}\0${props.cwd}`, { initial: { expanded: [], hidden: false, query: '', top: 0, originTop: 0 } })
+  const [saved, save] = props.ctx.storage.memory<{ expanded: string[]; hidden: boolean; query: string; origin?: string; top: number; originTop: number; operation?: FilesEdit; operationBusy?: boolean; revealed?: string }>(`jei.files.${props.sessionID}\0${props.cwd}`, { initial: { expanded: [], hidden: false, query: '', top: 0, originTop: 0 } })
   const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set(saved.expanded))
   const [hidden, setHidden] = createSignal(saved.hidden)
+  const [revealed, setRevealed] = createSignal(saved.revealed)
   const [filtering, setFiltering] = createSignal(saved.query !== '')
   const [editing, setEditing] = createSignal(false)
   let origin: string | undefined = saved.origin
@@ -101,7 +102,7 @@ export function Files(props: {
   const theme = () => props.ctx.theme
   const syntax = createMemo(() => SyntaxStyle.fromStyles(Object.fromEntries(Object.entries(theme().syntax ?? {}).map(([name, fg]) => [name, { fg: fg as RGBA }]))))
   createEffect(() => { const style = syntax(); onCleanup(() => style.destroy()) })
-  onCleanup(() => { stopped = true; operationController?.abort(); save(d => { d.expanded = [...expanded()]; d.hidden = hidden(); d.query = query(); d.origin = origin; d.top = treeTop; d.originTop = originTop; d.operation = operation()?.working ? undefined : operation() }); props.bind(() => {}, () => false) })
+  onCleanup(() => { stopped = true; operationController?.abort(); save(d => { d.expanded = [...expanded()]; d.hidden = hidden(); d.revealed = revealed(); d.query = query(); d.origin = origin; d.top = treeTop; d.originTop = originTop; d.operation = operation()?.working ? undefined : operation() }); props.bind(() => {}, () => false) })
 
   createEffect(() => {
     const rel = selected()
@@ -179,7 +180,7 @@ export function Files(props: {
   })
   const rows = createMemo(() => {
     if (filtering() && query()) return filterRows(files().filter((p) => hidden() || !p.split('/').some((s) => s.startsWith('.'))), query(), 200).map((rel) => ({ rel, name: rel, depth: 0, isDir: false, isExpanded: false, status: status().get(rel) ?? null, glow: props.activity.glow(rel, props.now), touched: props.activity.touched(rel) }))
-    return treeRows({ root: props.cwd, expanded: expanded(), listings: new Map([...listings()].map(([rel, l]) => [rel, l.entries])), ignored: new Set([...listings().values()].flatMap((l) => l.ignored)), showHidden: hidden(), status: status(), glow: (rel) => props.activity.glow(rel, props.now), touched: (rel) => props.activity.touched(rel), limit: 500 })
+    return treeRows({ root: props.cwd, expanded: expanded(), listings: new Map([...listings()].map(([rel, l]) => [rel, l.entries])), ignored: new Set([...listings().values()].flatMap((l) => l.ignored)), showHidden: hidden(), status: status(), glow: (rel) => props.activity.glow(rel, props.now), touched: (rel) => props.activity.touched(rel), limit: 500, revealed: revealed() === selected() ? revealed() : undefined })
   })
   const items = createMemo(() => {
     const result: { rel: string; label: string; row?: ReturnType<typeof treeRows>[number] }[] = []
@@ -243,7 +244,7 @@ export function Files(props: {
     const held = operation()
     if (!held || held.working || stopped || cwd() !== held.root) return
     setOperation({ ...held, working: true })
-    let attempted = false, completed = false, failure = ''
+    let attempted = false, completed = false, failure = '', notice = ''
     try {
       if (!operationController || operationController.signal.aborted) operationController = new AbortController()
       attempted = true // A rejected remote reply may follow a completed effect.
@@ -253,9 +254,12 @@ export function Files(props: {
       if (typeof data.error === 'string') failure = data.error
       if (typeof data.refreshError === 'string') failure = `${completed ? 'Operation completed.' : failure} Refresh failed: ${data.refreshError}`
       if (!stopped && operation()?.planId === held.planId && cwd() === held.root && completed) {
+        const selected = visibleTreePath(data.rel)
+        if (selected !== data.rel) notice = `Operation completed: ${held.kind === 'delete' ? held.source : data.rel}. .git is hidden; showing its parent.`
         setQuery(''); setFiltering(false); setEditing(false); origin = undefined
-        setExpanded(reveal(new Set([...expanded()].filter(rel => rel !== held.source && !rel.startsWith(held.source + '/'))), data.rel))
-        props.dispatch({ type: 'select', view: 'files', id: data.rel })
+        setRevealed(selected || undefined)
+        setExpanded(reveal(new Set([...expanded()].filter(rel => rel !== held.source && !rel.startsWith(held.source + '/'))), selected))
+        props.dispatch({ type: 'select', view: 'files', id: selected })
       }
     } catch (error) { failure = error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message.split(/\r?\n/)[0]! : 'Unable to complete Files operation.' }
     finally {
@@ -265,6 +269,7 @@ export function Files(props: {
       }
       setOperation(undefined); save(d => { d.operation = undefined; d.operationBusy = false })
       if (failure) props.ctx.ui.toast.show({ message: failure, variant: 'error' })
+      else if (notice) props.ctx.ui.toast.show({ message: notice, variant: 'info' })
     }
   }
   async function run(action: string) {
@@ -299,7 +304,7 @@ export function Files(props: {
       }
       case 'filter': begin(); return
       case 'new': case 'rename': case 'move': case 'delete': await beginOperation(action); return
-      case 'toggle-hidden': setHidden(!hidden()); return
+      case 'toggle-hidden': setRevealed(undefined); setHidden(!hidden()); return
       case 'scroll-up': case 'scroll-down': {
         const by = action === 'scroll-up' ? -1 : 1
         if (targetLine() !== undefined) setTop(n => Math.max(0, Math.min(Math.max(0, source().length - 1), n + by)))

@@ -34,6 +34,22 @@ test('new uses selected directory, selected file parent, or project root and pre
   expect(await fsops.planFsOp(f.host, prepared!, 'folder/')).toMatchObject({ destination: 'src/folder', targetKind: 'dir' })
 })
 
+test('Windows canonical UNC accepts dotted hosts and IPs while refusing exact device hosts', async () => {
+  const f = fixture('win32')
+  for (const host of ['files.example', '192.0.2.1']) {
+    const root = `//${host}/share/acme-app`
+    f.nodes.set(root, { kind: 'dir', size: 0, realPath: root })
+    f.nodes.set(`${root}/source.txt`, { kind: 'file', size: 4, realPath: `${root}/source.txt` })
+    const prepared = await fsops.prepareFsOp(f.host, root, { kind: 'rename', source: 'source.txt' })
+    expect(await fsops.planFsOp(f.host, prepared, 'renamed.txt')).toMatchObject({ realRoot: root, destination: 'renamed.txt' })
+  }
+  for (const host of ['.', '?']) {
+    const root = `//${host}/share/acme-app`
+    f.nodes.set(root, { kind: 'dir', size: 0, realPath: root })
+    await expect(fsops.prepareFsOp(f.host, root, { kind: 'new', source: '' })).rejects.toThrow()
+  }
+})
+
 test('rename is same-parent basename and move is an exact project-relative path', async () => {
   const f = fixture()
   const rename = await fsops.prepareFsOp(f.host, f.root, { kind: 'rename', source: 'src/file.txt' })
@@ -172,7 +188,21 @@ test('postconditions reject a skipped successful mv and a changed canonical dest
   const plan = await fsops.planFsOp(f.host, prepared!, 'other/new.txt')
   await expect(fsops.verifyFsOp(f.host, plan!)).rejects.toThrow()
   f.nodes.delete(`${f.root}/src/file.txt`); f.add('other/new.txt')
-  expect(await fsops.verifyFsOp(f.host, plan!)).toBeUndefined()
+  expect(await fsops.verifyFsOp(f.host, plan!)).toBe('other/new.txt')
   f.nodes.get(`${f.root}/other/new.txt`)!.realPath = `${f.root}/src/new.txt`
   await expect(fsops.verifyFsOp(f.host, plan!)).rejects.toThrow()
+})
+
+test('verified result uses actual canonical parent casing and paths for selection', async () => {
+  const f = fixture('win32'), stat = f.host.stat, list = f.host.list
+  const actual = (path: string) => path.replace(/\/SRC(?=\/|$)/g, '/src').replace(/\/alias(?=\/|$)/g, '/src')
+  f.host.stat = path => stat(actual(path)); f.host.list = path => list(actual(path))
+  const prepared = await fsops.prepareFsOp(f.host, f.root, { kind: 'move', source: 'src/file.txt' })
+  const plan = await fsops.planFsOp(f.host, prepared, 'SRC/renamed.txt')
+  f.nodes.delete(`${f.root}/src/file.txt`); f.add('src/renamed.txt')
+  expect(await fsops.verifyFsOp(f.host, plan)).toBe('src/renamed.txt')
+  f.add('alias', 'dir', `${f.root}/src`)
+  const deletion = await fsops.planFsOp(f.host, await fsops.prepareFsOp(f.host, f.root, { kind: 'delete', source: 'alias/renamed.txt' }))
+  f.nodes.delete(`${f.root}/src/renamed.txt`)
+  expect(await fsops.verifyFsOp(f.host, deletion)).toBe('src')
 })

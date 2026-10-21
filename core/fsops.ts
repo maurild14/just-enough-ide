@@ -33,7 +33,7 @@ function relative(value: string, platform: Platform, empty = false): string {
 function metadata(stat: FileStat | null, platform: Platform): FileStat {
   if (!stat || !stat.realPath || !Number.isFinite(stat.size) || stat.size < 0 || (stat.kind !== 'file' && stat.kind !== 'dir')) fail('Cannot verify filesystem metadata.')
   const real = platform === 'win32' ? toPosix(stat!.realPath) : stat!.realPath
-  const absolute = platform === 'win32' ? /^[A-Za-z]:\//.test(real) || /^\/\/[^/?.]+\/[^/]+/.test(real) : real.startsWith('/') && !real.startsWith('//') && !real.includes('\\')
+  const absolute = platform === 'win32' ? /^[A-Za-z]:\//.test(real) || /^\/\/[^/?]+\/[^/]+/.test(real) : real.startsWith('/') && !real.startsWith('//') && !real.includes('\\')
   if (!absolute || /\/(?:\.|\.\.)(?:\/|$)/.test(real)) fail('Cannot verify a canonical filesystem path.')
   return { ...stat!, realPath: real }
 }
@@ -123,7 +123,7 @@ export function fsOpCommand(plan: FsPlan, platform: Platform): { argv: string[];
 }
 
 /** Exit zero can mean mv -n skipped. Require the exact result before reporting success. */
-export async function verifyFsOp(host: Host, plan: FsPlan): Promise<void> {
+export async function verifyFsOp(host: Host, plan: FsPlan): Promise<string> {
   if ((await rootStat(host, plan.root)).realPath !== plan.realRoot) fail('The project root changed during the operation.')
   if (plan.kind !== 'new') {
     const entries = await host.list(full(plan.root, parent(plan.source)))
@@ -132,5 +132,7 @@ export async function verifyFsOp(host: Host, plan: FsPlan): Promise<void> {
   if (plan.destination !== null) {
     const stat = await entry(host, plan.root, plan.destination)
     if (stat.kind !== plan.targetKind || !plan.destinationParentReal || nativeRel(full(plan.destinationParentReal, name(plan.destination)), stat.realPath, host.platform) !== '') fail('The filesystem operation did not reach its exact destination.')
+    return nativeRel(plan.realRoot, stat.realPath, host.platform)!
   }
+  return nativeRel(plan.realRoot, plan.parentReal, host.platform)!
 }

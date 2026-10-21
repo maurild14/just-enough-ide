@@ -201,6 +201,8 @@ Search views and OpenCode RPC are built on both hosts (ADRs 0021-0023, 0027). Na
 
 Milestone 0.4 adds pure `core/fsops.ts` validation/evidence, plans, fixed argv/env and exact-result verification. Native adapters capture root/source/parent evidence before editing, revalidate before effects, serialize Files operations through refresh, and invalidate listings/previews/all-files after any attempted effect. OpenCode retains at most 32 server-owned latest session/root plans behind random opaque tokens; closed fsPrepare/fsApply inputs and cancellation/root checks precede Node effects. Claude executes through its installed writer/process APIs. ADR 0028 records literal input semantics, native inline states, the narrow fixed PowerShell exception and external-writer limits.
 
+Postchecks return the actual canonical relative result so UI selection follows real entry casing/paths through aliases. Shared treeRows can pin one successful selected path/ancestor chain through hidden/ignored filtering and each existing folder cap; .git uses a visible-parent fallback. Claude's existing pane/tree atoms retain adapter-only root/owner markers. Root transitions invalidate those atoms before cwd is published, and synchronous completion updaters recheck scope on every CAS retry; ordinary pane normalization preserves the markers. Core pane state/views stay unchanged.
+
 ## Packaging
 
 The repo root is both the Claude Code plugin (the marketplace installs the whole tree, `core/` included) and the `opencode-jei` npm package (`exports` `.`, `./server`, `./tui`, `./rpc`). The npm `files` list excludes specs. There is no build step: both hosts load TypeScript directly.

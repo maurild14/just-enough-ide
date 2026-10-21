@@ -200,6 +200,8 @@ At 24 columns Claude uses a compact n/r/m/d row ahead of the results and retains
 
 While executing, `Working…` replaces the action and the Files busy guard remains held through refresh. Preparation failures, changed metadata and existing targets show errors without an effect. Failed effects still invalidate caches and attempt refresh. A failure after successful execution starts `Operation completed. Refresh failed: …`; it never automatically repeats the action. Success clears the filename query, reveals parents and selects the target or surviving parent/row.
 
+The latest successful target and its ancestor chain stay visible while selected, even when hidden/ignored or sorted beyond a folder's cap; one pinned entry replaces a normal row inside the existing 500-row budget. Hidden/ignored settings stay unchanged. Changing selection stops that exception; changing visibility or root clears it. .git stays excluded: use its nearest visible parent/root survivor and the toast `Operation completed: <path>. .git is hidden; showing its parent.` Root changes dismiss a pending Files editor/confirmation; late completion cannot change the new project's tree or selection.
+
 ## 9. Motion: activity shimmer
 
 - When a row is touched, the name's foreground starts in the activity color and returns to `fg` in **8 steps of 250 ms (2 s in total)**. In truecolor, each step mixes linearly from the token's color to `fg` in the theme layer. With 16 colors there are **3 steps**: bold activity color (0–700 ms), activity color (700–1400 ms), dim activity color (1400–2000 ms).

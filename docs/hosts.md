@@ -139,6 +139,8 @@ OpenCode adds closed fsPrepare/fsApply methods. Preparation stores evidence serv
 
 Five-row editor/confirmation trees and actual OpenTUI frames are tested at 24/40/80/120 columns through resize, with enlargement/Cancel at smaller sizes. SDK prompt/confirm mocks are not layout evidence. Windows junction tests preserve outside children during recursive deletion; file-symlink EPERM and unexecuted other operating systems remain explicit QA limits. Path APIs cannot guarantee atomic no-overwrite against unrelated concurrent writers or prove inode identity through a race.
 
+Claude's synchronous installed update callback retries after ifVersion misses. Root/owner markers in its existing tree/pane atoms revoke completion publication before cwd changes, and every updater retry rechecks that marker; working busy ownership remains held through cleanup. Postchecks return real canonical relative results on both hosts, including Windows case aliases; dotted-host/IP UNC canonical roots remain valid. One selected successful path/ancestor chain is pinned inside the existing folder cap without changing hidden/ignored settings; .git stays excluded with explicit result/visible-parent feedback.
+
 ## OpenCode Search and replacement
 
 Search and Quick Open use native inputs, theme tokens, session/project memory and the existing key layer. Search submits on Enter; the server batches at 200 matches or 100 ms. Installed `RpcCallContext` supplies signal/error, so stateful calls carry sessionID explicitly. Ordinary RPC calls use the second `{signal}` argument; persistent Search uses searchCancel and cleanup. Native event `location.directory`, session/id and generation checks reject stale/foreign replies. Listeners unsubscribe on unmount; disposal cancels work.

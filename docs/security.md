@@ -36,6 +36,8 @@ On OpenCode, sensitive-file approval covers the exact list shown and crosses RPC
 - **Paths stay inside the project root.** Every path JEI writes or deletes is resolved and checked. The Files service refuses a relative path that leaves the root (listing and preview return empty) and a preview whose real path (after symlinks) is outside the root's real path. Git runs with `GIT_LITERAL_PATHSPECS=1`, so a file name with `[`, `*` or `?` never matches other files when staged, restored or cleaned.
 - **No lock contention.** Git runs with `--no-optional-locks` so JEI never blocks the agent.
 
+- **Completion publication has its own scope guard.** Claude revokes adapter-only pane/tree root/owner markers before publishing cwd. Synchronous update callbacks recheck them on every ifVersion retry, including survivor selection after awaited refresh. Busy cleanup releases only its own operation. This UI lifecycle boundary is separate from the documented filesystem external-writer window. Verified canonical relative results preserve actual casing/paths through aliases; dotted/IP UNC roots are valid, while device hosts remain refused.
+
 ## Repository hygiene
 
 - No secrets, tokens, personal paths, usernames, emails or real project names in code, fixtures, docs or screenshots. Fixtures use `acme-app` and fictional authors (`@example.com`).
