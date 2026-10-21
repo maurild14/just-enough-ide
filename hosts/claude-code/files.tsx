@@ -261,17 +261,25 @@ export async function cancelFilesOperation($: EngineInterface): Promise<void> {
 }
 
 async function beginFilesOperation($: EngineInterface, kind: FsOp, root: string, source: string): Promise<void> {
-  let acquired = false
+  let acquired = false, installed = false
   const id = String(++operationSerial)
-  if (!await claimFilesPane($, root, id)) { $.ui.toast('A Files operation is already running.'); return }
-  await updateTree($, t => { acquired = t.filesRoot === root && !t.operationBusy; return acquired ? { ...t, operationBusy: id } : t })
-  if (!acquired) { await releaseFilesPane($, root, id); $.ui.toast('A Files operation is already running.'); return }
   try {
+    if (!await claimFilesPane($, root, id)) { $.ui.toast('A Files operation is already running.'); return }
+    await updateTree($, t => { acquired = t.filesRoot === root && !t.operationBusy; return acquired ? { ...t, operationBusy: id } : t })
+    if (!acquired) { $.ui.toast('A Files operation is already running.'); return }
     const prepared = await prepareFsOp(await projectHost($, root), root, { kind, source })
     if (await readCwd($) !== root || currentView(await readPane($)) !== 'files' || (await readTree($)).operationBusy !== id) throw new Error('The project changed. Start again.')
-    await updateTree($, t => t.filesRoot === root && t.operationBusy === id ? { ...t, editing: false, operation: { id, prepared, working: false, value: kind === 'rename' ? baseName(source) : kind === 'move' ? source : '' } } : t)
+    const written = await updateTree($, t => t.filesRoot === root && t.operationBusy === id ? { ...t, editing: false, operation: { id, prepared, working: false, value: kind === 'rename' ? baseName(source) : kind === 'move' ? source : '' } } : t)
+    if (written.filesRoot !== root || written.operationBusy !== id || written.operation?.id !== id) throw new Error('The project changed. Start again.')
+    installed = true
     if (kind !== 'delete') await $.ui.focus({ requestId: 'jei', key: 'files-operation-input' }).catch(() => {})
-  } catch (error) { await releaseFilesPane($, root, id); await updateTree($, t => t.operationBusy === id ? { ...t, operationBusy: null } : t); $.ui.toast(`Files operation failed: ${firstLine(error)}.`) }
+  } catch (error) { $.ui.toast(`Files operation failed: ${firstLine(error)}.`) }
+  finally {
+    if (!installed) {
+      const remaining = await updateTree($, t => t.operation?.id === id && t.operation.working ? t : { ...t, operation: t.operation?.id === id ? null : t.operation, operationBusy: t.operationBusy === id ? null : t.operationBusy })
+      if (remaining.operation?.id !== id || !remaining.operation.working) await releaseFilesPane($, root, id)
+    }
+  }
 }
 
 async function applyFilesOperation($: EngineInterface, id: string, value: string | undefined, confirmed = false): Promise<void> {

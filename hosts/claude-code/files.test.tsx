@@ -158,6 +158,54 @@ for (const phase of ['begin', 'apply'] as const) test(`Files ${phase} loses a re
   await ui.unmount()
 })
 
+test('Files releases a preparing owner when native cwd change beats the editor installation retry', { timeoutMs: 60_000 }, async ($, on) => {
+  on('ui.focus', () => ({}))
+  const clock = mock.clock(on, { now: 0 }), other = '/work/other-app', savedTree = JSON.stringify(TREE)
+  let armed = false, paused = false, misses = 0, current = ROOT
+  let pending: Promise<unknown> | undefined
+  on('state.set', async (_$, event, next) => {
+    const installing = event.key === 'tree' && !!event.value.operation && !event.previous?.operation
+    if (armed && !paused && installing) { paused = true; await clock.sleep(100) }
+    const result = await next(event)
+    if (installing && result.value?.isSet === false) misses++
+    if (event.key === 'cwd' && result.value?.isSet) current = event.value
+    return result
+  })
+  const seen = await world($, on, true); TREE[other] = []
+  try {
+    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+    armed = true; pending = ui.press({ key: 'key-n' })
+    await clock.settle(); expect(paused).toBe(true)
+    await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: other }); expect(current).toBe(other)
+    await clock.advance(100); await pending
+    expect(misses).toBeGreaterThan(0)
+    expect(await ui.find({ key: 'files-operation-input' })).toBeUndefined()
+    expect(seen.effects).toEqual([])
+    await ui.press({ key: 'key-n' }); expect(await ui.find({ key: 'files-operation-input' })).toBeTruthy()
+    await ui.press({ key: 'files-operation-cancel' }); await ui.unmount()
+  } finally { await clock.advance(100); await pending?.catch(() => {}); for (const key of Object.keys(TREE)) delete TREE[key]; Object.assign(TREE, JSON.parse(savedTree)) }
+})
+
+for (const stage of ['acquisition', 'installation'] as const) test(`Files releases its preparation after a one-shot native tree ${stage} error`, async ($, on) => {
+  on('ui.focus', () => ({}))
+  on('ui.log', () => ({ value: undefined }))
+  let armed = false, rejected = false
+  on('state.set', (_$, event, next) => {
+    if (armed && !rejected && event.key === 'tree' && event.ifVersion !== undefined && (stage === 'acquisition' ? event.value.operationBusy && !event.previous?.operationBusy : event.value.operation && !event.previous?.operation)) {
+      rejected = true
+      return { deny: 'Temporary tree write failure.' }
+    }
+    return next(event)
+  })
+  const seen = await world($, on, true)
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+  armed = true; await ui.press({ key: 'key-n' })
+  expect(rejected).toBe(true); expect(seen.effects).toEqual([])
+  expect(await ui.find({ key: 'files-operation-input' })).toBeUndefined()
+  await ui.press({ key: 'key-n' }); expect(await ui.find({ key: 'files-operation-input' })).toBeTruthy()
+  await ui.press({ key: 'files-operation-cancel' }); await ui.unmount()
+})
+
 test('Files holds its effect owner across cwd change/cancel and cannot release or select into another project', { timeoutMs: 60_000 }, async ($, on) => {
   on('ui.focus', () => ({}))
   const clock = mock.clock(on, { now: 0 })
