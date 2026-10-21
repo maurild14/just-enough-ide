@@ -14,6 +14,8 @@ Minimum version **2.1.302**. CI also runs against the latest release. The mod AP
 
 **Types.** `.claude-plugin/types/` is laid by Claude Code, gitignored and never committed. The plugin's own state contract is `types/index.d.ts`.
 
+Claude Code 2.1.306 injects a command-scope `core.hooksPath` pointing to the null device into plugin Git processes. Hook detection reads all scoped values, excludes that host-only disabling override, and inspects the common Git directory's hooks. Repository/global hook configuration and real hook files still require the normal hook-aware execution path; JEI never changes the runner's hook policy.
+
 Retained v0.1 working-diff state is normalized by shared core `normalizePane` at Claude state reads/updates and OpenCode panel/command memory loads. It preserves selections and flags across reload; drawing performs no migration writes. See `docs/decisions/0012-git-history-evidence-and-state.md`.
 
 | Need | API |

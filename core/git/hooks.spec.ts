@@ -1,4 +1,5 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
+import { cleanup, makeRepo } from '../../test/fake-host.ts'
 import type { DirEntry, FileStat, Host, RunResult } from '../host.ts'
 import { type HookSignals, readHookSignals, usesHooks } from './hooks.ts'
 
@@ -25,10 +26,10 @@ function fake(o: Fake): Host {
     platform: 'linux',
     run: async (argv: readonly string[]): Promise<RunResult> => {
       const args = argv.slice(4).join(' ')
-      if (args === 'config --get core.hooksPath') {
-        return o.hooksPath === undefined ? { exitCode: 1, stdout: '', stderr: '' } : { exitCode: 0, stdout: `${o.hooksPath}\n`, stderr: '' }
+      if (args === 'config --show-scope --get-all core.hooksPath') {
+        return o.hooksPath === undefined ? { exitCode: 1, stdout: '', stderr: '' } : { exitCode: 0, stdout: `local\t${o.hooksPath}\n`, stderr: '' }
       }
-      if (args === 'rev-parse --git-path hooks') return { exitCode: 0, stdout: `${o.hooksDir ?? '.git/hooks'}\n`, stderr: '' }
+      if (args === 'rev-parse --git-common-dir') return { exitCode: 0, stdout: `${o.hooksDir?.replace(/\/hooks$/, '') ?? '.git'}\n`, stderr: '' }
       return { exitCode: 1, stdout: '', stderr: 'unexpected' }
     },
     stat: async (p: string): Promise<FileStat | null> => {
@@ -46,6 +47,19 @@ function fake(o: Fake): Host {
 }
 
 const f = (name: string): DirEntry => ({ name, kind: 'file', size: 1 })
+
+afterEach(cleanup)
+
+test('host-injected disabled hooks do not hide real repository hooks or invent hooks', async () => {
+  const repo = await makeRepo()
+  const run = repo.host.run.bind(repo.host)
+  repo.host.run = (argv, options) => run([argv[0]!, '-c', 'core.hooksPath=\\\\.\\NUL', ...argv.slice(1)], options)
+  expect(usesHooks(await readHookSignals(repo.host, repo.dir))).toBe(false)
+  repo.write('.git/hooks/pre-commit', '#!/bin/sh\nexit 0\n')
+  expect(usesHooks(await readHookSignals(repo.host, repo.dir))).toBe(true)
+  await repo.git('config', 'core.hooksPath', '.custom-hooks')
+  expect((await readHookSignals(repo.host, repo.dir)).hooksPath).toBe('.custom-hooks')
+})
 
 test('readHookSignals on a plain repo', async () => {
   const s = await readHookSignals(fake({}), '/r')

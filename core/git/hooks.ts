@@ -37,10 +37,14 @@ async function exists(host: Host, path: string): Promise<boolean> {
   return (await host.stat(path)) !== null
 }
 
-/** Gathers hook signals through the Host only. `rev-parse --git-path hooks` keeps linked worktrees correct. */
+/** Inspect repository configuration even when the host disables hooks in its Git subprocesses. */
 export async function readHookSignals(host: Host, root: string): Promise<HookSignals> {
-  const hooksPath = await tryGit(host, root, ['config', '--get', 'core.hooksPath'])
-  const gitHooks = await tryGit(host, root, ['rev-parse', '--git-path', 'hooks'])
+  const configured = await tryGit(host, root, ['config', '--show-scope', '--get-all', 'core.hooksPath'])
+  const paths = (configured ?? '').split('\n').filter(line => !/^command\s+(?:\\\\\.\\NUL|\/dev\/null)\r?$/i.test(line))
+  const hooksPath = paths.at(-1)?.replace(/^\S+\s+/, '').replace(/\r$/, '') || null
+  // --git-path hooks also sees the host's command-scope override; the common dir does not.
+  const common = await tryGit(host, root, ['rev-parse', '--git-common-dir'])
+  const gitHooks = common === null ? null : `${common}/hooks`
   let hookFiles: string[] = []
   if (gitHooks !== null) {
     try {
