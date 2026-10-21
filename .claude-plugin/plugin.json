@@ -1,6 +1,6 @@
 {
   "name": "jei",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "The parts of an IDE you still need when the AI writes the code: a file tree, project search and a full Git panel, docked beside your Claude Code or OpenCode session.",
   "types": "./types/index.d.ts",
   "author": { "name": "The JEI contributors" },
