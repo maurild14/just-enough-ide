@@ -142,6 +142,8 @@ Search/Quick Open reserve `q` for their mode toggle (ADR 0019); previews and Rep
 
 Claude Search pins the outlined content query above the project name, with optional include/exclude text, file groups, accent match spans and the summary. Matching is literal and case-insensitive. `Include/exclude: src/** !**/*.test.ts` and `Replace with` are secondary editors; Submit returns focus to the list or opens replacement review. Replacement file headers apply only after confirmation; their chevrons collapse bounded native diff windows. `Not replaced` lists actual reasons, and partial writes report their successful count before refresh.
 
+On both hosts, Up from the first Search or Quick Open result focuses the query with its draft intact. Down from the editor returns to the retained result without skipping it. Refocusing the field does not submit a query or cancel a running content search; Enter submits the edited content query.
+
 
 At five rows, Claude Search keep tabs, the active editor, selected row and hint. Compact editors expose Cancel and omit the separate Back row. At 24 columns, actions omitted from fitted hints remain in the scrollable list; their letter shortcut exists only while its native Button is drawn. Input focus suspends letter/digit shortcuts, and Submit restores list actions. Mobile shows an explicit input-unavailable fallback. ADR 0021 records these native limits.
 - The body always keeps at least 1 row. Scrolling keeps 1 row of context above and below the selection when the body has 5 or more rows.

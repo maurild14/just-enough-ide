@@ -217,7 +217,7 @@ File ops live in `core/fsops.ts` as argv builders plus root checks; the host exe
 
 Tab 2 is Search; Symbols is retired from both native interfaces. Content search is literal and case-insensitive, submitted with Enter. The outlined query field has separate Cancel and Clear controls. Include/exclude globs, result grouping, one/all hand-off, Quick Open, reviewed replacement and changed-file refusal remain available. Case, regex and word controls and shortcuts are removed.
 
-Results stream from the existing bounded ripgrep service, with the verified Git grep fallback when needed. Search retains at most 2,000 result lines and an estimated 16 MiB. Replacement requires complete bounded review and fresh UTF-8 byte comparison before writes (ADR 0023). Arrow navigation keeps the selected result visible; preview and Back retain its exact selection. Clear stays in Search; b returns to Files.
+Results stream from the existing bounded ripgrep service, with the verified Git grep fallback when needed. Search retains at most 2,000 result lines and an estimated 16 MiB. Replacement requires complete bounded review and fresh UTF-8 byte comparison before writes (ADR 0023). Arrow navigation keeps the selected result visible; Up from the first result focuses the query for editing, and Down from the query returns to the retained result without skipping it. Preview and Back retain its exact selection. Clear stays in Search; b returns to Files.
 
 ### 6.3 Filename search in Files
 

@@ -2,6 +2,35 @@ import { expect, test } from 'claude-code/testing'
 import { command, props, world } from '../../test/claude-search.ts'
 import { lineWidths, type Node } from './measure.ts'
 
+test('Search arrows return from the first result to its editable query', async ($, on) => {
+  const seen = await world($, on)
+  await $.command.run(command('search'))
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(80, 10) })
+  await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
+  const scroll = (by: number) => $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by, bodyRows: 10, contentRows: 30, origin: { kind: 'person' } })
+  const selected = () => (seen.states.pane as { selected: { search: string } }).selected.search
+  await scroll(1); expect(selected()).toBe('match-1')
+  await scroll(-1); expect(selected()).toBe('match-0')
+  await scroll(-1)
+  expect((await ui.find({ key: 'search-query' }))?.props.autoFocus).toBe(true)
+  expect((await ui.find({ key: 'search-query' }))?.props.value).toBe('load')
+  expect((await ui.find({ key: 'tab-3' }))?.props.hotkey).toBeUndefined()
+  for (const width of [24, 40, 80, 120]) {
+    await ui.redraw(props(width, 5))
+    expect((await ui.find({ key: 'search-query' }))?.props.autoFocus).toBe(true)
+    for (const drawn of lineWidths(await ui.drawn() as Node)) expect(drawn).toBeLessThanOrEqual(width)
+  }
+  await ui.input({ key: 'search-query', text: 'save', kind: 'change' })
+  expect(seen.runs.filter(argv => argv[0] === 'rg')).toHaveLength(1)
+  await scroll(1)
+  expect(selected()).toBe('match-0')
+  expect((await ui.find({ key: 'search-query' }))?.props.autoFocus).toBeUndefined()
+  await scroll(-1)
+  await ui.input({ key: 'search-query', text: 'save', kind: 'submit' }); await seen.clock.advance(300)
+  expect((await ui.find({ key: 'search-row-match-0' }))?.text).toContain('save')
+  await ui.unmount()
+})
+
 test('Files searches names live, prioritizes prefixes, keeps input shortcuts and restores its tree', async ($, on) => {
   const seen = await world($, on)
   for (let i = 0; i < 35; i++) seen.files[`src/alpha-${String(i).padStart(2, '0')}.ts`] = 'sample'

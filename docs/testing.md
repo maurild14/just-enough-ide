@@ -126,3 +126,5 @@ Files Search integration checks Enter-only requests, outlined field ordering, qu
 ## Filename and content separation
 
 ADR 0026 retires native Symbols views and their UI tests. Pure symbol parsers/services and old RPC contracts keep their core tests. Current native suites cover the outlined live Files field, basename-prefix ordering, no content process while typing filenames, input shortcut ownership, separated controls, offscreen arrow navigation, retained preview/query and restoration of the original tree. Search tab 2 retains stream/cancellation, globs, hand-off, Quick Open and replacement safety coverage. Earlier Symbols UI/LSP descriptions above record historical verification rather than the current interface.
+
+Search focus regressions navigate down through results, return Up past the first match to the editable query, type a draft without submitting, and use Down to restore the retained result without skipping it. Native Claude checks cover compact redraws; OpenTUI checks also return from an offscreen preview through 25 results to the query at 24/40/80/120 columns.

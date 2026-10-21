@@ -98,17 +98,24 @@ export async function scrollSearch($: EngineInterface, by: number): Promise<bool
   const pane = await readPane($), view = currentView(pane)
   if (!['search', 'quickopen', 'search.replace'].includes(view)) return false
   const root = await readCwd($), r = await runtime($, root), s = await readSearch($, root)
-  if (s.editing) return false
+  const from = r.ids.indexOf(pane.selected[view] ?? '')
+  if (view !== 'search.replace' && by < 0 && from <= 0 && !s.editing) {
+    await updateSearch($, root, u => ({ ...u, editing: 'query' }))
+    await $.ui.focus({ requestId: 'jei', key: 'search-query' }).catch(() => {})
+    return true
+  }
+  if (s.editing && (view === 'search.replace' || by <= 0)) return false
+  if (s.editing) await updateSearch($, root, u => ({ ...u, editing: null }))
   if (view === 'search.replace' && s.expanded.includes(pane.selected[view] ?? s.plan[0]?.rel ?? '')) {
     const top = Math.max(0, Math.min(Math.max(0, (r.diffTotal ?? 0) - (r.diffRows ?? 1)), s.top + by))
     if (top !== s.top) { await updateSearch($, root, u => ({ ...u, top })); return true }
   }
-  const from = r.ids.indexOf(pane.selected[view] ?? ''), id = r.ids[Math.max(0, Math.min(r.ids.length - 1, from < 0 ? 0 : from + by))]
+  const id = r.ids[Math.max(0, Math.min(r.ids.length - 1, from < 0 ? 0 : from + (s.editing ? 0 : by)))]
   if (!id) return true
-  if (pane.selected[view] === id) return true
+  if (pane.selected[view] === id && !s.editing) return true
   const subject = r.data?.[id], mode = view as 'search' | 'quickopen' | 'search.replace'
   if (subject !== undefined && s.subject?.[mode] !== subject) await updateSearch($, root, u => ({ ...u, subject: { ...u.subject, [mode]: subject } }))
-  await updatePane($, p => reducePane(p, { type: 'select', view, id }))
+  if (pane.selected[view] !== id) await updatePane($, p => reducePane(p, { type: 'select', view, id }))
   await $.ui.focus({ requestId: 'jei', key: `search-row-${id}` }).catch(() => {})
   return true
 }

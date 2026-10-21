@@ -93,7 +93,7 @@ test('native hot reload resets Search and Symbols transient flags while retainin
   await ui.unmount()
 })
 
-test('repeated focus and boundary scroll do not write Search state', async ($, on) => {
+test('Search query boundary changes focus once without repeated state writes', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
@@ -101,8 +101,12 @@ test('repeated focus and boundary scroll do not write Search state', async ($, o
   await $.ui.focus(focus('search-row-match-0'))
   const before = seen.writes.length
   await $.ui.focus(focus('search-row-match-0'))
-  await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: -1, bodyRows: 24, contentRows: 20, origin: { kind: 'person' } })
   expect(seen.writes.slice(before).filter(key => key === 'searches' || key === 'pane')).toEqual([])
+  await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: -1, bodyRows: 24, contentRows: 20, origin: { kind: 'person' } })
+  expect(seen.writes.slice(before).filter(key => key === 'searches' || key === 'pane')).toEqual(['searches'])
+  const focused = seen.writes.length
+  await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: -1, bodyRows: 24, contentRows: 20, origin: { kind: 'person' } })
+  expect(seen.writes.slice(focused).filter(key => key === 'searches' || key === 'pane')).toEqual([])
   await ui.unmount()
 })
 

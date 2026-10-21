@@ -6,6 +6,29 @@ import { paneMemory } from './pane.tsx'
 const batch = (id: string, text = 'load') => ({ sessionID: 'session-a', id, matches: [{ rel: 'src/app.ts', line: 2, text: `ñ ${text} 界`, ranges: [[2, 2 + text.length]] }] })
 const done = (id: string, extra: object = {}) => ({ sessionID: 'session-a', id, engine: 'rg', error: null, ms: 4, truncated: false, ...extra })
 
+for (const width of [24, 40, 80, 120]) test(`Search arrows return to the query for editing at ${width} columns`, async () => {
+  const f = searchFixture(), r = await f.mount(width, 10)
+  f.openSearch(); await r.flush(); input(r).insertText('load'); input(r).submit(); await settle(r)
+  const id = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.emit('searchMatches', { ...batch(id), matches: [...batch(id).matches, { rel: 'src/save.ts', line: 7, text: 'load()', ranges: [[0, 4]] }] })
+  f.emit('searchDone', done(id)); await r.flush()
+  const state = () => paneMemory(f.ctx)[0].panes['session-a']!
+  f.key('down'); await r.flush(); expect(state().selected.search).toBe('match-1')
+  f.key('up'); await r.flush(); expect(state().selected.search).toBe('match-0')
+  f.key('up'); await r.flush()
+  expect(input(r).focused).toBe(true)
+  expect(input(r).value).toBe('load')
+  input(r).insertText('123q'); await r.flush(); f.key('3'); await r.flush()
+  expect(state().tab).toBe('search')
+  expect(f.calls.filter(c => c.method === 'searchStart')).toHaveLength(1)
+  f.key('down'); await r.flush()
+  expect(input(r).focused).toBe(false)
+  expect(state().selected.search).toBe('match-0')
+  f.key('up'); await r.flush(); input(r).submit(); await settle(r)
+  expect(f.calls.findLast(c => c.method === 'searchStart')!.input.query.text).toBe('load123q')
+  for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
+})
+
 for (const width of [24, 40, 80, 120]) test(`separate Search tab submits, scrolls and returns to its retained result at ${width} columns`, async () => {
   const f = searchFixture(), r = await f.mount(width, 24)
   f.key('2'); await r.flush()
@@ -27,6 +50,9 @@ for (const width of [24, 40, 80, 120]) test(`separate Search tab submits, scroll
   f.key('q'); await r.flush()
   expect(state().selected.search).toBe('match-25')
   expect(r.captureCharFrame()).toContain('26:')
+  for (let i = 0; i < 26; i++) { f.key('up'); await r.flush() }
+  expect(input(r).focused).toBe(true)
+  expect(input(r).value).toBe('load123q')
   for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
 })
 

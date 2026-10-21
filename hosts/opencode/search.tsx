@@ -184,11 +184,16 @@ export function Search(props: {
     if (action === 'submit') return submit()
     if (action === 'back') { if (editing()) { if (editing() === 'replacement') stop(); setEditing(null) } else { stop(); props.dispatch({ type: 'back' }) }; return }
     if (action === 'move-up' || action === 'move-down' || action === 'scroll-up' || action === 'scroll-down') {
+      const up = action.endsWith('up'), editor = editing(), all = selectable(), at = all.findIndex(r => r.id === selected())
+      if (!replacing() && up) {
+        if (editor) return
+        if (at <= 0) { setEditing('query'); return }
+      }
       setEditing(null)
       const file = replacing() && expanded().includes(selected() ?? '') ? s.files.find(f => f.rel === selected()) : undefined
       const diff = file ? parseUnifiedDiff(previewText(file))[0] : undefined
       if (diff && !compact()) { const next = top() + (action.endsWith('up') ? -1 : 1), total = diffWindow(diff, 0, 1).total; if (next >= 0 && next < total) { setTop(next); return } }
-      const all = selectable(), at = all.findIndex(r => r.id === selected()), next = all[Math.max(0, Math.min(all.length - 1, at + (action.endsWith('up') ? -1 : 1)))]
+      const next = all[Math.max(0, Math.min(all.length - 1, at + (!replacing() && editor ? 0 : up ? -1 : 1)))]
       if (next) { setTop(0); select(next.id) }; return
     }
     if (s.applying || s.busy && replacing()) return
