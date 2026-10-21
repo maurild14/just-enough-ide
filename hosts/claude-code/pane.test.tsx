@@ -1,3 +1,4 @@
+import { nativeMount } from './measure.ts'
 import { expect, test } from 'claude-code/testing'
 import { cellWidth } from '../../core/shared/fit.ts'
 import { lineWidths, type Node } from './measure.ts'
@@ -25,7 +26,7 @@ function paneProps(bodyColumns: number, bodyRows = 24) {
 test('pane shell: tabs, headers, native tabs and hint on every surface', async ($, on) => {
   on('session.id', () => ({ value: 'pane-test' }))
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     expect(await ui.find({ type: 'Text', text: /1 Files/ })).toBeDefined()
 
     await ui.press({ key: 'tab-3' })
@@ -47,7 +48,7 @@ test('pane shell: tabs, headers, native tabs and hint on every surface', async (
 
 test('the current tab is the primary Button', async ($) => {
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     await ui.press({ key: 'tab-3' })
     expect((await ui.find({ key: 'tab-3' }))?.props.variant).toBe('primary')
     expect((await ui.find({ key: 'tab-1' }))?.props.variant).not.toBe('primary')
@@ -59,7 +60,7 @@ test('no line is wider than the pane at 24, 40, 80 and 120 columns', async ($, o
   on('session.id', () => ({ value: 'pane-test' }))
   for (const surface of SURFACES) {
     for (const width of WIDTHS) {
-      const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width), requestId: 'jei' })
+      const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width), requestId: 'jei' })
       for (const key of ['tab-1', 'tab-1', 'tab-2', 'tab-3']) {
         await ui.press({ key })
         for (const w of lineWidths((await ui.drawn()) as Node)) expect(w).toBeLessThanOrEqual(width)
@@ -74,17 +75,17 @@ test('no line is wider than the pane at 24, 40, 80 and 120 columns', async ($, o
 
 test('tab labels shorten with the width', async ($) => {
   for (const surface of SURFACES) {
-    const wide = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(120), requestId: 'jei' })
+    const wide = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(120), requestId: 'jei' })
     await wide.press({ key: 'tab-1' })
     expect(await wide.find({ type: 'Text', text: /3 Git/ })).toBeDefined()
     await wide.unmount()
 
-    const mid = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40), requestId: 'jei' })
+    const mid = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40), requestId: 'jei' })
     expect(await mid.find({ type: 'Text', text: /1 Files/ })).toBeDefined()
     expect(await mid.find({ type: 'Text', text: /3 Git/ })).toBeUndefined()
     await mid.unmount()
 
-    const narrow = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(24), requestId: 'jei' })
+    const narrow = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(24), requestId: 'jei' })
     for (const b of await narrow.findAll({ type: 'Button' })) expect(b.text).toMatch(/^\d$/)
     expect((await narrow.find({ key: 'tab-1' }))?.text).toBe('1')
     await narrow.unmount()
@@ -94,16 +95,16 @@ test('tab labels shorten with the width', async ($) => {
 test('short panes retain native actions and drop the rule then header', async ($, on) => {
   on('session.id', () => ({ value: 'pane-test' }))
   for (const surface of SURFACES) {
-    const tall = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 10), requestId: 'jei' })
+    const tall = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 10), requestId: 'jei' })
     expect(await tall.find({ key: 'hint' })).toBeDefined()
     await tall.press({ key: 'tab-1' }) // a view without letter actions (Search)
     await tall.unmount()
-    const short = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 7), requestId: 'jei' })
+    const short = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 7), requestId: 'jei' })
     expect(await short.find({ key: 'hint' })).toBeDefined()
     expect(await short.find({ key: 'rule' })).toBeUndefined()
     expect(await short.find({ key: 'header' })).toBeDefined()
     await short.unmount()
-    const tiny = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
+    const tiny = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
     expect(await tiny.find({ key: 'header' })).toBeUndefined()
     await tiny.press({ key: 'tab-1' })
     await tiny.unmount()
@@ -113,12 +114,12 @@ test('short panes retain native actions and drop the rule then header', async ($
 test('Files keeps its letter keys on short panes: a bare hint down to 3 rows', async ($) => {
   for (const surface of SURFACES) {
     for (const rows of [9, 5, 3]) {
-      const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80, rows), requestId: 'jei' })
+      const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80, rows), requestId: 'jei' })
       expect(await ui.find({ key: 'hint' })).toBeDefined()
       expect((await ui.find({ key: 'hint' }))?.text).not.toContain('move')
       await ui.unmount()
     }
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80, 2), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80, 2), requestId: 'jei' })
     expect(await ui.find({ key: 'hint' })).toBeUndefined()
     await ui.unmount()
   }
@@ -151,7 +152,7 @@ test('/jei toggles, and /jei <path> opens Files', async ($, on) => {
   expect((await $.command.run(jei())).text).toBe('JEI closed.')
   expect((await $.command.run(jei('./src/api/user.ts'))).text).toBe('JEI opened on Files.')
 
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   expect((await ui.find({ key: 'tab-1' }))?.props.variant).toBe('primary')
   await ui.unmount()
 })

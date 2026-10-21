@@ -1,3 +1,4 @@
+import { nativeMount } from './measure.ts'
 import { expect, mock, test, type Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
@@ -36,7 +37,7 @@ const FILES = ['README.md', 'people.csv', 'logo.bin', 'big.log', 'empty.txt', 's
 test('returning from preview restores native focus to the selected Files row', async ($, on) => {
   on('ui.focus', () => ({}))
   await world($, on)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   await ui.press({ key: 'row-README.md' }); await ui.press({ key: 'back' })
   expect((await ui.find({ key: 'row-README.md' }))?.props.autoFocus).toBe(true)
   await ui.unmount()
@@ -45,7 +46,7 @@ test('returning from preview restores native focus to the selected Files row', a
 test('Down from a short filename query retains native list arrow routing', async ($, on) => {
   on('ui.focus', () => ({}))
   await world($, on)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   await ui.input({ key: 'filter', text: 'user', kind: 'change' })
   expect(await ui.find({ key: 'arrow-scroll-range' })).toBeDefined()
   await ui.unmount()
@@ -55,7 +56,7 @@ test('Files native Windows confirmation refuses a canonical Unicode sibling befo
   on('ui.focus', () => ({}))
   const seen = await world($, on, true, undefined, path => path.replace(ROOT, path.includes('/src') ? 'C:/fixture/K' : 'C:/fixture/k'))
   await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: `C:${ROOT}` })
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
   await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src/api/user.ts', origin: { kind: 'person' } })
   await ui.press({ key: 'key-d' })
   expect(await ui.find({ key: 'files-operation-confirm' })).toBeUndefined()
@@ -67,7 +68,7 @@ test('Files operations stay reachable, own typed input, cancel and always confir
   on('ui.focus', () => ({}))
   const seen = await world($, on)
   for (const surface of SURFACES) for (const width of WIDTHS) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
     for (const key of ['n', 'r', 'm', 'd']) expect(await ui.find({ key: `key-${key}` })).toBeTruthy()
     await ui.press({ key: 'key-n' })
     expect(await ui.find({ key: 'files-operation-input' })).toBeTruthy()
@@ -107,7 +108,7 @@ test('Files rename/move long-prefill editors and file confirmation retain native
   try {
     for (const surface of SURFACES) for (const width of WIDTHS) {
       await $.command.run(jei(`${ROOT}/${rel}`))
-      const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
+      const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
       for (const action of ['r', 'm']) {
         await ui.press({ key: `key-${action}` })
         for (const resized of [24, 40, 80, 120, width]) {
@@ -131,7 +132,7 @@ test('Files rename/move long-prefill editors and file confirmation retain native
 test('Files changed cwd and changed source after confirmation refuse with zero process effects', async ($, on) => {
   on('ui.focus', () => ({}))
   const seen = await world($, on)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
   await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src', origin: { kind: 'person' } })
   await ui.press({ key: 'key-d' })
   await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: '/work/other-app' })
@@ -151,9 +152,10 @@ test('Files duplicate native submits perform only one effect', async ($, on) => 
   on('ui.focus', () => ({}))
   const savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT), seen = await world($, on, true)
   try {
-    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
     await ui.press({ key: 'key-n' })
-    await Promise.all([ui.input({ key: 'files-operation-input', text: 'once.txt', kind: 'submit' }), ui.input({ key: 'files-operation-input', text: 'once.txt', kind: 'submit' })])
+    const key = (await ui.find({ key: 'files-operation-input' }))!.key!
+    await Promise.all([ui.input({ key, text: 'once.txt', kind: 'submit' }), ui.input({ key, text: 'once.txt', kind: 'submit' })])
     expect(seen.effects.filter(effect => effect.endsWith('/once.txt'))).toHaveLength(1)
     await ui.unmount()
   } finally {
@@ -180,7 +182,7 @@ for (const phase of ['begin', 'apply'] as const) test(`Files ${phase} loses a re
     return result
   })
   const seen = await world($, on, true)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
   if (phase === 'begin') { armed = true; await ui.press({ key: 'key-n' }); expect(await ui.find({ key: 'files-operation-input' })).toBeUndefined(); expect(owner).toBe('competing-owner'); expect(seen.toasts.at(-1)).toContain('already running') }
   else { await ui.press({ key: 'key-n' }); armed = true; await ui.input({ key: 'files-operation-input', text: 'not-created.txt', kind: 'submit' }) }
   expect(injected).toBe(true)
@@ -203,7 +205,7 @@ test('Files releases a preparing owner when native cwd change beats the editor i
   })
   const seen = await world($, on, true); TREE[other] = []
   try {
-    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
     armed = true; pending = ui.press({ key: 'key-n' })
     await clock.settle(); expect(paused).toBe(true)
     await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: other }); expect(current).toBe(other)
@@ -228,7 +230,7 @@ for (const stage of ['acquisition', 'installation'] as const) test(`Files releas
     return next(event)
   })
   const seen = await world($, on, true)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
   armed = true; await ui.press({ key: 'key-n' })
   expect(rejected).toBe(true); expect(seen.effects).toEqual([])
   expect(await ui.find({ key: 'files-operation-input' })).toBeUndefined()
@@ -252,7 +254,7 @@ test('Files holds its effect owner across cwd change/cancel and cannot release o
   const other = '/work/other-app'; TREE[other] = []
   seen.holdEffects(clock.sleep(100))
   try {
-    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
     await ui.press({ key: 'key-n' })
     const pending = ui.input({ key: 'files-operation-input', text: 'first.txt', kind: 'submit' })
     await clock.settle()
@@ -426,7 +428,7 @@ for (const phase of ['post-refresh', 'tree-retry', 'pane-retry'] as const) test(
     if (argv[0] === 'rm' || argv[0] === 'mv') effected = true
   }); TREE[other] = []
   try {
-    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
     await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: `row-${phase === 'post-refresh' ? 'README.md' : 'src/api/user.ts'}`, origin: { kind: 'person' } })
     await ui.press({ key: phase === 'post-refresh' ? 'key-d' : 'key-m' })
     pending = phase === 'post-refresh' ? ui.press({ key: 'files-operation-confirm' }) : ui.input({ key: 'files-operation-input', text: 'docs/race.txt', kind: 'submit' })
@@ -445,7 +447,7 @@ for (const scenario of ['hidden', 'capped', 'hidden-parent', 'git-fallback'] as 
   TREE[ROOT]!.push(dir('.private'), dir('.git')); TREE[`${ROOT}/.private`] = []; TREE[`${ROOT}/.git`] = []
   if (scenario === 'capped') TREE[ROOT]!.push(...Array.from({ length: 501 }, (_, i) => file(`entry${String(i).padStart(3, '0')}.txt`)))
   try {
-    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
     const moving = scenario === 'hidden-parent' || scenario === 'git-fallback', destination = scenario === 'hidden' ? '.new.txt' : scenario === 'capped' ? 'zzz-new.txt' : scenario === 'hidden-parent' ? '.private/after.txt' : '.git/after.txt'
     await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: `row-${moving ? 'src/api/user.ts' : 'README.md'}`, origin: { kind: 'person' } })
     await ui.press({ key: moving ? 'key-m' : 'key-n' }); await ui.input({ key: 'files-operation-input', text: destination, kind: 'submit' })
@@ -490,7 +492,7 @@ for (const surface of SURFACES) test(`Files new entry retains expanded descendan
   const savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT)
   await world($, on, true)
   try {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     await ui.press({ key: 'row-src' }); await ui.press({ key: 'row-src/api' })
     expect(await ui.find({ key: 'row-src/api/user.ts' })).toBeTruthy()
     await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src', origin: { kind: 'person' } })
@@ -504,7 +506,7 @@ for (const surface of SURFACES) test(`Files new entry retains expanded descendan
 test('Files cancel and refused rename retain the filename filter on both native surfaces', async ($, on) => {
   const seen = await world($, on, true)
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     await ui.press({ key: 'key-f' }); await ui.input({ key: 'filter', text: 'user', kind: 'change' }); await ui.press({ key: 'files-cancel' })
     await ui.press({ key: 'key-r' }); await ui.press({ key: 'files-operation-cancel' })
     expect((await ui.find({ key: 'filter' }))?.props.value).toBe('user')
@@ -523,7 +525,7 @@ test('Files mutations refresh caches/state, select surviving targets and never s
   const savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT), seen = await world($, on, true)
   try {
     for (const surface of SURFACES) {
-      const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
+      const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
       const focus = async (rel: string) => $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: `row-${rel}`, origin: { kind: 'person' } })
       await focus('src')
       await ui.press({ key: 'key-n' }); await ui.input({ key: 'files-operation-input', text: 'created.txt', kind: 'submit' })
@@ -578,7 +580,7 @@ const rowKeys = async (ui: { findAll: (q: { type: string }) => Promise<{ key: st
 test('root listing renders folders first, hidden files off', async ($, on) => {
   await world($, on)
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     const keys = await rowKeys(ui)
     expect(keys.slice(0, 2)).toEqual(['row-docs', 'row-src'])
     expect(keys).toContain('row-README.md')
@@ -591,7 +593,7 @@ test('root listing renders folders first, hidden files off', async ($, on) => {
 test('pressing a folder row expands it and lists it once', async ($, on) => {
   const seen = await world($, on)
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     if (surface === 'terminal') {
       await ui.press({ key: 'row-src' })
       await ui.press({ key: 'key-h' })
@@ -607,7 +609,7 @@ test('pressing a folder row expands it and lists it once', async ($, on) => {
 test('h toggles hidden files', async ($, on) => {
   await world($, on)
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     await ui.press({ key: 'key-h' })
     expect(await rowKeys(ui)).toContain('row-.env')
     await ui.press({ key: 'key-h' })
@@ -619,7 +621,7 @@ test('h toggles hidden files', async ($, on) => {
 test('f opens the filter and typing ranks the best file first', async ($, on) => {
   await world($, on)
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     await ui.press({ key: 'key-f' })
     expect(await ui.find({ type: 'Input', key: 'filter' })).toBeDefined()
     await ui.input({ key: 'filter', text: 'usr', kind: 'change' })
@@ -636,7 +638,7 @@ test('f opens the filter and typing ranks the best file first', async ($, on) =>
 for (const width of WIDTHS) test(`Back retains the Files filter and q remains editable at ${width} by five rows`, async ($, on) => {
   await world($, on)
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
     await ui.press({ key: 'key-f' })
     expect((await ui.find({ key: 'back' }))?.props.hotkey).toBeUndefined()
     await ui.input({ key: 'filter', text: 'usr', kind: 'submit' })
@@ -656,7 +658,7 @@ test('enter on a file shows its preview; the header goes back', async ($, on) =>
   await world($, on)
   for (const surface of SURFACES) {
     await $.command.run(jei(`${ROOT}/src/api/user.ts`))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     await ui.press({ key: 'row-src/api/user.ts' })
     const code = await ui.find({ type: 'Code' })
     expect(code?.props.language).toBe('typescript')
@@ -671,7 +673,7 @@ test('enter on a file shows its preview; the header goes back', async ($, on) =>
 test('previews by kind: markdown and its source, csv table, notices', async ($, on) => {
   await world($, on)
   for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40), requestId: 'jei' })
     await ui.press({ key: 'row-README.md' })
     expect((await ui.find({ type: 'Markdown' }))?.text).toContain('# acme-app')
     await ui.press({ key: 'key-m' })
@@ -706,7 +708,7 @@ test('a mentions the selected file in the prompt', async ($, on) => {
   const seen = await world($, on)
   for (const surface of SURFACES) {
     await $.command.run(jei(`${ROOT}/src/api/user.ts`))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     await ui.press({ key: 'key-a' })
     await ui.unmount()
   }
@@ -720,7 +722,7 @@ test('an unreadable file shows an error notice on both surfaces and at every pan
   await world($, on)
   for (const surface of SURFACES) {
     await $.command.run(jei(`${ROOT}/src/index.ts`))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(120), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(120), requestId: 'jei' })
     await ui.press({ key: 'row-src/index.ts' })
     for (const width of WIDTHS) {
       for (const height of [10, 5]) {
@@ -739,7 +741,7 @@ test('an unreadable file shows an error notice on both surfaces and at every pan
 test('o opens the file and a failure becomes a toast', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(jei(`${ROOT}/src/api/user.ts`))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   await ui.press({ key: 'key-o' })
   expect(seen.runs).toContainEqual(['xdg-open', `${ROOT}/src/api/user.ts`])
   expect(seen.toasts).toEqual(["Can't open user.ts: xdg-open: not found."])
@@ -750,7 +752,7 @@ test('a Read glows its row and follows the agent; the glow ends after 2 s', asyn
   const clock = mock.clock(on, { now: 10_000 })
   on('tool.call', () => ({ result: {} as never, text: 'ok' }))
   await world($, on)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   expect(await ui.find({ key: 'glow-src/api/user.ts' })).toBeUndefined()
   await $.tool.call({ tool: 'Read', file_path: `${ROOT}/src/api/user.ts` } as never)
   expect(await ui.find({ key: 'glow-src/api/user.ts' })).toBeDefined()
@@ -780,7 +782,7 @@ test('an active native Read holds its filename glow until the tool finishes', as
   const held = new Promise<void>(resolve => { release = resolve }), began = new Promise<void>(resolve => { entered = resolve })
   on('tool.call', async () => { entered(); await held; return { result: {} as never, text: 'ok' } })
   await world($, on)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   const reading = $.tool.call({ tool: 'Read', file_path: `${ROOT}/src/api/user.ts` } as never)
   try {
     await began
@@ -797,7 +799,7 @@ test('with activity on writes, a Read does not glow', { options: { activity: 'wr
   mock.clock(on, { now: 10_000 })
   on('tool.call', () => ({ result: {} as never, text: 'ok' }))
   await world($, on)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   await $.tool.call({ tool: 'Read', file_path: `${ROOT}/src/api/user.ts` } as never)
   expect(await ui.find({ key: 'glow-src/api/user.ts' })).toBeUndefined()
   expect(await rowKeys(ui)).not.toContain('row-src/api')
@@ -810,7 +812,7 @@ test('paths outside the project never glow', async ($, on) => {
   mock.clock(on, { now: 10_000 })
   on('tool.call', () => ({ result: {} as never, text: 'ok' }))
   await world($, on)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   await $.tool.call({ tool: 'Read', file_path: '/etc/hosts' } as never)
   expect(await ui.findAll({ type: 'Box' }).then((b) => b.filter((x) => (x.key ?? '').startsWith('glow-')))).toHaveLength(0)
   await ui.unmount()
@@ -821,7 +823,7 @@ test('status letters show on changed rows and roll up to folders', async ($, on)
   await world($, on)
   await clock.settle()
   await $.command.run(jei(`${ROOT}/src/api/user.ts`))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80), requestId: 'jei' })
   const row = await ui.find({ key: 'row-src/api/user.ts' })
   expect(row?.text.trimEnd().endsWith('M')).toBe(true)
   expect((await ui.find({ key: 'row-src' }))?.text.trimEnd().endsWith('M')).toBe(true)
@@ -833,7 +835,7 @@ test('no line is wider than the pane, and the selection survives a resize', asyn
   for (const surface of SURFACES) {
     await $.command.run(jei(`${ROOT}/src/api/user.ts`))
     for (const width of WIDTHS) {
-      const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width), requestId: 'jei' })
+      const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width), requestId: 'jei' })
       for (const w of lineWidths((await ui.drawn()) as Node)) expect(w, `tree ${surface} ${width}`).toBeLessThanOrEqual(width)
       await ui.redraw(paneProps(width, 5))
       expect(await ui.find({ key: 'row-src/api/user.ts' }), `${surface} ${width}: ${(await rowKeys(ui)).join(',')}`).toBeDefined()
@@ -855,7 +857,7 @@ test('no line is wider than the pane, and the selection survives a resize', asyn
 
 const answerTools = (on: On) => on('tool.call', () => ({ result: {} as never, text: 'ok' }))
 const mountAt = ($: Engine, width = 80, rows = 24) =>
-  $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(width, rows), requestId: 'jei' })
+  nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(width, rows), requestId: 'jei' })
 
 test('a shell command refreshes the whole tree, even one JEI cannot read', async ($, on) => {
   const clock = mock.clock(on, { now: 10_000 })
@@ -1041,7 +1043,7 @@ test('the Files and preview hints keep every key within 24, 40, 80 and 120 colum
 test('Files field stays editable, bounded and cancelable at three, four and five rows', async ($, on) => {
   await world($, on)
   for (const surface of SURFACES) for (const width of WIDTHS) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
     for (const rows of [3, 4, 5]) {
       await ui.redraw(paneProps(width, rows)); await ui.press({ key: 'key-f' })
       await ui.input({ key: 'filter', text: 'user', kind: 'change' })
@@ -1059,7 +1061,7 @@ test('Files field stays editable, bounded and cancelable at three, four and five
 
 test('on mobile, which draws no Input, the filter shows as text', async ($, on) => {
   await world($, on)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'mobile', component: 'Pane', props: paneProps(40), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'mobile', component: 'Pane', props: paneProps(40), requestId: 'jei' })
   await ui.press({ key: 'key-f' })
   expect((await ui.find({ key: 'files-search-field' }))?.text).toContain('Find files by name')
   await ui.press({ key: 'files-clear' })

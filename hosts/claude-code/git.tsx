@@ -1,4 +1,4 @@
-import { inputValue, resetInput } from './inputs.ts'
+import { inputValue, resetInput, inputKey } from './inputs.ts'
 import type { EngineInterface, RenderElement } from 'claude-code'
 import { commitPlan, discard, generateMessage, initRepo, runSteps, snapshot, stage, sync, unstage } from '../../core/git/service.ts'
 import type { GitSnapshot } from '../../core/git/service.ts'
@@ -751,7 +751,7 @@ export async function renderGit($: EngineInterface, e: PaneRender, frame: FilesF
       <Box key="message-row" flexDirection="row">
         <Text>{gutter}</Text>
         <Input
-          key="message"
+          key={inputKey('message')}
           placeholder={placeholder}
           value={inputValue('message', ui.message)}
           submitLabel="commit"

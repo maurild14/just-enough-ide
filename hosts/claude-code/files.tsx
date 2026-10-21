@@ -32,7 +32,7 @@ import {
 } from './state.ts'
 import { activityColor, color, statusLook } from './theme.ts'
 import { refreshGit, forgetViews } from './activity.ts'
-import { focusInput, inputValue, resetInput } from './inputs.ts'
+import { focusInput, inputValue, resetInput, inputKey } from './inputs.ts'
 
 export type PaneRender = RenderInput<'Pane'>
 
@@ -284,11 +284,11 @@ async function beginFilesOperation($: EngineInterface, kind: FsOp, root: string,
     if (!acquired) { $.ui.toast('A Files operation is already running.'); return }
     const prepared = await prepareFsOp(await projectHost($, root), root, { kind, source })
     if (await readCwd($) !== root || currentView(await readPane($)) !== 'files' || (await readTree($)).operationBusy !== id) throw new Error('The project changed. Start again.')
+    resetInput('files-operation-input')
     const written = await updateTree($, t => t.filesRoot === root && t.operationBusy === id ? { ...t, editing: false, operation: { id, prepared, working: false, value: kind === 'rename' ? baseName(source) : kind === 'move' ? source : '' } } : t)
     if (written.filesRoot !== root || written.operationBusy !== id || written.operation?.id !== id) throw new Error('The project changed. Start again.')
     installed = true
-    resetInput('files-operation-input')
-    if (kind !== 'delete') await $.ui.focus({ requestId: 'jei', key: 'files-operation-input' }).catch(() => {})
+    if (kind !== 'delete') await $.ui.focus({ requestId: 'jei', key: inputKey('files-operation-input') }).catch(() => {})
   } catch (error) { $.ui.toast(`Files operation failed: ${firstLine(error)}.`) }
   finally {
     if (!installed) {
@@ -448,7 +448,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     const cancel = <Button key="files-operation-cancel" plain label={frame.bodyRows < 2 ? 'Enlarge · Cancel' : 'Cancel'} onPress={act($, () => cancelFilesOperation($))} />
     if (frame.bodyRows < 3) return { header: line('Files'), body: [...(frame.bodyRows >= 2 ? [line('Enlarge the pane.', { dim: true })] : []), <Box key="files-operation-tiny">{cancel}</Box>], actions: [] }
     const title = held.prepared.kind === 'delete' ? held.prepared.sourceKind === 'dir' ? 'Delete recursively?' : 'Delete file?' : held.prepared.kind === 'new' ? 'New file or folder' : held.prepared.kind === 'rename' ? 'Rename' : 'Move to project path'
-    const input = held.prepared.kind === 'delete' ? line(fitPath(held.prepared.source, inner), {}, 'files-operation-path') : Input ? <Input key="files-operation-input" value={inputValue('files-operation-input', held.value)} autoFocus submitLabel={held.prepared.kind === 'new' ? 'Create' : held.prepared.kind === 'rename' ? 'Rename' : 'Move'} onInput={value => act($, () => updateTree($, t => t.operation?.id === held.id ? { ...t, operation: { ...t.operation, value } } : t))()} onSubmit={value => act($, () => applyFilesOperation($, held.id, value))()} /> : line('Enlarge on a desktop surface.', { dim: true })
+    const input = held.prepared.kind === 'delete' ? line(fitPath(held.prepared.source, inner), {}, 'files-operation-path') : Input ? <Input key={inputKey('files-operation-input')} value={inputValue('files-operation-input', held.value)} autoFocus submitLabel={held.prepared.kind === 'new' ? 'Create' : held.prepared.kind === 'rename' ? 'Rename' : 'Move'} onInput={value => act($, () => updateTree($, t => t.operation?.id === held.id ? { ...t, operation: { ...t.operation, value } } : t))()} onSubmit={value => act($, () => applyFilesOperation($, held.id, value))()} /> : line('Enlarge on a desktop surface.', { dim: true })
     const label = held.prepared.kind === 'delete' ? 'Delete' : held.prepared.kind === 'new' ? 'Create' : held.prepared.kind === 'rename' ? 'Rename' : 'Move'
     return { header: line('Files'), body: [line(title, { color: color(held.prepared.kind === 'delete' ? 'warning' : 'fg') }, 'files-operation-title'), input, <Box key="files-operation-buttons" flexDirection="row"><Text> </Text>{held.working ? <Text dimColor>Working… · </Text> : <Box flexDirection="row"><Button key={held.prepared.kind === 'delete' ? 'files-operation-confirm' : 'files-operation-submit'} plain label={label} onPress={act($, () => applyFilesOperation($, held.id, held.prepared.kind === 'delete' ? undefined : held.value, held.prepared.kind === 'delete'))} /><Text> · </Text></Box>}{cancel}</Box>], actions: [] }
   }
@@ -549,7 +549,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
 
   const begin = async () => {
     await updateTree($, t => ({ ...t, editing: true, origin: t.filtering ? t.origin : pane.selected.files }))
-    await $.ui.focus({ requestId: 'jei', key: 'filter' }).catch(() => {})
+    await $.ui.focus({ requestId: 'jei', key: inputKey('filter') }).catch(() => {})
   }
   const change = async (value: string) => {
     await updateTree($, t => ({ ...t, filter: value, filtering: value !== '', editing: true, origin: t.filtering ? t.origin : pane.selected.files }))
@@ -561,7 +561,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   const filterHeader = <Box key="files-search-field" flexDirection="column">
     {(frame.searchRows ?? 0) >= 3 && line('┌' + '─'.repeat(Math.max(0, inner - 2)) + '┐', { color: color('accent') })}
     <Box flexDirection="row" width={Math.max(0, frame.columns - 1)}><Text> </Text><Text color={color('accent')}>│ </Text><Box flexGrow={1}>
-      {Input ? <Input key="filter" submitLabel="open" placeholder="Find files by name" value={inputValue('filter', tree.filter)} autoFocus={tree.editing ? true : undefined}
+      {Input ? <Input key={inputKey('filter')} submitLabel="open" placeholder="Find files by name" value={inputValue('filter', tree.filter)} autoFocus={tree.editing ? true : undefined}
         onInput={value => act($, () => change(value))()} onSubmit={value => act($, async () => { await change(value); const best = filterRows(await filesOf(host, root), value, 1)[0]; await updateTree($, t => ({ ...t, editing: false })); if (best && value && await readCwd($) === root && currentView(await readPane($)) === 'files') await showPreview($, best) })()} /> : <Text>{fitEnd(tree.filter || 'Find files by name', Math.max(0, inner - 18))}</Text>}
     </Box><Text> </Text>{cancel}{cancel && <Text> · </Text>}<Button key="files-clear" plain label="Clear" onPress={act($, () => clearFileSearch($))} /><Text color={color('accent')}> │</Text></Box>
     {(frame.searchRows ?? 0) >= 3 && line('└' + '─'.repeat(Math.max(0, inner - 2)) + '┘', { color: color('accent') })}
@@ -703,6 +703,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
 export async function clearFileSearch($: EngineInterface): Promise<void> {
   focusInput(undefined)
   const tree = await readTree($)
+  resetInput('filter')
   await updateTree($, t => ({ ...t, filter: '', filtering: false, editing: false, origin: undefined }))
   if (tree.origin) await updatePane($, p => reducePane(p, { type: 'select', view: 'files', id: tree.origin! }))
   await $.ui.focus({ requestId: 'jei', key: `row-${tree.origin ?? (await readPane($)).selected.files ?? ''}` }).catch(() => {})

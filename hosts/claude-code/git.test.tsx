@@ -1,3 +1,4 @@
+import { nativeMount } from './measure.ts'
 import { expect, mock, test, type Engine, type Mounted } from 'claude-code/testing'
 import type { On } from 'claude-code'
 import type { JeiGit } from '../../types/index.d.ts'
@@ -188,7 +189,7 @@ async function chooseMode(ui: Ui, mode: string) {
 }
 
 async function gitPane($: Engine, surface: (typeof SURFACES)[number], width = 120, rows = 30): Promise<Ui> {
-  const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, rows), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, rows), requestId: 'jei' })
   await ui.press({ key: 'tab-3' })
   return ui
 }
@@ -798,7 +799,7 @@ test('a retained v0.1 working diff reopens and its actions use the migrated sour
   await opened.unmount()
   for (const surface of SURFACES) {
     retained = true
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
     expect((await ui.find({ type: 'Code' }))?.text).toContain('getUser')
     expect((await ui.find({ key: 'header' }))?.text).toContain('working tree')
     await ui.press({ key: 'key-j' })
@@ -816,7 +817,7 @@ test('diff keys: n and p jump between hunks, a hands a review to the prompt', as
   await tall.press({ key: 'change-src/api/user.ts' })
   await tall.unmount()
   // A short pane: the window holds one hunk at a time.
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80, 8), requestId: 'jei' })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(80, 8), requestId: 'jei' })
   expect((await ui.find({ type: 'Code' }))?.text).toContain('getUser')
   await ui.press({ key: 'key-n' })
   const second = (await ui.find({ type: 'Code' }))?.text ?? ''
@@ -1030,7 +1031,7 @@ test('the commit row shows the mode chooser where there is one, and names the mo
   await term.press({ key: 'key-g' })
   await term.unmount()
   for (const width of WIDTHS) {
-    const ui = await $.ui.mount({ plugin: 'jei', surface: 'mobile', component: 'Pane', props: paneProps(width), requestId: 'jei' })
+    const ui = await nativeMount($)({ plugin: 'jei', surface: 'mobile', component: 'Pane', props: paneProps(width), requestId: 'jei' })
     await ui.press({ key: 'tab-3' })
     expect(await ui.find({ type: 'Select', key: 'commit-mode' })).toBeUndefined()
     expect((await ui.find({ type: 'Button', key: 'commit' }))?.props.label).toBe('Commit & Push')

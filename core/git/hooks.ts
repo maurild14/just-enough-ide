@@ -39,9 +39,14 @@ async function exists(host: Host, path: string): Promise<boolean> {
 
 /** Inspect repository configuration even when the host disables hooks in its Git subprocesses. */
 export async function readHookSignals(host: Host, root: string): Promise<HookSignals> {
-  const configured = await tryGit(host, root, ['config', '--show-scope', '--get-all', 'core.hooksPath'])
-  const paths = (configured ?? '').split('\n').filter(line => !/^command\s+(?:\\\\\.\\NUL|\/dev\/null)\r?$/i.test(line))
-  const hooksPath = paths.at(-1)?.replace(/^\S+\s+/, '').replace(/\r$/, '') || null
+  const scoped = await tryGit(host, root, ['config', '--show-scope', '--get-all', 'core.hooksPath'])
+  const configured = scoped ?? await tryGit(host, root, ['config', '--get-all', 'core.hooksPath'])
+  const paths = (configured ?? '').split('\n').flatMap(line => {
+    const scope = scoped === null ? null : /^(\S+)\t(.*)$/.exec(line)
+    const path = (scope?.[2] ?? line).replace(/\r$/, '')
+    return /^(?:\\\\\.\\NUL|\/dev\/null)$/i.test(path) && (scoped === null || scope?.[1] === 'command') ? [] : [path]
+  })
+  const hooksPath = paths.at(-1) || null
   // --git-path hooks also sees the host's command-scope override; the common dir does not.
   const common = await tryGit(host, root, ['rev-parse', '--git-common-dir'])
   const gitHooks = common === null ? null : `${common}/hooks`

@@ -1,13 +1,31 @@
+import { nativeMount } from './measure.ts'
 import { expect, test } from 'claude-code/testing'
 import { ROOT, command, props, world } from '../../test/claude-search.ts'
 import { findKey, lineWidths, type Node } from './measure.ts'
 
 const focus = (element: string) => ({ component: 'Pane' as const, requestId: 'jei', plugin: 'jei', element, origin: { kind: 'person' as const } })
 
+test('programmatic Clear remounts an empty-seeded native input so local text is actually cleared', async ($, on) => {
+  await world($, on)
+  for (const tab of ['files', 'search']) {
+    await $.command.run(command(tab))
+    const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+    const key = tab === 'files' ? 'filter' : 'search-query'
+    await $.ui.focus(focus(key))
+    const before = (await ui.find({ key }))!.key
+    await ui.input({ key, text: 'user', kind: 'change' })
+    await ui.press({ key: `${tab}-clear` })
+    const field = (await ui.findAll({ type: 'Input' }))[0]!
+    expect(field.key).not.toBe(before)
+    expect(field.props.value).toBe('')
+    await ui.unmount()
+  }
+})
+
 test('native editing keeps the input seed stable while persisting the latest whole text', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await $.ui.focus(focus('search-query'))
   for (const text of ['f', 'fe', 'feat: comment the menu renderer']) {
     await ui.input({ key: 'search-query', text, kind: 'change' })
@@ -22,7 +40,7 @@ test('native editing keeps the input seed stable while persisting the latest who
 test('Search edit requests focus on the mounted editor rather than its preceding drawing', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   await ui.press({ key: 'key-f' })
   expect((await ui.find({ key: 'search-query' }))?.props.autoFocus).toBe(true)
@@ -36,7 +54,7 @@ for (const tab of ['files', 'search'] as const) test(`${tab} editor controls ret
   const input = tab === 'files' ? 'filter' : 'search-query', field = tab === 'files' ? 'files-search-field' : 'search-field'
   for (const surface of ['terminal', 'desktop'] as const) for (const width of [24, 40, 80, 120]) {
     await $.command.run(command(tab))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(width, 5) })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(width, 5) })
     for (const control of ['cancel', 'clear']) {
       await $.ui.focus(focus(input)); await ui.input({ key: input, text: 'other', kind: 'change' })
       const before = findKey(await ui.drawn() as Node, field)
@@ -66,7 +84,7 @@ test('Files arrows leave query editing on the highlighted result before moving',
   const scroll = (by: number) => $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by, bodyRows: 5, contentRows: 20, origin: { kind: 'person' } })
   for (const surface of ['terminal', 'desktop'] as const) for (const width of [24, 40, 80, 120]) {
     await $.command.run(command('files'))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(width, 5) })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(width, 5) })
     await ui.input({ key: 'filter', text: 'alpha', kind: 'change' })
     expect(selected()).toBe('src/alpha-0.ts')
     await scroll(1); expect(selected()).toBe('src/alpha-0.ts')
@@ -82,7 +100,7 @@ test('Files arrows leave query editing on the highlighted result before moving',
 test('a late native Cancel focus after Down is routed to the selected filename result', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('files'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'filter', text: 'account', kind: 'change' })
   await $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by: 1, bodyRows: 24, contentRows: 25, origin: { kind: 'person' } })
   await $.ui.focus(focus('files-cancel'))
@@ -94,7 +112,7 @@ test('leaving a Search or Files input restores tab hotkeys without submitting', 
   const seen = await world($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
     await $.command.run(command('search'))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
     await $.ui.focus(focus('search-query'))
     await ui.input({ key: 'search-query', text: 'load4q', kind: 'change' })
     expect((await ui.find({ key: 'tab-3' }))?.props.hotkey).toBeUndefined()
@@ -114,7 +132,7 @@ test('leaving a Search or Files input restores tab hotkeys without submitting', 
 test('command controls retain the selected Search result, Quick Open file and replacement file', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   await $.ui.focus(focus('search-row-match-1'))
   await $.ui.focus(focus('search-row-command-mention')); await ui.press({ key: 'search-row-command-mention' })
@@ -137,7 +155,7 @@ test('Search mention uses the highlighted result after submitting another query'
   const seen = await world($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
     await $.command.run(command('search'))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
     await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
     await $.ui.focus(focus('search-row-match-1'))
     await ui.input({ key: 'search-query', text: 'save', kind: 'submit' }); await seen.clock.advance(300)
@@ -152,7 +170,7 @@ test('Search Mention command uses the first result after a delayed new query', {
   const seen = await world($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
     await $.command.run(command('search'))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(24) })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(24) })
     await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
     await $.ui.focus(focus('search-row-match-1'))
     seen.settings.slow = true; seen.settings.slowQuery = 'save'
@@ -172,7 +190,7 @@ test('Quick Open mention uses the highlighted file after its ranking changes', a
   const seen = await world($, on)
   for (const surface of ['terminal', 'desktop'] as const) {
     await $.command.run(command('search'))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
     await ui.press({ key: 'search-cancel' }); await ui.press({ key: 'key-q' })
     await ui.input({ key: 'search-query', text: '', kind: 'change' }); await ui.press({ key: 'search-cancel' })
     await $.ui.focus(focus('search-row-file-0'))
@@ -187,7 +205,7 @@ test('Quick Open mention uses the highlighted file after its ranking changes', a
 test('Search retains its query/results across Quick Open and quick submit ranks its actual value', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   await ui.press({ key: 'key-q' })
   await ui.input({ key: 'search-query', text: 'other:1', kind: 'submit' })
@@ -202,7 +220,7 @@ test('a closed Quick Open cache refreshes and a rejected listing is visible at c
   const seen = await world($, on)
   seen.settings.largeList = true
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(24, 5) })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(24, 5) })
   await ui.press({ key: 'search-cancel' }); await ui.redraw(props()); await ui.press({ key: 'key-q' }); await ui.redraw(props(24, 5))
   expect(await ui.find({ type: 'Text', text: /too large/i })).toBeDefined()
   seen.settings.largeList = false
@@ -220,7 +238,7 @@ test('a closed Quick Open cache refreshes and a rejected listing is visible at c
 test('native hot reload resets Search transient flags while retaining query/results', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   seen.settings.slow = true
   await ui.input({ key: 'search-query', text: 'load', kind: 'change' }); await seen.clock.advance(150)
@@ -234,7 +252,7 @@ test('native hot reload resets Search transient flags while retaining query/resu
 test('Search query boundary changes focus once without repeated state writes', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   await $.ui.focus(focus('search-row-match-0'))
   const before = seen.writes.length
@@ -252,7 +270,7 @@ test('an unresolved preview project paints a safe notice instead of failing the 
   const seen = await world($, on, '//work/acme-app')
   seen.settings.realRoot = '/work/acme-app'
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   await ui.press({ key: 'search-row-match-0' })
   seen.settings.realRoot = '//work/acme-app'

@@ -1,4 +1,4 @@
-import { focusInput, inputValue } from './inputs.ts'
+import { focusInput, inputValue, inputKey, resetInput } from './inputs.ts'
 import type { EngineInterface, RenderElement, Timer } from 'claude-code'
 import { KEYS } from '../../core/keys.ts'
 import { latest } from '../../core/latest.ts'
@@ -103,7 +103,7 @@ export async function scrollSearch($: EngineInterface, by: number): Promise<bool
   const from = r.ids.indexOf(pane.selected[view] ?? '')
   if (view !== 'search.replace' && by < 0 && from <= 0 && !s.editing) {
     await updateSearch($, root, u => ({ ...u, editing: 'query' }))
-    await $.ui.focus({ requestId: 'jei', key: 'search-query' }).catch(() => {})
+    await $.ui.focus({ requestId: 'jei', key: inputKey('search-query') }).catch(() => {})
     return true
   }
   if (s.editing && (view === 'search.replace' || by <= 0)) return false
@@ -163,7 +163,7 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
   const inner = frame.inner, compact = frame.bodyRows <= 3, quick = view === 'quickopen', replacing = view === 'search.replace'
   const fieldColor = color(s.editing === 'replacement' ? 'error' : 'accent')
   const text = (value: string, key?: string, accent = false) => <Box key={key}><Text dimColor={!accent} color={accent ? fieldColor : undefined} wrap="truncate-end">{inner ? ` ${fitEnd(value, inner)}` : ''}</Text></Box>
-  const edit = async (editing: JeiSearch['editing']) => { await updateSearch($, root, u => ({ ...u, editing })); await $.ui.focus({ requestId: 'jei', key: editing === 'query' ? 'search-query' : `search-${editing}` }).catch(() => {}) }
+  const edit = async (editing: JeiSearch['editing']) => { await updateSearch($, root, u => ({ ...u, editing })); await $.ui.focus({ requestId: 'jei', key: inputKey(editing === 'query' ? 'search-query' : `search-${editing}`) }).catch(() => {}) }
   let quickError = ''
   const files = quick ? await (r.files ??= (async () => quickOpenFiles(await projectHost($, root), root))()).catch(err => { r.files = undefined; quickError = firstLine(err); return [] }) : []
   const ranking = { touched: new Set(Object.keys(await readActivity($))), recent: pane.recent }
@@ -223,16 +223,17 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
       await $.ui.focus({ requestId: 'jei', key: 'search-row-match-0' }).catch(() => {})
     }
     const cancel = s.editing ? <Button key="search-cancel" plain label="Cancel" onPress={act($, async () => { await leaveSearchEditor($); await $.ui.focus({ requestId: 'jei', key: 'search-row-match-0' }).catch(() => {}) })} /> : null
-    const field = Input ? <Box flexDirection="row" width={Math.max(0, frame.columns - 1)}><Text> </Text><Text color={fieldColor}>│ </Text><Box flexGrow={1}><Input key={`search-${kind}`} submitLabel={kind === 'query' ? quick ? 'open' : 'search' : kind === 'replacement' ? 'review' : 'apply'} placeholder={placeholder} value={inputValue(`search-${kind}`, value)} autoFocus={s.editing === kind ? true : undefined} onInput={value => act($, () => change(value))()} onSubmit={value => act($, () => submit(value))()} /></Box><Text> </Text>{cancel}{cancel && <Text> · </Text>}<Button key="search-clear" plain label="Clear" onPress={act($, clear)} /><Text color={fieldColor}> │</Text></Box>
+    const field = Input ? <Box flexDirection="row" width={Math.max(0, frame.columns - 1)}><Text> </Text><Text color={fieldColor}>│ </Text><Box flexGrow={1}><Input key={inputKey(`search-${kind}`)} submitLabel={kind === 'query' ? quick ? 'open' : 'search' : kind === 'replacement' ? 'review' : 'apply'} placeholder={placeholder} value={inputValue(`search-${kind}`, value)} autoFocus={s.editing === kind ? true : undefined} onInput={value => act($, () => change(value))()} onSubmit={value => act($, () => submit(value))()} /></Box><Text> </Text>{cancel}{cancel && <Text> · </Text>}<Button key="search-clear" plain label="Clear" onPress={act($, clear)} /><Text color={fieldColor}> │</Text></Box>
       : <Box flexDirection="row"><Text>{fitEnd(`${placeholder}: ${value} (input unavailable)`, Math.max(0, inner - (s.editing ? 6 : 0)))}</Text>{cancel}</Box>
     return <Box key="search-field" flexDirection="column">{searchRows >= 3 && text('┌' + '─'.repeat(Math.max(0, inner - 2)) + '┐', 'search-border-top', true)}{field}{searchRows >= 3 && text('└' + '─'.repeat(Math.max(0, inner - 2)) + '┘', 'search-border-bottom', true)}</Box>
   }
   async function clear() {
     focusInput(undefined)
+    resetInput('search-query')
     await stopSearch($)
     await updateSearch($, root, u => ({ ...u, draft: '', text: '', matches: [], summary: '', editing: null }))
     await updatePane($, p => reducePane(p, { type: 'tab', tab: 'search' }))
-    await $.ui.focus({ requestId: 'jei', key: 'search-query' }).catch(() => {})
+    await $.ui.focus({ requestId: 'jei', key: inputKey('search-query') }).catch(() => {})
   }
   const above = replacing ? [] : [input(s.editing ?? 'query')]
   const actions = s.editing || s.confirm ? [] : KEYS[view].flatMap(k => /^[a-z0-9]$/.test(k.key) && k.action !== 'back' ? [{ key: k.key, run: act($, () => command(k.action)) }] : [])

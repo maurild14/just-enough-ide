@@ -1,3 +1,4 @@
+import { nativeMount } from './measure.ts'
 import { expect, test } from 'claude-code/testing'
 import { ROOT, command, props, world } from '../../test/claude-search.ts'
 import { lineWidths, type Node } from './measure.ts'
@@ -5,7 +6,7 @@ import { lineWidths, type Node } from './measure.ts'
 test('Search arrows return from the first result to its editable query', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(80, 10) })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(80, 10) })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   const scroll = (by: number) => $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by, bodyRows: 10, contentRows: 30, origin: { kind: 'person' } })
   const selected = () => (seen.states.pane as { selected: { search: string } }).selected.search
@@ -36,7 +37,7 @@ test('Files searches names live, prioritizes prefixes, keeps input shortcuts and
   for (let i = 0; i < 35; i++) seen.files[`src/alpha-${String(i).padStart(2, '0')}.ts`] = 'sample'
   for (const surface of ['terminal', 'desktop'] as const) {
     await $.command.run(command('src/other.ts'))
-    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
     expect(await ui.find({ key: 'files-search-field' })).toBeDefined()
     await ui.press({ key: 'key-s' })
     await ui.input({ key: 'filter', text: 'alpha', kind: 'change' })
@@ -65,7 +66,7 @@ test('Files searches names live, prioritizes prefixes, keeps input shortcuts and
 test('Search occupies tab 2, submits content on Enter and retains results through preview', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('files'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.press({ key: 'tab-2' })
   expect((await ui.find({ key: 'tab-2' }))?.text).toBe('2 Search')
   await ui.input({ key: 'search-query', text: 'load', kind: 'change' }); await seen.clock.advance(300)
@@ -83,7 +84,7 @@ test('Search occupies tab 2, submits content on Enter and retains results throug
 test('Search native input streams, toggles argv, hands text and returns from a marked preview', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   expect(await ui.find({ key: 'search-row-match-0' })).toBeDefined()
   expect(await ui.find({ key: 'key-c' })).toBeUndefined()
@@ -115,7 +116,7 @@ test('exact replacement keeps case skips visible and preserves mixed files throu
   seen.files['omitted.ts'] = 'USER\n'
   seen.files[longRel] = 'USER\n'
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(80, 40) })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(80, 40) })
   await ui.input({ key: 'search-query', text: 'user', kind: 'submit' }); await seen.clock.advance(300)
   await ui.press({ key: 'key-p' }); await ui.input({ key: 'search-replacement', text: 'account', kind: 'submit' })
   const search = () => (seen.states.searches as Record<string, { plan: { rel: string; count: number }[]; skipped: { rel: string; reason: string }[] }>)[ROOT]!
@@ -142,7 +143,7 @@ test('exact replacement keeps case skips visible and preserves mixed files throu
 test('replacement reviews a native diff, confirms, refuses changed snapshots and refreshes written files', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   await ui.press({ key: 'key-p' })
   await ui.input({ key: 'search-replacement', text: 'fetch', kind: 'submit' })
@@ -163,7 +164,7 @@ test('replacement reviews a native diff, confirms, refuses changed snapshots and
 test('submitting a new query cancels an active native stream and suppresses its late rows', { timeoutMs: 60_000 }, async ($, on) => {
   const seen = await world($, on); seen.settings.slow = true
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' })
   await seen.clock.advance(150)
   expect(await ui.find({ key: 'search-row-match-0' })).toBeDefined()
@@ -181,7 +182,7 @@ test('submitting a new query cancels an active native stream and suppresses its 
 test('native toggles and filters reach shared argv; no rg outside a repository shows installation help', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'desktop', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'desktop', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: '-rf', kind: 'submit' }); await seen.clock.advance(300)
   expect(await ui.find({ key: 'key-x' })).toBeUndefined(); expect(await ui.find({ key: 'key-w' })).toBeUndefined(); expect(await ui.find({ key: 'key-c' })).toBeUndefined()
   await ui.press({ key: 'key-i' })
@@ -199,7 +200,7 @@ test('native toggles and filters reach shared argv; no rg outside a repository s
 test('all native Search commands remain reachable through scroll at 24 columns and five rows', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(24, 5) })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(24, 5) })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   const found = new Set<string>()
   for (let i = 0; i < 16; i++) {
@@ -218,7 +219,7 @@ test('all native Search commands remain reachable through scroll at 24 columns a
 test('Quick Open accepts a line and keeps editor letters and digits as text', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(24, 5) })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(24, 5) })
   await ui.input({ key: 'search-query', text: 'qxw1234', kind: 'change' })
   expect((await ui.find({ key: 'tab-1' }))?.props.hotkey).toBeUndefined()
   await ui.press({ key: 'search-cancel' }); await seen.clock.advance(300)
@@ -233,7 +234,7 @@ test('Quick Open accepts a line and keeps editor letters and digits as text', as
 test('unresolved double-slash projects refuse new Search operations before any process or tool request', async ($, on) => {
   const seen = await world($, on, '//work/acme-app')
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   expect((await ui.find({ key: 'search-notice' }))?.text).toContain('Cannot determine')
   expect(seen.runs.filter(argv => argv[0] === 'rg')).toHaveLength(0)
@@ -246,7 +247,7 @@ test('unresolved double-slash projects refuse new Search operations before any p
 test('canonical POSIX evidence permits double-slash Search without treating case-distinct paths as UNC', async ($, on) => {
   const seen = await world($, on, '//work/acme-app'); seen.settings.realRoot = '/work/acme-app'
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   expect(await ui.find({ key: 'search-row-match-0' })).toBeDefined()
   await ui.unmount()
@@ -255,7 +256,7 @@ test('canonical POSIX evidence permits double-slash Search without treating case
 test('native Quick Open puts touched files before recent files at five rows', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   await ui.press({ key: 'search-row-match-0' }); await ui.press({ key: 'back' })
   await $.tool.call({ tool: 'Read', file_path: '/work/acme-app/src/other.ts' } as never); await seen.clock.settle()
@@ -268,7 +269,7 @@ test('native Quick Open puts touched files before recent files at five rows', as
 test('CSV line targets show marked source and replacement failures report already written files', async ($, on) => {
   const seen = await world($, on); seen.files['data.csv'] = 'name,value\nload,1\n'
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'desktop', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'desktop', component: 'Pane', requestId: 'jei', props: props() })
   await ui.press({ key: 'search-cancel' }); await ui.press({ key: 'key-q' })
   await ui.input({ key: 'search-query', text: 'data.csv:2', kind: 'submit' })
   expect((await ui.find({ key: 'preview-line-2' }))?.text).toContain('›')
@@ -291,7 +292,7 @@ test('CSV line targets show marked source and replacement failures report alread
 test('compact Replace selection focuses and activates the actual Apply file Button', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })
   await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
   await ui.press({ key: 'key-p' }); await ui.input({ key: 'search-replacement', text: 'fetch', kind: 'submit' })
   await ui.press({ key: 'replace-toggle-src/account.ts' }); await ui.press({ key: 'replace-toggle-src/other.ts' })

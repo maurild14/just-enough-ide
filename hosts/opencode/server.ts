@@ -478,7 +478,7 @@ export default Plugin.define({
             await emit('activity', { rel, kind: touch.kind })
           }
         }
-        if (touch.kind !== 'read' && (rels.length > 0 || touch.paths.length === 0)) changed()
+        if (touch.kind === 'git' || touch.kind !== 'read' && (rels.length > 0 || touch.paths.length === 0)) changed()
       }))
       const stream = ctx.event.subscribe({ signal: controller.signal })
       watching = (async () => {

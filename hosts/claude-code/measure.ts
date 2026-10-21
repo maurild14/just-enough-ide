@@ -2,6 +2,22 @@
 // paints, so widths are measured on the returned tree the way the terminal
 // lays it out.
 import { cellWidth } from '../../core/shared/fit.ts'
+import type { Engine, Mounted } from 'claude-code/testing'
+
+/** Resolve logical test addresses to the currently mounted native input generation. */
+export function nativeMount($: Engine): Engine['ui']['mount'] {
+  return (async target => {
+    const ui = await $.ui.mount(target) as unknown as Mounted<'terminal' | 'desktop', 'Pane'>
+    const resolve = async (key: string) => {
+      if (!/^(filter|message|files-operation-input|search-(query|globs|replacement)|new-branch|graph-filter|branch-filter)$/.test(key)) return key
+      return (await ui.findAll({ type: 'Input' })).find(node => node.key === key || node.key?.startsWith(key + '::'))?.key ?? key
+    }
+    return { ...ui,
+      find: async query => ui.find({ ...query, ...(query.key ? { key: await resolve(query.key) } : {}) }),
+      input: async request => ui.input({ ...request, key: await resolve(request.key) }),
+    }
+  }) as Engine['ui']['mount']
+}
 
 export type Node = { type?: string; props?: Record<string, unknown>; children?: unknown[] } | string
 

@@ -558,6 +558,17 @@ test('completed tools emit project-relative activity and state keeps the touch',
   ])
 })
 
+test('Git root and outside operands still refresh repository state without a file marker', async () => {
+  jest.useFakeTimers()
+  const server = await start(makeTemp())
+  for (const command of ['git add .', 'git add ../outside.ts']) {
+    server.emitted.length = 0
+    await server.tool({ tool: 'shell', input: { command }, status: 'completed' })
+    jest.advanceTimersByTime(300)
+    expect(server.emitted).toEqual([{ name: 'changed', data: {} }])
+  }
+})
+
 test('tool start and completion carry overlapping active counts through state and RPC events', async () => {
   const server = await start(makeTemp())
   const first = { sessionID: 'session-a', id: 'read-1', tool: 'read', input: { path: 'src/a.ts' }, status: 'completed' as const }

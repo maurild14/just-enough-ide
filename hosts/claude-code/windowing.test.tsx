@@ -1,3 +1,4 @@
+import { nativeMount } from './measure.ts'
 import { expect, test, type Mounted } from 'claude-code/testing'
 import { historyPane, historyWorld, props as historyProps, select } from './history-fixture.ts'
 import { ROOT, command, props, world } from '../../test/claude-search.ts'
@@ -50,7 +51,7 @@ for (const surface of ['terminal', 'desktop'] as const) test(`Search, Quick Open
   seen.files['src/account.ts'] = Array.from({ length: 160 }, (_, i) => `export function load${i}() { return ${i} }`).join('\n')
   for (let i = 0; i < 80; i++) seen.files[`src/file-${i}.ts`] = 'export const value = 1\n'
   await $.command.run(command('search'))
-  const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(40, 10) })
+  const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(40, 10) })
   await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'search-query', origin: { kind: 'person' } })
   expect(await ui.find({ key: 'back-row' })).toBeUndefined()
   expect(await ui.find({ key: 'search-cancel' })).toBeDefined()
@@ -70,7 +71,7 @@ for (const surface of ['terminal', 'desktop'] as const) test(`Search, Quick Open
 
 test('a short list keeps its natural inline height without a synthetic scroll range', async ($, on) => {
   await world($, on)
-  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: { ...props(80), placement: 'inline' } })
+  const ui = await nativeMount($)({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: { ...props(80), placement: 'inline' } })
   expect(await ui.find({ key: 'arrow-scroll-range' })).toBeUndefined()
   expect(((await ui.drawn()) as Exclude<Node, string>).props?.height).toBeUndefined()
   await ui.unmount()

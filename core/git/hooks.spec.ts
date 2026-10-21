@@ -61,6 +61,16 @@ test('host-injected disabled hooks do not hide real repository hooks or invent h
   expect((await readHookSignals(repo.host, repo.dir)).hooksPath).toBe('.custom-hooks')
 })
 
+test('older Git without show-scope retains a configured hooksPath beneath a null-device override', async () => {
+  const repo = await makeRepo()
+  await repo.git('config', 'core.hooksPath', '.custom-hooks')
+  const run = repo.host.run.bind(repo.host)
+  repo.host.run = (argv, options) => argv.includes('--show-scope')
+    ? Promise.resolve({ exitCode: 129, stdout: '', stderr: 'unknown option: show-scope' })
+    : run([argv[0]!, '-c', 'core.hooksPath=\\\\.\\NUL', ...argv.slice(1)], options)
+  expect((await readHookSignals(repo.host, repo.dir)).hooksPath).toBe('.custom-hooks')
+})
+
 test('readHookSignals on a plain repo', async () => {
   const s = await readHookSignals(fake({}), '/r')
   expect(s).toEqual(none)

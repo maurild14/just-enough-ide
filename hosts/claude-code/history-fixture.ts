@@ -1,3 +1,4 @@
+import { nativeMount } from './measure.ts'
 import { mock, type Engine, type Mounted } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
@@ -87,7 +88,7 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
 }
 
 export async function historyPane($: Engine, width: number, rows = 30, surface: 'terminal' | 'desktop' = 'terminal') {
-  const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(width, rows) })
+  const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(width, rows) })
   await ui.press({ key: 'tab-3' })
   return ui
 }

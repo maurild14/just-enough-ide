@@ -12,7 +12,7 @@ import { focusGit, scrollGitList } from '../hosts/claude-code/git.tsx'
 import { focusBranches, scrollBranches } from '../hosts/claude-code/branches.tsx'
 import { focusSearch, scrollSearch, stopSearch } from '../hosts/claude-code/search.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
-import { focusInput, resetInputs } from '../hosts/claude-code/inputs.ts'
+import { focusInput, inputId, resetInputs } from '../hosts/claude-code/inputs.ts'
 import { initPane, PANE_ID, readCwd, readPane, readTree, resetActiveActivity, resetGitUi, resetFilesUi, resetSearch, setCwd, updatePane, updateTree, updateSearch } from '../hosts/claude-code/state.ts'
 
 const TITLE = 'JEI'
@@ -119,10 +119,11 @@ export const register: Register = (on, raw) => {
       if (currentView(pane) === 'files' && pane.selected.files !== undefined) e = { ...e, element: `row-${pane.selected.files}` }
     }
     focusInput(e.element)
-    await focusFiles($, e.element)
-    await focusGit($, e.element)
-    await focusBranches($, e.element)
-    await focusSearch($, e.element)
+    const element = inputId(e.element)
+    await focusFiles($, element)
+    await focusGit($, element)
+    await focusBranches($, element)
+    await focusSearch($, element)
     return next(e)
   }).catch(($, e, next) => next(e))
 
