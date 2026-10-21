@@ -1,6 +1,6 @@
 # Decisions
 
-> Purpose: the format and index of JEI's architecture decision records (ADRs) · Status: current · Last reviewed: 2026-10-20
+> Purpose: the format and index of JEI's architecture decision records (ADRs) · Status: current · Last reviewed: 2026-10-21
 
 An ADR records one decision that changes a rule or a structure, so a later reader (human or agent) knows why. Source: `PRD.md` §13 (decisions log).
 
@@ -35,9 +35,10 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0018 | `0018-safe-sync-review-recovery.md` | Prompt-only recovery for a missing Claude Sync review, retaining hooks, permissions and pending work |
 | 0019 | `0019-search-streams-and-safe-replace.md` | Streaming search, bounded first-occurrence fallback, safe replacement and preview origins |
 | 0020 | `0020-native-search-paths-and-zero-width-fallback.md` | Native literal filename boundaries and verified zero-width fallback matches |
-| 0021 | `0021-native-search-symbol-controls-and-path-evidence.md` | Compact native controls, fresh LSP checks, marked source previews and canonical path evidence |
-| 0022 | `0022-opencode-search-symbols-and-review-state.md` | Session-scoped OpenCode streams, stored replacement review and marked source targets |
+| 0021 | `0021-native-search-symbol-controls-and-path-evidence.md` | Native Search controls, marked previews and canonical path evidence; Symbols portions superseded by ADR 0027 |
+| 0022 | `0022-opencode-search-symbols-and-review-state.md` | Session-scoped OpenCode streams, stored replacement review and marked source targets; Symbols portions superseded by ADR 0027 |
 | 0023 | `0023-bounded-search-and-complete-replacement-review.md` | Estimated retention budgets and complete replacement review |
 | 0024 | `0024-focus-and-arrow-navigation.md` | Arrow-safe commit mode, input blur and unchanged selection handling |
-| 0025 | [Search inside Files](0025-search-inside-files.md) | Three tabs, submitted query drafts and retained Files navigation. |
+| 0025 | [Search inside Files](0025-search-inside-files.md) | Superseded by ADR 0026: earlier Search-inside-Files placement. |
 | 0026 | [Separate filename and content search](0026-filename-and-content-search.md) | Live filename search, content Search tab, spaced controls and Symbols retirement. |
+| 0027 | [Remove Symbols and exact replacement](0027-remove-symbols-and-exact-replacement.md) | Remove compatibility, use ordinary unknown-value defaults, replace exact literal text and correct minimum history-editor heights. |

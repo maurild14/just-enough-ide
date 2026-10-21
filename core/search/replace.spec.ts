@@ -4,6 +4,24 @@ import { planReplace, previewText } from './replace.ts'
 import type { SearchQuery } from './rg.ts'
 
 const query: SearchQuery = { text: 'target', caseSensitive: true, regex: false, wholeWord: false, include: [], exclude: [] }
+test('literal replacement keeps exact matches and reports case differences in the same file', () => {
+  for (const text of ['user User USER\n', 'user\nUser\nUSER\nuser\n']) {
+    const matches = text.trimEnd().split('\n').map((line, i) => ({ rel: 'a.ts', line: i + 1, text: line, ranges: [...line.matchAll(/user/gi)].map(m => [m.index, m.index + 4] as [number, number]) }))
+    expect(planReplace({ ...query, text: 'user', caseSensitive: false }, 'account', [{ rel: 'a.ts', text, matches }])).toEqual({
+      files: [{ rel: 'a.ts', before: text, after: text.replaceAll('user', 'account'), count: text.startsWith('user User') ? 1 : 2 }],
+      skipped: [{ rel: 'a.ts', reason: 'case-differs' }],
+    })
+  }
+})
+test('all case-different literal matches produce no writes', () => {
+  expect(planReplace({ ...query, text: 'user', caseSensitive: false }, 'account', [{ rel: 'a.ts', text: 'User USER', matches: [{ rel: 'a.ts', line: 1, text: 'User USER', ranges: [[0, 4], [5, 9]] }] }])).toEqual({ files: [], skipped: [{ rel: 'a.ts', reason: 'case-differs' }] })
+})
+test('omitted case differences still validate stale lines, malformed and overlapping ranges', () => {
+  for (const ranges of [[[0, 4], [0, 4]], [[0, 4], [-1, 3]], [[0, 4], [0, 20]]] as [number, number][][]) {
+    expect(planReplace({ ...query, text: 'user', caseSensitive: false }, 'account', [{ rel: 'a.ts', text: 'User', matches: [{ rel: 'a.ts', line: 1, text: 'User', ranges }] }])).toEqual({ files: [], skipped: [{ rel: 'a.ts', reason: 'changed' }] })
+  }
+  expect(planReplace({ ...query, text: 'user' }, 'account', [{ rel: 'a.ts', text: 'User', matches: [{ rel: 'a.ts', line: 1, text: 'USER', ranges: [[0, 4]] }] }])).toEqual({ files: [], skipped: [{ rel: 'a.ts', reason: 'changed' }] })
+})
 test('literal replacement uses UTF-16 ranges and preserves CRLF and dollar text', () => {
   const result = planReplace(query, '$1', [{ rel: 'a.ts', text: 'ñ 😀 target\r\ntarget\r\n', matches: [
     { rel: 'a.ts', line: 1, text: 'ñ 😀 target', ranges: [[5, 11]] },

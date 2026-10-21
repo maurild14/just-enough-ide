@@ -2,7 +2,7 @@
   "name": "jei",
   "owner": { "name": "The JEI contributors" },
   "metadata": {
-    "description": "JEI (Just Enough IDE): a file tree, project search, symbols and a Git panel beside your Claude Code session."
+    "description": "JEI (Just Enough IDE): a file tree, project search and a Git panel beside your Claude Code session."
   },
   "plugins": [
     {

@@ -44,12 +44,10 @@ test('q toggles find file modes and every other view keeps shared Back', () => {
   }
 })
 
-test('Search, Replace, Quick Open and Symbols expose their milestone actions', () => {
+test('Search, Replace and Quick Open expose their milestone actions', () => {
   has('search', ['up', 'down', 'enter', 'a', 's', 'i', 'p', 'q', 'esc'])
   has('search.replace', ['up', 'down', 'enter', 'y', 'a', 'q', 'esc'])
   has('quickopen', ['up', 'down', 'enter', 'a', 'q', 'esc'])
-  has('symbols', ['up', 'down', 'enter', 'd', 'r', 'c', 'a', 'f', 'q', 'esc'])
-  has('symbols.results', ['up', 'down', 'enter', 'a', 'q', 'esc'])
 })
 
 test('tab keys', () => {

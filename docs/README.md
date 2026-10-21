@@ -29,12 +29,13 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/decisions/0018-safe-sync-review-recovery.md` | Root-bound prompt-only recovery for Claude Sync's missing auto-mode review. |
 | `docs/decisions/0019-search-streams-and-safe-replace.md` | Search process exceptions, bounded first-occurrence fallback, replacement safety and preview origins. |
 | `docs/decisions/0020-native-search-paths-and-zero-width-fallback.md` | Platform-aware Search filenames, conservative POSIX backslash refusal and zero-width fallback verification. |
-| `docs/decisions/0021-native-search-symbol-controls-and-path-evidence.md` | Compact native controls, fresh LSP checks, marked source previews and canonical path evidence. |
-| `docs/decisions/0022-opencode-search-symbols-and-review-state.md` | Session-scoped OpenCode streams, reviewed replacement RPC and native source targets. |
+| `docs/decisions/0021-native-search-symbol-controls-and-path-evidence.md` | Compact native Search controls, marked previews and canonical path evidence; Symbols portions superseded by ADR 0027. |
+| `docs/decisions/0022-opencode-search-symbols-and-review-state.md` | Session-scoped OpenCode streams, reviewed replacement RPC and native source targets; Symbols portions superseded by ADR 0027. |
 | `docs/decisions/0023-bounded-search-and-complete-replacement-review.md` | Estimated Search/review retention budgets, incomplete-review refusal and shared replacement text. |
 | `docs/decisions/0024-focus-and-arrow-navigation.md` | Arrow-safe commit mode, input blur and unchanged list-selection handling. |
-| `docs/decisions/0025-search-inside-files.md` | Three tabs, outlined Files Search, Enter submission and retained tree navigation. |
+| `docs/decisions/0025-search-inside-files.md` | Superseded by ADR 0026: earlier Search-inside-Files placement. |
 | `docs/decisions/0026-filename-and-content-search.md` | Live filename search in Files, content Search in tab 2, spacing and Symbols retirement. |
+| `docs/decisions/0027-remove-symbols-and-exact-replacement.md` | Complete Symbols removal, ordinary unknown-value defaults, exact literal Replace and corrected minimum history-editor heights. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
 
 ## Keeping docs current

@@ -1,4 +1,4 @@
-import type { Tab, View } from './keys.ts'
+import { KEYS, type Tab, type View } from './keys.ts'
 
 export type DiffSource =
   | { kind: 'working'; staged: boolean; untracked: boolean }
@@ -14,15 +14,21 @@ export type PaneState = {
   diff?: { source: DiffSource; path: string }
 }
 
-type LegacyPaneState = Omit<PaneState, 'tab' | 'diff' | 'recent'> & { tab: Tab | 'symbols'; recent?: string[]; diff?: PaneState['diff'] | { path: string; staged: boolean; untracked: boolean } }
+type LegacyPaneState = Omit<PaneState, 'diff' | 'recent'> & { recent?: string[]; diff?: PaneState['diff'] | { path: string; staged: boolean; untracked: boolean } }
 
 /** Session state survives plugin reloads, including v0.1's working-diff shape. */
 export function normalizePane(state: PaneState | LegacyPaneState): PaneState {
   const diff = state.diff
-  if (state.tab !== 'symbols' && !(state.tab === 'files' && state.stack.includes('search')) && state.recent !== undefined && (!diff || 'source' in diff)) return state as PaneState
-  const tab = state.tab === 'symbols' ? 'search' : state.tab
-  const legacySearch = state.tab === 'symbols' || state.tab === 'files' && state.stack.includes('search')
-  const base = { ...state, tab: legacySearch ? 'search' as const : tab, stack: state.tab === 'symbols' ? ['search' as const] : legacySearch ? state.stack.slice(state.stack.indexOf('search')) : state.stack, recent: state.recent ?? [] }
+  const retained = Array.isArray(state.stack) ? state.stack : []
+  const knownViews = retained.every(view => Object.hasOwn(KEYS, view))
+  const legacySearch = knownViews && state.tab === 'files' && retained.includes('search')
+  const tab = legacySearch ? 'search' : state.tab
+  const stack = legacySearch ? retained.slice(retained.indexOf('search')) : retained
+  if (!knownViews || !['files', 'search', 'git'].includes(tab) || stack[0] !== tab || stack.some(view => !(view === tab || view === 'files.preview' || tab === 'search' && view === 'quickopen' || view.startsWith(`${tab}.`)))) {
+    return { ...initialPane('files'), selected: Object.fromEntries(Object.entries(state.selected).filter(([view]) => Object.hasOwn(KEYS, view))), recent: state.recent ?? [] }
+  }
+  if (!legacySearch && state.recent !== undefined && (!diff || 'source' in diff)) return state as PaneState
+  const base = { ...state, tab, stack, recent: state.recent ?? [] }
   if (diff && !('source' in diff)) {
     return { ...base, recent: state.recent ?? [], diff: { path: diff.path, source: { kind: 'working', staged: diff.staged, untracked: diff.untracked } } }
   }
@@ -30,18 +36,17 @@ export function normalizePane(state: PaneState | LegacyPaneState): PaneState {
 }
 
 export type PaneAction =
-  | { type: 'tab'; tab: Tab | 'symbols' }
+  | { type: 'tab'; tab: Tab }
   | { type: 'open-diff'; source: DiffSource; path: string }
   | { type: 'branches' }
   | { type: 'compare' }
-  | { type: 'search' | 'quickopen' | 'replace' | 'symbol-results' }
+  | { type: 'search' | 'quickopen' | 'replace' }
   | { type: 'preview'; rel: string; line?: number }
   | { type: 'back' }
   | { type: 'select'; view: View; id: string }
 
-export function initialPane(tab: Tab | 'symbols'): PaneState {
-  const current = tab === 'symbols' ? 'search' : tab
-  return { tab: current, stack: [current], selected: {}, recent: [] }
+export function initialPane(tab: Tab): PaneState {
+  return { tab, stack: [tab], selected: {}, recent: [] }
 }
 
 export function currentView(s: PaneState): View {
@@ -63,10 +68,9 @@ export function reducePane(s: PaneState, a: PaneAction): PaneState {
       return { ...s, selected: { ...s.selected, [a.view]: a.id } }
     case 'search':
     case 'quickopen':
-    case 'replace':
-    case 'symbol-results': {
+    case 'replace': {
       const tab = 'search'
-      const view = a.type === 'symbol-results' ? 'symbols.results' : a.type === 'replace' ? 'search.replace' : a.type === 'search' ? 'search' : 'quickopen'
+      const view = a.type === 'replace' ? 'search.replace' : a.type === 'search' ? 'search' : 'quickopen'
       return { tab, stack: push(s, tab, view), selected: s.selected, recent: s.recent }
     }
     case 'preview':

@@ -1,7 +1,7 @@
 import type { Match, SearchQuery } from './rg.ts'
 
 export type ReplaceFile = { rel: string; before: string; after: string; count: number }
-export type Skipped = { rel: string; reason: 'binary' | 'not-utf8' | 'changed' | 'regex-differs' | 'outside-root' | 'too-large' | 'unreadable' | 'unsupported-path' }
+export type Skipped = { rel: string; reason: 'binary' | 'not-utf8' | 'changed' | 'case-differs' | 'regex-differs' | 'outside-root' | 'too-large' | 'unreadable' | 'unsupported-path' }
 
 export function planReplace(q: SearchQuery, replacement: string, files: { rel: string; text: string; matches: Match[] }[]): { files: ReplaceFile[]; skipped: Skipped[] } {
   const planned: ReplaceFile[] = []
@@ -16,7 +16,7 @@ export function planReplace(q: SearchQuery, replacement: string, files: { rel: s
     const starts: number[] = []
     let offset = 0
     for (const line of lines) { starts.push(offset); offset += line.length + 1 }
-    const edits: { start: number; end: number; text: string }[] = []
+    let edits: { start: number; end: number; text: string; skip: boolean }[] = []
     for (const match of file.matches) {
       if (reason) break
       const line = lines[match.line - 1]?.replace(/\r$/, '')
@@ -27,7 +27,7 @@ export function planReplace(q: SearchQuery, replacement: string, files: { rel: s
         if (q.wholeWord && (/[\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control}]$/u.test(line.slice(Math.max(0, start - 2), start)) || /^[\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\p{Join_Control}]/u.test(line.slice(end, end + 2)))) { reason = 'regex-differs'; break }
         if (regex && regex.exec(text)?.[0] !== text) { reason = 'regex-differs'; break }
         const base = starts[match.line - 1]!
-        edits.push({ start: base + start, end: base + end, text: regex ? text.replace(regex, replacement) : replacement })
+        edits.push({ start: base + start, end: base + end, text: regex ? text.replace(regex, replacement) : replacement, skip: !q.regex && text !== q.text })
       }
     }
     edits.sort((a, b) => a.start - b.start || a.end - b.end)
@@ -35,6 +35,8 @@ export function planReplace(q: SearchQuery, replacement: string, files: { rel: s
       if (edits[i]!.start < edits[i - 1]!.end || edits[i]!.start === edits[i - 1]!.start) reason ??= 'changed'
     }
     if (reason) { skipped.push({ rel: file.rel, reason }); continue }
+    if (edits.some(edit => edit.skip)) skipped.push({ rel: file.rel, reason: 'case-differs' })
+    edits = edits.filter(edit => !edit.skip)
     if (!edits.length) continue
     let after = ''
     let at = 0

@@ -112,12 +112,8 @@ const actionResult = { oneOf: [
 
 const query = { type: 'object', properties: { text, caseSensitive: flag, regex: flag, wholeWord: flag, include: strings, exclude: strings }, required: ['text', 'caseSensitive', 'regex', 'wholeWord', 'include', 'exclude'], additionalProperties: false } as const
 const match = { type: 'object', properties: { rel: text, line: { type: 'integer', minimum: 1 }, text, ranges: { type: 'array', items: { type: 'array', items: { type: 'integer', minimum: 0 }, minItems: 2, maxItems: 2 } } }, required: ['rel', 'line', 'text', 'ranges'], additionalProperties: false } as const
-const skipped = { type: 'array', items: { type: 'object', properties: { rel: text, reason: { enum: ['binary', 'not-utf8', 'changed', 'regex-differs', 'outside-root', 'too-large', 'unreadable', 'unsupported-path'] } }, required: ['rel', 'reason'], additionalProperties: false } } as const
+const skipped = { type: 'array', items: { type: 'object', properties: { rel: text, reason: { enum: ['binary', 'not-utf8', 'changed', 'case-differs', 'regex-differs', 'outside-root', 'too-large', 'unreadable', 'unsupported-path'] } }, required: ['rel', 'reason'], additionalProperties: false } } as const
 const replacements = { type: 'array', items: { type: 'object', properties: { rel: text, before: text, after: text, count: { type: 'integer', minimum: 1 } }, required: ['rel', 'before', 'after', 'count'], additionalProperties: false } } as const
-const name = { type: 'string', maxLength: 200 } as const
-const nameInput = { type: 'object', properties: { name }, required: ['name'], additionalProperties: false } as const
-const refs = { type: 'object', properties: { refs: { type: 'array', items: { type: 'object', properties: { rel: text, line: { type: 'integer', minimum: 1 }, text, container: nullableText }, required: ['rel', 'line', 'text', 'container'], additionalProperties: false } } }, required: ['refs'], additionalProperties: false } as const
-const symbol = { type: 'object', properties: { name: text, kind: { enum: ['function', 'class', 'method', 'type', 'interface', 'enum', 'const', 'heading'] }, line: { type: 'integer', minimum: 1 }, endLine: { type: 'integer', minimum: 1 }, children: { type: 'array', items: { $ref: '#/$defs/symbol' } } }, required: ['name', 'kind', 'line', 'endLine', 'children'], additionalProperties: false } as const
 
 /** One portable JSON Schema contract, shared by the server and a possibly remote TUI. */
 export const JeiRpc = Rpc.define({
@@ -219,12 +215,6 @@ export const JeiRpc = Rpc.define({
     replacePlan: { input: { type: 'object', properties: { sessionID: text, query, replacement: text }, required: ['sessionID', 'query', 'replacement'], additionalProperties: false }, output: { type: 'object', properties: { planId: text, files: replacements, skipped }, required: ['planId', 'files', 'skipped'], additionalProperties: false } },
     replaceApply: { input: { type: 'object', properties: { sessionID: text, planId: text, rels: strings }, required: ['sessionID', 'planId', 'rels'], additionalProperties: false }, output: { type: 'object', properties: { written: strings, skipped, error: text }, required: ['written', 'skipped'], additionalProperties: false }, errors: pathErrors },
     quickOpenFiles: { input: empty, output: { type: 'object', properties: { files: strings }, required: ['files'], additionalProperties: false } },
-    outline: { input: rel, output: { type: 'object', $defs: { symbol }, properties: { file: flag, nodes: { anyOf: [{ type: 'array', items: { $ref: '#/$defs/symbol' } }, { type: 'null' }] } }, required: ['nodes', 'file'], additionalProperties: false }, errors: pathErrors },
-    findSymbol: { input: nameInput, output: refs },
-    definitions: { input: { type: 'object', properties: { name, fromRel: text }, required: ['name', 'fromRel'], additionalProperties: false }, output: refs, errors: pathErrors },
-    references: { input: nameInput, output: refs },
-    incoming: { input: nameInput, output: refs },
-    outgoing: { input: { type: 'object', properties: { rel: text, line: { type: 'integer', minimum: 1 } }, required: ['rel', 'line'], additionalProperties: false }, output: refs, errors: pathErrors },
   },
   events: {
     activity: { schema: { type: 'object', properties: { rel: text, kind: activityKind }, required: ['rel', 'kind'], additionalProperties: false } },

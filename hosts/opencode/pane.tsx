@@ -67,7 +67,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   const width = () => Math.max(0, Math.floor(props.input.width))
   const isFiles = () => currentView(state()) === 'files.preview' || state().tab === 'files'
   const activeAction = (action: string) => { if (isFiles()) filesAction(action); else if (state().tab === 'git') gitAction(action); else searchAction(action) }
-  const showBack = () => height() >= 3 && (state().stack.length > 1 || editing()) && !(editing() && ['files', 'search', 'quickopen', 'symbols', 'symbols.results'].includes(currentView(state())))
+  const showBack = () => height() >= 3 && (state().stack.length > 1 || editing()) && !(editing() && ['files', 'search', 'quickopen'].includes(currentView(state())))
   const back = () => { if (error() || !snapshot()) dispatch({ type: 'back' }); else activeAction('back') }
   let stopped = false
   let received = 0

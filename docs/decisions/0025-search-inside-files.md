@@ -2,7 +2,7 @@
 
 > Purpose: integrate explicit Search into Files while preserving keyboard navigation and retained state · Status: current · Last reviewed: 2026-10-20
 
-Status: accepted
+Status: superseded by 0026
 
 ## Context
 

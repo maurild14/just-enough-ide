@@ -17,8 +17,6 @@ import type { Host } from '../../core/host.ts'
 import type { Match, SearchQuery } from '../../core/search/rg.ts'
 import type { ReplaceFile } from '../../core/search/replace.ts'
 import { search, quickOpenFiles, buildReplacePlan, applyReplace } from '../../core/search/service.ts'
-import { fileOutline, findSymbol, definitions, references, incoming, outgoing, readSource } from '../../core/symbols/service.ts'
-import { enclosing, languageFor, outline } from '../../core/symbols/outline.ts'
 import { nodeHost } from './host.ts'
 import { JeiRpc, toWire } from './rpc.ts'
 
@@ -64,12 +62,8 @@ function commitInput(input: unknown): { message: string; mode: CommitMode } {
 
 function searchQuery(input: unknown): SearchQuery {
   const q = closed(input, ['text', 'caseSensitive', 'regex', 'wholeWord', 'include', 'exclude'])
-  return { text: text(q, 'text'), caseSensitive: flag(q, 'caseSensitive'), regex: flag(q, 'regex'), wholeWord: flag(q, 'wholeWord'), include: paths(q, 'include'), exclude: paths(q, 'exclude') }
-}
-function symbolName(input: unknown): string {
-  const name = text(input, 'name')
-  if (name.length > 200 || /[\r\n]/.test(name)) throw new Error('Invalid RPC input')
-  return name
+  const query = { text: text(q, 'text'), caseSensitive: flag(q, 'caseSensitive'), regex: flag(q, 'regex'), wholeWord: flag(q, 'wholeWord'), include: paths(q, 'include'), exclude: paths(q, 'exclude') }
+  return { ...query, caseSensitive: false, regex: false, wholeWord: false }
 }
 
 function parseModel(model: string): { providerID: string; id: string } {
@@ -342,32 +336,6 @@ export default Plugin.define({
         } finally { plan.busy = false; await emit('changed', {}) }
       },
       async quickOpenFiles(_input, context) { return { files: await quickOpenFiles(requestHost(context.signal), ctx.location.directory) } },
-      async outline(input, context) {
-        const root = ctx.location.directory, rel = safeRel(root, text(input, 'rel'))
-        if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
-        const [info, rootInfo] = await Promise.all([host.stat(joinPath(root, rel)), host.stat(root)])
-        if (!info || info.kind !== 'file') return { nodes: null, file: false }
-        if (!rootInfo || safeRel(rootInfo.realPath, info.realPath) === null) return context.error('outside_root', 'That path is outside the project.', {})
-        if (!languageFor(rel)) return { nodes: null, file: true }
-        const source = await readSource(host, root, rel); context.signal.throwIfAborted()
-        if (source === null) throw new Error("Can't read this file.")
-        return { nodes: outline(rel, source), file: true }
-      },
-      async findSymbol(input, context) { return { refs: await findSymbol(requestHost(context.signal), ctx.location.directory, symbolName(input)) } },
-      async definitions(input, context) {
-        const root = ctx.location.directory, name = symbolName(input), rel = safeRel(root, text(input, 'fromRel'))
-        if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
-        return { refs: await definitions(requestHost(context.signal), root, name, rel) }
-      },
-      async references(input, context) { return { refs: await references(requestHost(context.signal), ctx.location.directory, symbolName(input)) } },
-      async incoming(input, context) { return { refs: await incoming(requestHost(context.signal), ctx.location.directory, symbolName(input)) } },
-      async outgoing(input, context) {
-        const root = ctx.location.directory, rel = safeRel(root, text(input, 'rel')), line = record(input).line
-        if (typeof line !== 'number' || !Number.isSafeInteger(line) || line < 1) throw new Error('Invalid RPC input')
-        if (rel === null) return context.error('outside_root', 'That path is outside the project.', {})
-        const node = enclosing(await fileOutline(host, root, rel) ?? [], line); context.signal.throwIfAborted()
-        return { refs: node ? await outgoing(requestHost(context.signal), root, rel, node) : [] }
-      },
     }
     const mutating = new Set(['stage', 'unstage', 'discard', 'commit', 'init', 'sync', 'switchBranch', 'createBranch', 'checkout', 'revert', 'fetch', 'replaceApply'])
     const checked = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [name, async (input: unknown, context: Parameters<typeof handler>[1]) => {

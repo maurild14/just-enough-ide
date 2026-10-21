@@ -39,7 +39,7 @@ JEI is written **from scratch**; no code from other projects is copied. If a fra
 2. The **Git tab mirrors VS Code's Source Control panel** (repository row, Graph, Changes, branches), adapted to a terminal pane.
 3. **Agent-aware:** the pane shows what the agent reads, writes and commits, and every view can hand context to the agent in one key ("Ask", "mention").
 4. **Two hosts, one core:** Claude Code and OpenCode get the same features at the same time. All logic lives in a host-independent core; each host is a thin adapter.
-5. **Deterministic and cheap:** search, outline and Git are local operations; they never call the model unless the user asks (✦ commit message, Ask).
+5. **Deterministic and cheap:** search and Git are local operations; they never call the model unless the user asks (✦ commit message, Ask).
 6. **Works the same on Windows, macOS and Linux.**
 7. Installable in two lines on each host.
 
@@ -75,7 +75,7 @@ Moments JEI is designed around:
 
 ### 4.1 The core rule
 
-Everything that is not drawing or talking to a host lives in `core/`: git output parsers, graph lane layout, diff parsing, fuzzy ranking, regex outlines, LSP text parsing, shell read-target parsing, path handling, key map, view models. **`core/` imports nothing from either host and uses no Node, Bun or DOM API.** It receives a small `Host` interface (run a process, list/stat/read files, complete with a model) and returns plain data; UI actions (toast, confirm, hand text to the agent) stay in each adapter. Reason: Claude Code mods have no Node; OpenCode plugins run on Bun or Node; only pure TypeScript runs in both.
+Everything that is not drawing or talking to a host lives in `core/`: git output parsers, graph lane layout, diff parsing, fuzzy ranking, shell read-target parsing, path handling, key map, view models. **`core/` imports nothing from either host and uses no Node, Bun or DOM API.** It receives a small `Host` interface (run a process, list/stat/read files, complete with a model) and returns plain data; UI actions (toast, confirm, hand text to the agent) stay in each adapter. Reason: Claude Code mods have no Node; OpenCode plugins run on Bun or Node; only pure TypeScript runs in both.
 
 ### 4.2 Claude Code host
 
@@ -94,7 +94,6 @@ Verified against the Claude Code mod API (build 2.1.302) and its type declaratio
 | AI commit message | `$.model.complete({ model, prompt })` on the session's own client (no API key) | ✅ |
 | State | `$.state` (session, drives redraws) declared in `types/index.d.ts`; `$.store` (across sessions) | ✅ |
 | Slash command | `$.command.register` + `command.run` | ✅ |
-| Symbols / references | `$.tool.call({ tool: 'LSP', operation, filePath, line, character })`: `documentSymbol`, `workspaceSymbol`, `goToDefinition`, `findReferences`, `incomingCalls`, `outgoingCalls` | ⚠️ Needs a language server configured; result is **formatted text**, not JSON; may go through a permission check |
 | Parser in-process (tree-sitter) | **No `WebAssembly`, no Node, no `eval`** in a hooks module | ❌ Replaced (see §6.3) |
 | Images in preview | `Image` uses the kitty graphics protocol (kitty, Ghostty); `alt` text elsewhere | ⚠️ |
 
@@ -126,7 +125,6 @@ An OpenCode plugin package has a **server entry** (`@opencode/plugin`, `Plugin.d
 | Put text into the prompt | **No API in 2.x** to insert into the user's prompt (`tui.prompt.append` exists only as an event type). JEI uses `ui.dialog.prompt({ value })` prefilled with the text, then `client.session.prompt({ sessionID, text })` to send it | ✅ Different UX, see §5.3 |
 | AI commit message | `ctx.generate.text({ prompt, model? })` → `{ text }`; prompt is a string and model is `{ providerID, id }` | ✅ |
 | State | Solid signals in the TUI; `context.storage` in the TUI; `ctx.storage` on the server | ✅ |
-| Symbols | No LSP or symbol call in the 2.x client | ❌ Symbols UI retired (ADR 0026) |
 | Git hooks | Git runs as a normal process: repo hooks fire | ✅ |
 
 - **Keyboard:** `keymap` allows chords and modifiers, but JEI uses the **same single-letter/digit keys as on Claude Code** (one key map in `core/keys.ts`, the stricter host's rules). Never bind `ctrl+n`/`ctrl+p` (reserved by OpenCode's dialogs).
@@ -215,7 +213,7 @@ File ops live in `core/fsops.ts` as argv builders plus root checks; the host exe
 
 ### 6.2 Search tab (text inside files)
 
-Tab 2 is Search; Symbols is retired from both native interfaces. Content search is literal and case-insensitive, submitted with Enter. The outlined query field has separate Cancel and Clear controls. Include/exclude globs, result grouping, one/all hand-off, Quick Open, reviewed replacement and changed-file refusal remain available. Case, regex and word controls and shortcuts are removed.
+Tab 2 is Search; Symbols is removed entirely (ADR 0027). Content search is literal and case-insensitive, submitted with Enter. The outlined query field has separate Cancel and Clear controls. Include/exclude globs, result grouping, one/all hand-off, Quick Open, reviewed exact-text replacement and changed-file refusal remain available. Search remains case-insensitive; Replace changes only literal text matching the query exactly, including case. Other case variants show `case-differs`, alongside eligible edits in the same file and after one/all application. Case, regex and word controls and shortcuts are removed.
 
 Results stream from the existing bounded ripgrep service, with the verified Git grep fallback when needed. Search retains at most 2,000 result lines and an estimated 16 MiB. Replacement requires complete bounded review and fresh UTF-8 byte comparison before writes (ADR 0023). Arrow navigation keeps the selected result visible; Up from the first result focuses the query for editing, and Down from the query returns to the retained result without skipping it. Preview and Back retain its exact selection. Clear stays in Search; b returns to Files.
 
@@ -298,7 +296,7 @@ One stack for two hosts:
 - **`core/`:** pure TypeScript, no host API, no Node/Bun/DOM (§4.1).
 - **Claude Code adapter:** the surface's own elements via `$.ui.resolve(e)`, JSX against the global `h`; session `$.state` atoms declared in `types/index.d.ts` retain root-scoped UI data. Search transient operations reset on session start.
 - **OpenCode adapter:** server entry (processes via `node:child_process`, files, tool hooks, model, `ctx.rpc.register`) and TUI entry (Solid + OpenTUI views, keymap, dialogs, `context.storage`), linked by one RPC definition in `hosts/opencode/rpc.ts`.
-- **External tools:** `git` (required for the Git tab), `rg` (Search; falls back to `git grep`), the retired symbol core remains compatibility code.
+- **External tools:** `git` (required for the Git tab), `rg` (Search; falls back to `git grep`).
 - **Tests:**
   - `bun test` for everything in `core/` (parsers, graph layout, fuzzy ranking, shell parsing, key map, fsops argv), named `*.spec.ts`. This is where most tests live.
   - `claude plugin test` for the Claude Code adapter (mounting the pane on `terminal` and `desktop`).
@@ -325,7 +323,7 @@ jei/
 ├── core/                       # host-independent logic (§4.1)
 │   ├── host.ts                 # the Host interface both adapters implement
 │   ├── keys.ts                 # the one key map
-│   ├── files/  search/  symbols/  git/  activity/  shared/
+│   ├── files/  search/  git/  activity/  shared/
 ├── hosts/
 │   ├── claude-code/            # pane.tsx, views/*.tsx, activity hooks, Host impl
 │   └── opencode/
@@ -335,7 +333,7 @@ jei/
 │       └── views/*.tsx         # Solid + OpenTUI views
 ├── types/index.d.ts            # Claude Code PluginState contract
 ├── test/                       # fixtures and the fake host for specs
-├── test/fixtures/              # LSP text outputs, git porcelain samples
+├── test/fixtures/              # Search JSON and git porcelain samples
 ├── docs/                       # screenshots, GIFs for both hosts
 ├── package.json                # npm package for OpenCode: exports ".", "./tui", "./rpc"; scripts
 ├── README.md
@@ -352,7 +350,7 @@ Rules: entries stay thin; each tab owns a folder in `core/` and a view per host;
 host events (tool hooks, file changes, cwd) ─┐
                                               ├─> refresh scheduler ─> core (parse, layout, rank) ─> view model ─> host view
 user actions (keys, inputs) ─> Host runners ──┘    (debounced, cancels)
-                               (git, rg, LSP, fs)
+                               (git, rg, fs)
 ```
 
 On OpenCode the left half (events, runners, core) runs in the server entry and view models cross to the TUI over RPC; on Claude Code it all runs in the mod. Every runner call is cancellable (signals / generation counters) so a fast-typing user or a busy agent never queues stale work.
@@ -383,7 +381,7 @@ On OpenCode the left half (events, runners, core) runs in the server entry and v
 { "plugins": ["opencode-jei"] }
 ```
 
-The README states the requirements per host: Claude Code ≥ the pinned version, `/tui fullscreen` and ≥ 110 columns for docking; OpenCode 2.x ≥ 2.0.32 (the 1.x line is not supported); on both, `git` on PATH, optional `rg` and language servers, optional Nerd Font.
+The README states the requirements per host: Claude Code ≥ the pinned version, `/tui fullscreen` and ≥ 110 columns for docking; OpenCode 2.x ≥ 2.0.32 (the 1.x line is not supported); on both, `git` on PATH, optional `rg`, optional Nerd Font.
 
 ---
 
@@ -395,8 +393,8 @@ Every milestone ships on **both hosts**.
 | --- | --- |
 | **0.1** | `core/` + `Host` interface · pane shell + tabs + hint line · Files (tree, git status, shimmer, follow, preview, mention, open) · Git: repository row, Changes (stage/unstage/discard, commit, ✦), diff view |
 | **0.2** | Git: Graph (lanes, expand commit, commit actions, agent ✦ markers, filter) · Branches (switch, create, compare with main) |
-| **0.3** | Search (rg streaming, send to the agent, replace with preview) · Quick Open · Symbols (regex outlines + approximate references and call hierarchy; Claude Code LSP when allowed; OpenCode approximate) |
-| **0.4** | File operations in Files · polish, docs, GIFs, first public release and announcement |
+| **0.3** | Search (rg streaming, send to the agent, replace with preview) · Quick Open. Symbols was withdrawn; ADR 0027 removes its implementation and compatibility contracts. |
+| **0.4** | Task 1: remove Symbols, exact Replace and current docs · Task 2: review · Task 3: file operations in Files. Polish, GIFs, launch and publication are deferred. |
 
 Later candidates (not committed): Problems panel (tsc/eslint per file), Test Explorer, npm scripts & ports, TODO list of what the agent left, review queue ("unreviewed" files), blame-by-prompt.
 
@@ -409,7 +407,6 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 | Claude Code mod API changes between releases | Pin a minimum version; CI runs `validate` and `test` against the latest Claude Code; fast patch releases |
 | OpenCode V2 plugin API is new and evolving | Treat its exported types as the contract; pin a minimum version; type-check against the latest in CI; keep the adapter thin so changes stay local |
 | The two hosts drift apart | One key map and one view model in `core/`; a feature is done only when both adapters have it; release checklist covers both |
-| LSP results: free text on Claude Code, no API on OpenCode | Tolerant parser + fixtures; approximate level always available and labeled |
 | Large repos (100k+ files) | Lazy tree, capped lists, streaming search, paged graph, no full scans on every event |
 | Git contention with the agent | `--no-optional-locks`, read-only plumbing for views, never auto-stash/auto-fetch in the background |
 | Narrow pane | Every view designed for 40 columns; long lines wrap or truncate with ellipsis |
@@ -423,7 +420,7 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - Name: **JEI — Just Enough IDE**. Everything (UI, docs, repo) in English. Open source.
 - **Two hosts from the first release: Claude Code and OpenCode, in one repository.**
 - Built from scratch.
-- Three tabs: Files, Search, Git. Live filename search, content search and Quick Open are in; the Symbols UI is retired (ADR 0026).
+- Three tabs: Files, Search, Git. Live filename search, content search and Quick Open are in; Symbols services, state, RPC and compatibility conversions are removed (ADR 0027). Unknown config values use ordinary defaults (Files); unknown command words use Files path handling.
 - Git tab follows VS Code's Source Control layout (option A): repository row, Graph, Changes, branches; switch and create branches.
 - Clicking a commit expands it inline with its files; clicking a file shows its diff **replacing the pane content** (unified, one column).
 - Git extras accepted: Ask on commits/diffs, ✦ markers for the agent's commits, commit actions (copy hash, checkout, revert, open on GitHub), graph filter, compare branch with main.
@@ -444,12 +441,9 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - OpenCode 2.x only; the 1.x line has no side-panel slot.
 - On OpenCode, mention/send opens an editable prefilled dialog and sends the message, since 2.x cannot insert into the prompt (§5.3).
 - OpenCode tools are classified by id from `ctx.tool.list()` with an input-shape fallback.
-- On OpenCode, Symbols is approximate only until OpenCode exposes an LSP API.
 - `commitModel` empty by default = the host's small model.
 - Quick Open is nested under the Search tab.
 - File operations (new, rename, move, delete with confirmation) are included, in 0.4.
-- Symbols moved into 0.3 next to Search and Quick Open; the first public release moved from 0.5 to 0.4.
-- Symbols use LSP when available and regex outlines otherwise; no tree-sitter in v1.
 - Switching branches with uncommitted changes asks; JEI never stashes on its own.
 - ✦ Generate uses Conventional Commits format.
 - Smart commit (stage all when nothing is staged) on by default, as in VS Code.
@@ -459,6 +453,5 @@ Later candidates (not committed): Problems panel (tsc/eslint per file), Test Exp
 - Claude Code surfaces: terminal first-class; Desktop app must render and work by click, polish best effort; VS Code/mobile out.
 - Minimum Claude Code 2.1.302; minimum OpenCode 2.0.32.
 - Sync follows the user's pull config; otherwise `--ff-only`, and on divergence it asks (merge / rebase / ask the agent).
-- Search Replace skips non-UTF-8/binary files.
-- Claude Code LSP permission is checked with `$.tool.check` first; no surprise dialogs.
-- OpenCode 0.3 Search and replacement state is scoped by explicit sessionID plus the server-owned project root. Stored reviewed plans validate the entire selected subset before writes; partial operational failures return known written/skipped paths and an optional error. Outline RPC also reports whether a confined regular file exists, distinguishing unsupported languages from directory/missing selections. TUI wire-path checks are lexical; native platform/realpath checks stay server-side. See ADR 0022.
+- Search stays literal and case-insensitive. Replace edits only exact literal text including case; `case-differs` skips stay visible without dropping eligible edits. Non-UTF-8/binary and stale files remain refused.
+- OpenCode 0.3 Search and replacement state is scoped by explicit sessionID plus the server-owned project root. Stored reviewed plans validate the entire selected subset before writes; partial operational failures return known written/skipped paths and an optional error. TUI wire-path checks are lexical; native platform/realpath checks stay server-side. See ADR 0022.

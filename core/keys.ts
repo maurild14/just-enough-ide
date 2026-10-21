@@ -1,5 +1,5 @@
 export type Tab = 'files' | 'search' | 'git'
-export type View = 'files' | 'files.preview' | 'search' | 'search.replace' | 'quickopen' | 'symbols' | 'symbols.results' | 'git' | 'git.diff' | 'git.branches' | 'git.compare'
+export type View = 'files' | 'files.preview' | 'search' | 'search.replace' | 'quickopen' | 'git' | 'git.diff' | 'git.branches' | 'git.compare'
 export type Key = { key: string; action: string; label: string }
 
 const up: Key = { key: 'up', action: 'move-up', label: 'move' }
@@ -39,11 +39,6 @@ export const KEYS: Readonly<Record<View, readonly Key[]>> = {
     { key: 'y', action: 'apply-all', label: 'apply all' }, { key: 'a', action: 'ask', label: 'ask agent' }, back, escape],
   quickopen: [up, down, { key: 'enter', action: 'activate', label: 'preview' }, { key: 'a', action: 'mention', label: 'add' },
     { key: 'q', action: 'search', label: 'search' }, escape],
-  symbols: [up, down, { key: 'enter', action: 'activate', label: 'preview' },
-    { key: 'd', action: 'definition', label: 'definition' }, { key: 'r', action: 'references', label: 'references' },
-    { key: 'c', action: 'calls', label: 'calls' }, { key: 'a', action: 'send', label: 'send' },
-    { key: 'f', action: 'find-symbol', label: 'find symbol' }, back, escape],
-  'symbols.results': [up, down, { key: 'enter', action: 'activate', label: 'preview' }, { key: 'a', action: 'send', label: 'send' }, back, escape],
   git: [
     up,
     down,

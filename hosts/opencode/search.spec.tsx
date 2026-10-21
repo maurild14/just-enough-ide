@@ -5,6 +5,28 @@ import { paneMemory } from './pane.tsx'
 
 const batch = (id: string, text = 'load') => ({ sessionID: 'session-a', id, matches: [{ rel: 'src/app.ts', line: 2, text: `ñ ${text} 界`, ranges: [[2, 2 + text.length]] }] })
 const done = (id: string, extra: object = {}) => ({ sessionID: 'session-a', id, engine: 'rg', error: null, ms: 4, truncated: false, ...extra })
+test('exact replacement review displays case skips and preserves remaining files after applying one', async () => {
+  const f = searchFixture(), r = await f.mount(80, 40)
+  const files = ['src/app.ts', 'src/save.ts'].map(rel => ({ rel, before: 'user User USER\n', after: 'account User USER\n', count: 1 }))
+  f.handlers.replacePlan = async () => ({ planId: 'exact', files, skipped: [...files.map(({ rel }) => ({ rel, reason: 'case-differs' })), { rel: 'omitted.ts', reason: 'case-differs' }, { rel: 'src/' + 'long-path-'.repeat(12) + '.ts', reason: 'case-differs' }] })
+  f.handlers.replaceApply = async ({ rels }: { rels: string[] }) => ({ written: rels, skipped: [] }); f.confirm(true)
+  f.openSearch(); await r.flush(); input(r).insertText('user'); input(r).submit(); await settle(r)
+  input(r).blur(); await r.flush(); f.key('p'); await r.flush(); input(r, 'search-replacement').insertText('account'); input(r, 'search-replacement').submit(); await r.flush()
+  expect(r.captureCharFrame()).toContain('case-differs: src/app.ts')
+  expect(r.captureCharFrame()).toContain('case-differs: omitted.ts')
+  for (const width of [24, 40, 80, 120]) {
+    r.resize(width, 40); await r.flush()
+    expect(r.captureCharFrame()).toContain('case-differs: src/long')
+    for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
+  }
+  f.key('enter'); await r.flush()
+  expect(f.confirms.at(-1).message).toBe('Replace 1 matches in src/app.ts?')
+  expect(r.captureCharFrame()).toContain('src/save.ts (1)')
+  expect(r.captureCharFrame()).toContain('case-differs: src/app.ts')
+  f.key('y'); await r.flush()
+  expect(f.calls.findLast(c => c.method === 'replaceApply')!.input.rels).toEqual(['src/save.ts'])
+  expect(r.captureCharFrame()).toContain('case-differs: omitted.ts')
+})
 
 for (const width of [24, 40, 80, 120]) test(`Search arrows return to the query for editing at ${width} columns`, async () => {
   const f = searchFixture(), r = await f.mount(width, 10)

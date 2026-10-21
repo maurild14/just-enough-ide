@@ -8,7 +8,7 @@ export function parseJeiArgument(arg: string): { tab?: Tab; reveal?: string; tog
   const text = arg.trim()
   if (text === '') return { toggle: true }
   const name = text.toLowerCase()
-  const tab = name === 'symbols' ? 'search' : TABS.find((t) => t === name)
+  const tab = TABS.find((t) => t === name)
   if (tab) return { tab, toggle: false }
   const reveal = toPosix(text).replace(/^(\.\/)+/, '')
   return { tab: 'files', reveal, toggle: false }

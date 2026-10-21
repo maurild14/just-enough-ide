@@ -132,7 +132,7 @@ async function confirmApply($: EngineInterface): Promise<void> {
   const files = s.plan.filter(file => s.confirm!.includes(file.rel))
   if (files.length !== s.confirm.length) return
   await updateSearch($, root, u => ({ ...u, busy: true, confirm: null }))
-  const release = await mutationGuard($, root), written: string[] = [], skipped = [...s.skipped]
+  const release = await mutationGuard($, root), written: string[] = [], skipped: typeof s.skipped = []
   let failure = ''
   try {
     for (const file of files) {
@@ -143,7 +143,7 @@ async function confirmApply($: EngineInterface): Promise<void> {
   } catch (err) { failure = firstLine(err) }
   finally {
     release()
-    await updateSearch($, root, u => ({ ...u, busy: false, skipped, plan: u.plan.filter(file => !written.includes(file.rel) && !skipped.some(skip => skip.rel === file.rel)), summary: failure }))
+    await updateSearch($, root, u => ({ ...u, busy: false, skipped: [...u.skipped, ...skipped], plan: u.plan.filter(file => !written.includes(file.rel) && !skipped.some(skip => skip.rel === file.rel)), summary: failure }))
     const count = files.filter(f => written.includes(f.rel)).reduce((n, f) => n + f.count, 0)
     $.ui.toast(`Replaced ${count} matches in ${written.length} files.${failure ? ` ${failure}` : ''}`)
     if (await readCwd($) === root) {
@@ -253,7 +253,7 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
       }
     }
     if (s.skipped.length) items.push({ id: 'skipped', passive: true, el: text('Not replaced') })
-    for (const skip of s.skipped) items.push({ id: `skip-${skip.rel}`, el: row(`skip-${skip.rel}`, `${skip.rel}: ${skip.reason}`, async () => {}) })
+    for (const skip of s.skipped) items.push({ id: `skip-${skip.reason}-${skip.rel}`, el: row(`skip-${skip.reason}-${skip.rel}`, `${skip.reason}: ${skip.rel}`, async () => {}) })
     const file = s.plan.find(f => f.rel === s.subject?.['search.replace']) ?? s.plan[0]
     items.push({ id: 'apply', el: row('apply', 'Apply file', () => requestApply($, file ? [file.rel] : [])) })
   } else if (quick) {

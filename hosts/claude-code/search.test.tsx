@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { command, props, world } from '../../test/claude-search.ts'
+import { ROOT, command, props, world } from '../../test/claude-search.ts'
 import { lineWidths, type Node } from './measure.ts'
 
 test('Search arrows return from the first result to its editable query', async ($, on) => {
@@ -107,6 +107,38 @@ test('Search native input streams, toggles argv, hands text and returns from a m
   await ui.unmount()
 })
 
+test('exact replacement keeps case skips visible and preserves mixed files through one/all apply', async ($, on) => {
+  const seen = await world($, on)
+  const longRel = 'src/' + 'long-path-'.repeat(12) + '.ts'
+  seen.files['src/account.ts'] = 'user User USER\nuser\n'
+  seen.files['src/other.ts'] = 'User\nuser\n'
+  seen.files['omitted.ts'] = 'USER\n'
+  seen.files[longRel] = 'USER\n'
+  await $.command.run(command('search'))
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props(80, 40) })
+  await ui.input({ key: 'search-query', text: 'user', kind: 'submit' }); await seen.clock.advance(300)
+  await ui.press({ key: 'key-p' }); await ui.input({ key: 'search-replacement', text: 'account', kind: 'submit' })
+  const search = () => (seen.states.searches as Record<string, { plan: { rel: string; count: number }[]; skipped: { rel: string; reason: string }[] }>)[ROOT]!
+  expect(search().plan.map(f => [f.rel, f.count])).toEqual([['src/account.ts', 2], ['src/other.ts', 1]])
+  expect(search().skipped).toHaveLength(4)
+  expect(await ui.find({ type: 'Text', text: /case-differs: omitted.ts/ })).toBeDefined()
+  for (const width of [24, 40, 80, 120]) {
+    await ui.redraw(props(width, 40))
+    expect((await ui.find({ key: `search-row-skip-case-differs-${longRel}` }))?.text).toContain('case-differs')
+    for (const drawn of lineWidths(await ui.drawn() as Node)) expect(drawn).toBeLessThanOrEqual(width)
+  }
+  await ui.press({ key: 'search-row-src/account.ts' }); await ui.press({ key: 'replace-confirm' })
+  expect(seen.files['src/account.ts']).toBe('account User USER\naccount\n')
+  expect(search().plan.map(f => f.rel)).toEqual(['src/other.ts'])
+  expect(search().skipped).toHaveLength(4)
+  await ui.press({ key: 'key-y' }); await ui.press({ key: 'replace-confirm' })
+  expect(seen.files['src/other.ts']).toBe('User\naccount\n')
+  expect(seen.files['omitted.ts']).toBe('USER\n')
+  expect(search().plan).toEqual([])
+  expect(await ui.find({ type: 'Text', text: /case-differs: src\/account.ts/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('replacement reviews a native diff, confirms, refuses changed snapshots and refreshes written files', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
@@ -198,7 +230,7 @@ test('Quick Open accepts a line and keeps editor letters and digits as text', as
   await ui.unmount()
 })
 
-test('unresolved double-slash projects refuse new Search and Symbols operations before any process or LSP request', async ($, on) => {
+test('unresolved double-slash projects refuse new Search operations before any process or tool request', async ($, on) => {
   const seen = await world($, on, '//work/acme-app')
   await $.command.run(command('search'))
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })

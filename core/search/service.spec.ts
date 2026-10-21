@@ -13,6 +13,19 @@ class NoRg extends FakeHost {
     return super.stream(argv[0] === 'rg' ? ['jei-missing-executable'] : argv, options)
   }
 }
+test('real rg Search remains case-insensitive while replacement plans and applies only exact text', async () => {
+  const root = makeTemp()
+  writeFiles(root, { 'mixed.txt': 'user User USER\nUser\nuser\n', 'omitted.txt': 'User USER\n' })
+  const host = new FakeHost(), q = { ...query, text: 'user', caseSensitive: false }, matches: Match[] = []
+  expect((await search(host, root, q, m => matches.push(m)).done).error).toBeNull()
+  expect(matches.reduce((n, m) => n + m.ranges.length, 0)).toBe(7)
+  const plan = await buildReplacePlan(host, root, q, 'account')
+  expect(plan.files).toEqual([{ rel: 'mixed.txt', before: 'user User USER\nUser\nuser\n', after: 'account User USER\nUser\naccount\n', count: 2 }])
+  expect(plan.skipped.sort((a, b) => a.rel.localeCompare(b.rel))).toEqual([{ rel: 'mixed.txt', reason: 'case-differs' }, { rel: 'omitted.txt', reason: 'case-differs' }])
+  expect(await applyReplace(host, root, plan.files)).toEqual({ written: ['mixed.txt'], skipped: [] })
+  expect(await host.readText(join(root, 'mixed.txt'))).toBe('account User USER\nUser\naccount\n')
+  expect(await host.readText(join(root, 'omitted.txt'))).toBe('User USER\n')
+})
 test('real rg streams Unicode+CRLF matches, regex errors and a bounded cap', async () => {
   const root = makeTemp()
   writeFiles(root, { 'a.ts': 'ñ 😀 target target\r\n', 'big.txt': 'target\n'.repeat(2100) })

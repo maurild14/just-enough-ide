@@ -10,7 +10,7 @@ test('parseJeiArgument', () => {
   expect(parseJeiArgument('./src\\a.ts')).toEqual({ tab: 'files', reveal: 'src/a.ts', toggle: false })
 })
 
-test('Search is tab 2 and the old Symbols command migrates there', () => {
+test('unknown tab commands follow ordinary Files path handling', () => {
   expect(parseJeiArgument('search')).toEqual({ tab: 'search', toggle: false })
-  expect(parseJeiArgument('symbols')).toEqual({ tab: 'search', toggle: false })
+  expect(parseJeiArgument('symbols')).toEqual({ tab: 'files', reveal: 'symbols', toggle: false })
 })

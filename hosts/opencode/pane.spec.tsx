@@ -41,7 +41,7 @@ test('clicking tabs out of an editor keeps every tab shortcut and arrow route us
   }
 })
 
-for (const width of [24, 40, 80, 120]) test(`Files keeps its old hint threshold and Search/Symbols retain five-row hints at ${width} columns`, async () => {
+for (const width of [24, 40, 80, 120]) test(`Files keeps its old hint threshold and Search retains five-row hints at ${width} columns`, async () => {
   const f = fixture(); const r = await f.mount(width, 5)
   for (const [key, view] of [['1', 'files'], ['2', 'search']] as const) {
     f.key('esc'); f.key(key); await r.flush()

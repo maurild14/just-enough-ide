@@ -31,7 +31,7 @@ function matches(v: unknown): Match[] {
 }
 function skips(v: unknown): Skipped[] {
   if (!Array.isArray(v)) throw new Error('Invalid Search reply.')
-  return v.map(raw => { const s = record(raw); if (typeof s.reason !== 'string' || !['binary', 'not-utf8', 'changed', 'regex-differs', 'outside-root', 'too-large', 'unreadable', 'unsupported-path'].includes(s.reason)) throw new Error('Invalid Search reply.'); return { rel: rel(s.rel), reason: s.reason as Skipped['reason'] } })
+  return v.map(raw => { const s = record(raw); if (typeof s.reason !== 'string' || !['binary', 'not-utf8', 'changed', 'case-differs', 'regex-differs', 'outside-root', 'too-large', 'unreadable', 'unsupported-path'].includes(s.reason)) throw new Error('Invalid Search reply.'); return { rel: rel(s.rel), reason: s.reason as Skipped['reason'] } })
 }
 
 export function Search(props: {
@@ -122,7 +122,7 @@ export function Search(props: {
         }
       }
       if (s.skipped.length) all.push({ id: 'skipped', label: 'Not replaced', passive: true })
-      for (const skip of s.skipped) all.push({ id: `skip:${skip.rel}`, label: `${skip.rel}: ${skip.reason}` })
+    for (const skip of s.skipped) all.push({ id: `skip:${skip.reason}:${skip.rel}`, label: `${skip.reason}: ${skip.rel}` })
     } else if (quick()) for (const [i, path] of ranked().entries()) all.push({ id: `file-${i}`, path, label: `${props.activity.touched(path) ? '•' : ' '} ${path}` })
     else {
       let previous = ''; const counts = new Map<string, number>(); for (const m of s.matches) counts.set(m.rel, (counts.get(m.rel) ?? 0) + 1)
@@ -238,7 +238,7 @@ export function Search(props: {
       <Show when={!compact() && !quick() && s.globs}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(' ' + s.globs, props.width)}</text></Show>
     </Show>
     <For each={window()}>{row => <text id={`search-row-${row.id}`} height={1} flexShrink={0} bg={row.id === selected() ? theme().background?.action.primary.base : undefined} onMouseDown={() => { if (!row.passive) { setEditing(null); select(row.id); invoke(replacing() ? 'apply-file' : 'activate') } }}>
-      {' '}<Show when={row.match} fallback={<span style={{ fg: row.diff ? row.diff.startsWith('+') ? theme().diff?.text.added : row.diff.startsWith('-') ? theme().diff?.text.removed : theme().diff?.text.hunkHeader : row.passive ? theme().text.muted : theme().text.base }}>{row.diff ? fitEnd(row.diff, inner()) : row.label?.includes('/') ? fitPath(row.label, inner()) : fitEnd(row.label ?? '', inner())}</span>}>{(m: () => Match) => <For each={matchSpans(m())}>{p => <span style={{ fg: p.hit ? theme().text.action.primary.base : theme().text.base }}>{p.text}</span>}</For>}</Show>
+      {' '}<Show when={row.match} fallback={<span style={{ fg: row.diff ? row.diff.startsWith('+') ? theme().diff?.text.added : row.diff.startsWith('-') ? theme().diff?.text.removed : theme().diff?.text.hunkHeader : row.passive ? theme().text.muted : theme().text.base }}>{row.diff ? fitEnd(row.diff, inner()) : row.label?.includes('/') && !row.id.startsWith('skip:') ? fitPath(row.label, inner()) : fitEnd(row.label ?? '', inner())}</span>}>{(m: () => Match) => <For each={matchSpans(m())}>{p => <span style={{ fg: p.hit ? theme().text.action.primary.base : theme().text.base }}>{p.text}</span>}</For>}</Show>
     </text>}</For>
     <Show when={!compact() && !quick() && !replacing() && s.summary}><text height={1} flexShrink={0} fg={theme().text.muted}>{fitEnd(s.summary + (s.engine === 'git grep' ? ' · git grep' : ''), props.width)}</text></Show>
   </box>

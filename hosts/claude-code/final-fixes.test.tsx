@@ -79,7 +79,7 @@ test('a closed Quick Open cache refreshes and a rejected listing is visible at c
   await ui.unmount()
 })
 
-test('native hot reload resets Search and Symbols transient flags while retaining query/results', async ($, on) => {
+test('native hot reload resets Search transient flags while retaining query/results', async ($, on) => {
   const seen = await world($, on)
   await $.command.run(command('search'))
   const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', requestId: 'jei', props: props() })

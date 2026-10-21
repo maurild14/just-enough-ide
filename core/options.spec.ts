@@ -52,7 +52,7 @@ test('enums are trimmed and case-insensitive', () => {
   expect(o.activity).toBe('reads')
 })
 
-test('Search replaces the old Symbols default tab', () => {
-  expect(parseOptions({ defaultTab: 'symbols' }).defaultTab).toBe('search')
+test('unknown default tabs use the ordinary Files default', () => {
+  for (const defaultTab of ['symbols', 'future', '__proto__']) expect(parseOptions({ defaultTab }).defaultTab).toBe('files')
   expect(parseOptions({ defaultTab: 'search' }).defaultTab).toBe('search')
 })

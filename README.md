@@ -13,7 +13,7 @@ JEI is a pane with three tabs (Files, Search, Git) that sits next to the agent's
 - **Diff view:** a unified diff that replaces the pane, with hunk and file navigation, Ask about the change, and open in editor.
 - **Graph:** colored lanes and distinct reference badges above Staged and Changes, subjects with right-aligned final hashes, inline changed files, commit diffs, copy hash, Ask, confirmed checkout/revert, supported GitHub/GitLab links, session agent markers, filters and explicit paging. Fetch runs only when requested.
 - **Branches:** distinct colors for current, local and remote names, dirty/detached switch confirmation, create from HEAD or a selected commit, and pinned comparisons with the main branch.
-- **Search:** literal, case-insensitive content search with streamed results, include/exclude globs, one/all hand-off, and reviewed, confirmed UTF-8 replacement with changed-file refusal.
+- **Search:** literal, case-insensitive content search with streamed results, include/exclude globs, one/all hand-off, and reviewed, confirmed exact-case UTF-8 replacement with changed-file refusal.
 - **Quick Open:** fuzzy files ranked by touched and recent paths, with `:line` previews.
 - **Keys:** `1`–`3` switch Files, Search and Git; every view lists its keys on the last line.
 
@@ -42,7 +42,7 @@ Search and Quick Open keep separate query text. Claude Code reports an explicit 
 
 Files keeps an outlined filename field above the project name. Press `s` or `f` and type to update results immediately; basename prefixes rank first, with forgiving path matches afterward. Arrows leave editing and move through results; Enter previews and Back restores the query and selected file. Clear restores the original expanded tree and selection. Cancel only leaves editing.
 
-Search (`2`) finds text inside files after Enter, with include/exclude globs, hand-off and reviewed replacement. Matching is literal and case-insensitive. Clear stays in Search; `b` returns to Files. Old Symbols sessions, `/jei symbols` and `defaultTab: symbols` migrate to Search. Cancel and Clear have visible spacing and a separator in both fields.
+Search (`2`) finds text inside files after Enter, with include/exclude globs, hand-off and reviewed replacement. Matching is literal and case-insensitive. Clear stays in Search; `b` returns to Files. Replace changes only exact text including case; other case variants show `case-differs`. Unknown default-tab values use Files, and unknown command words reveal a path in Files. Cancel and Clear have visible spacing and a separator in both fields.
 
 ## Install
 
@@ -69,7 +69,7 @@ Add the npm package to `opencode.json` (or `opencode.jsonc`); OpenCode installs 
 
 - Claude Code 2.1.302 or newer, with `/tui fullscreen` and at least 110 columns for docking.
 - OpenCode 2.x, version 2.0.32 or newer (the 1.x line is not supported).
-- On both: `git` on your PATH. Optional: `rg` (ripgrep) for streamed Search and a Nerd Font for icons. Without rg, repository Search falls back to Git grep's first occurrence per line in tracked files; hidden/untracked coverage differs from rg. Outside a repository it shows installation help. Claude Code LSP is optional and permission checked; OpenCode needs no language server.
+- On both: `git` on your PATH. Optional: `rg` (ripgrep) for streamed Search and a Nerd Font for icons. Without rg, repository Search falls back to Git grep's first occurrence per line in tracked files; hidden/untracked coverage differs from rg. Outside a repository it shows installation help.
 
 ## Configuration
 

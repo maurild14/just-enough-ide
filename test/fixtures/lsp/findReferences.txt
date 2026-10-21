@@ -1,5 +1,0 @@
-Synthetic fixture: illustrative parser contract, not captured LSP output.
-References:
-src/store.ts (line 5) - getUser(id)
-
-src/app.ts:8:2 - store.getUser(id)

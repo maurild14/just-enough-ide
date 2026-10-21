@@ -1,3 +1,0 @@
-Synthetic fixture: illustrative parser contract, not captured LSP output.
-Definition:
-src/store.ts:3:5 - getUser

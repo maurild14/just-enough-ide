@@ -22,7 +22,7 @@ test('git snapshots survive a JSON round trip with text and binary numstat count
 
 test('the portable contract names every service, includes error previews and declares path errors', () => {
   expect(JeiRpc.id).toBe('jei')
-  expect(Object.keys(JeiRpc.methods)).toEqual(['state', 'listDir', 'preview', 'allFiles', 'open', 'stage', 'unstage', 'discard', 'diff', 'generate', 'commitPlan', 'commit', 'init', 'sync', 'graph', 'commitFiles', 'branches', 'switchBranch', 'createBranch', 'compare', 'checkout', 'revert', 'fetch', 'webUrl', 'openWeb', 'searchStart', 'searchCancel', 'replacePlan', 'replaceApply', 'quickOpenFiles', 'outline', 'findSymbol', 'definitions', 'references', 'incoming', 'outgoing'])
+  expect(Object.keys(JeiRpc.methods)).toEqual(['state', 'listDir', 'preview', 'allFiles', 'open', 'stage', 'unstage', 'discard', 'diff', 'generate', 'commitPlan', 'commit', 'init', 'sync', 'graph', 'commitFiles', 'branches', 'switchBranch', 'createBranch', 'compare', 'checkout', 'revert', 'fetch', 'webUrl', 'openWeb', 'searchStart', 'searchCancel', 'replacePlan', 'replaceApply', 'quickOpenFiles'])
   expect(JeiRpc.methods.preview.output.properties.kind.enum).toContain('error')
   expect(JeiRpc.methods.commit.input.required).toEqual(['message', 'mode', 'approvedSensitive'])
   expect(JeiRpc.methods.commit.input.properties.approvedSensitive).toEqual({ type: 'array', items: { type: 'string' } })
@@ -50,12 +50,12 @@ test('every portable schema compiles with the installed host validator defaults'
   for (const event of Object.values(JeiRpc.events)) expect(() => SchemaRepresentation.fromJsonSchemaDocument(JsonSchema.fromSchemaDraft2020_12(event.schema))).not.toThrow()
 })
 
-test('Search and Symbols declare closed session-scoped review and streaming contracts', () => {
+test('Search declares closed session-scoped review and streaming contracts', () => {
   const methods = JeiRpc.methods as Record<string, any>
-  for (const name of ['searchStart', 'searchCancel', 'replacePlan', 'replaceApply', 'quickOpenFiles', 'outline', 'findSymbol', 'definitions', 'references', 'incoming', 'outgoing']) expect(methods[name]?.input.additionalProperties).toBe(false)
+  for (const name of ['searchStart', 'searchCancel', 'replacePlan', 'replaceApply', 'quickOpenFiles']) expect(methods[name]?.input.additionalProperties).toBe(false)
   expect(methods.searchStart.input.required).toContain('sessionID')
   expect(methods.searchStart.input.properties.query.additionalProperties).toBe(false)
   expect(methods.replaceApply.output.properties.error).toEqual({ type: 'string' })
-  expect(methods.outline.output.required).toContain('file')
+  expect(methods.replacePlan.output.properties.skipped.items.properties.reason.enum).toContain('case-differs')
   expect((JeiRpc.events as any).searchMatches.schema.required).toEqual(['sessionID', 'id', 'matches'])
 })

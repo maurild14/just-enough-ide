@@ -9,13 +9,12 @@ export async function world($: Engine, on: On, projectRoot = ROOT) {
   const clock = mock.clock(on)
   const files: Record<string, string> = { 'src/account.ts': SOURCE, 'src/other.ts': 'export function other() { return load() }\n' }
   const runs: string[][] = [], fills: string[] = [], toasts: string[] = [], checks: unknown[] = [], calls: unknown[] = []
-  const states: Record<string, unknown> = {}, origins: string[] = [], writes: string[] = []
-  let verdict: 'allow' | 'ask' | 'deny' = 'deny', lsp = 'garbled'
-  const settings = { missing: false, repo: true, slow: false, slowQuery: 'load', closed: 0, failWrite: '', realRoot: projectRoot, holdWorkspace: false, holdOutline: false, largeList: false, shown: false }
+  const states: Record<string, unknown> = {}, writes: string[] = []
+  const settings = { missing: false, repo: true, slow: false, slowQuery: 'load', closed: 0, failWrite: '', realRoot: projectRoot, largeList: false, shown: false }
   on('state.set', (_$, e, next) => { states[e.key] = e.value; writes.push(e.key); return next(e) })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
-  on('session.id', () => ({ value: 'search-symbols-test' }))
+  on('session.id', () => ({ value: 'search-test' }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.panes', () => ({ value: settings.shown ? [{ id: 'jei', title: 'JEI', isShown: true, isFocused: false, isPlaced: true }] : [] }))
   on('ui.close', () => { settings.shown = false; return { value: undefined } })
@@ -46,15 +45,19 @@ export async function world($: Engine, on: On, projectRoot = ROOT) {
       let start = -1
       try { start = argv.includes('-F') ? line.toLowerCase().indexOf(query.toLowerCase()) : line.search(new RegExp(query)) } catch {}
       if (start < 0) continue
-      yield { stream: 'stdout' as const, text: JSON.stringify({ type: 'match', data: { path: { text: rel }, lines: { text: line + '\n' }, line_number: i + 1, submatches: [{ start, end: start + (argv.includes('-F') ? query.length : (line.match(new RegExp(query))?.[0].length ?? 0)) }] } }) + '\n' }
+      const submatches: { start: number; end: number }[] = []
+      if (argv.includes('-F')) {
+        for (let at = start; at >= 0; at = line.toLowerCase().indexOf(query.toLowerCase(), at + Math.max(1, query.length))) submatches.push({ start: at, end: at + query.length })
+      } else submatches.push({ start, end: start + (line.match(new RegExp(query))?.[0].length ?? 0) })
+      yield { stream: 'stdout' as const, text: JSON.stringify({ type: 'match', data: { path: { text: rel }, lines: { text: line + '\n' }, line_number: i + 1, submatches } }) + '\n' }
       if (settings.slow && query.includes(settings.slowQuery)) await clock.sleep(1000)
     }
     return { value: { code: 0, signal: null } }
     } finally { settings.closed++ }
   })
-  on('tool.check', async (_$, e) => { checks.push(e.input); const operation = (e.input as { operation?: string }).operation; if (settings.holdWorkspace && operation === 'workspaceSymbol' || settings.holdOutline && operation === 'documentSymbol') await clock.sleep(1000); return { decision: verdict } })
-  on('tool.call', (_$, e, next) => { origins.push(next.origin.plugin); calls.push(e); return { result: {} as never, text: lsp } })
+  on('tool.check', (_$, e) => { checks.push(e.input); return { decision: 'deny' } })
+  on('tool.call', (_$, e) => { calls.push(e); return { result: {} as never, text: '' } })
   on('classic.CwdChanged', () => ({}))
   await $.classic.CwdChanged({ old_cwd: '/work', new_cwd: projectRoot })
-  return { clock, files, runs, fills, toasts, checks, calls, states, origins, writes, settings, permission: (v: typeof verdict, text = 'garbled') => { verdict = v; lsp = text } }
+  return { clock, files, runs, fills, toasts, checks, calls, states, writes, settings }
 }

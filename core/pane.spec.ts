@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { currentView, initialPane, normalizePane, reducePane } from './pane.ts'
+import { currentView, initialPane, normalizePane, reducePane, type PaneState } from './pane.ts'
 
 test('initial and tab switch', () => {
   expect(currentView(initialPane('git'))).toBe('git')
@@ -38,6 +38,7 @@ test('preview keeps its originating tab and back returns there', () => {
     expect(s.tab).toBe(tab)
     expect(s.stack).toEqual([...initialPane(tab).stack, 'files.preview'])
     expect(s.preview).toEqual({ rel: 'a.ts', line: 42 })
+    expect(normalizePane(s)).toBe(s)
     const back = reducePane(s, { type: 'back' })
     expect(currentView(back)).toBe(tab)
     expect(back.preview).toBeUndefined()
@@ -62,7 +63,7 @@ test('recent previews deduplicate and retain the last 50 across navigation', () 
   expect(normalizePane(retained).recent).toEqual([])
 })
 
-test('Search and Symbols subviews retain their origin through preview and Back', () => {
+test('Search subviews retain their origin through preview and Back', () => {
   for (const [tab, type, view] of [['search', 'quickopen', 'quickopen'], ['search', 'replace', 'search.replace']] as const) {
     let state = reducePane(initialPane(tab), { type: 'preview', rel: 'old.ts' })
     state = reducePane(state, { type: 'back' })
@@ -83,7 +84,7 @@ test('reducer does not mutate', () => {
   expect(s.selected).toEqual({})
 })
 
-test('Search replaces Symbols and migrates nested Files Search and preview preserves the original tree selection', () => {
+test('Search migrates nested Files Search and preview preserves the original tree selection', () => {
   let state = reducePane(initialPane('files'), { type: 'select', view: 'files', id: 'src/old.ts' })
   state = reducePane(state, { type: 'search' })
   state = reducePane(state, { type: 'select', view: 'search', id: 'match-25' })
@@ -148,7 +149,9 @@ test('comparison has its own back level and selection', () => {
   expect(state.selected).toEqual({ git: 'graph-selected', 'git.branches': 'branch-feature', 'git.compare': 'compare-file-a.ts' })
 })
 
-test('retained Symbols sessions migrate to Search without requesting symbols', () => {
-  expect(normalizePane({ tab: 'symbols', stack: ['symbols'], selected: {}, recent: [] }).stack).toEqual(['search'])
-  expect(initialPane('symbols').tab).toBe('search')
+test('unknown retained tabs and views reset safely to Files through the generic fallback', () => {
+  for (const [tab, stack] of [['symbols', ['symbols']], ['future', ['future']], ['files', ['files', 'symbols.results']], ['files', ['files', 'symbols', 'search']], ['git', ['search']], ['files', []], ['files', ['files', '__proto__']]] as const) {
+    const state = normalizePane({ tab, stack: [...stack], selected: { files: 'src/a.ts', search: 'match-1' }, recent: ['src/a.ts'] } as PaneState)
+    expect(state).toEqual({ tab: 'files', stack: ['files'], selected: { files: 'src/a.ts', search: 'match-1' }, recent: ['src/a.ts'] })
+  }
 })

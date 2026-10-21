@@ -18,7 +18,7 @@ Claude Code half and needs `.claude-plugin/types/`, which Claude Code lays
 when you load the folder interactively (`claude --plugin-dir .`); CI checks that
 half with `claude plugin validate`.
 
-Requirements: Bun, Git, and (for the Claude Code half) the `claude` CLI.
+Requirements: Bun, Git, `rg` (ripgrep, required for the test suite), and (for the Claude Code half) the `claude` CLI.
 
 ## Rules of the repository
 

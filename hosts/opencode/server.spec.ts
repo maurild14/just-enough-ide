@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, jest, spyOn, test } from 'bun:test'
 import type { Plugin, Rpc } from '@opencode/plugin'
 import type { ActivityLog } from '../../core/activity/log.ts'
 import type { Options } from '../../core/options.ts'
+import type { ReplaceFile, Skipped } from '../../core/search/replace.ts'
 import { join } from 'node:path'
 import { chmodSync, existsSync, readFileSync, symlinkSync } from 'node:fs'
 import { toPosix } from '../../core/shared/paths.ts'
@@ -101,6 +102,37 @@ async function start(directory: string, options: Record<string, unknown> = {}) {
   }
 }
 
+test('exact replacement RPC retains eligible mixed files for sequential selected/all applications', async () => {
+  const repo = await makeRepo({ 'a.ts': 'user User USER\n', 'b.ts': 'User\nuser\n', 'omitted.ts': 'USER\n' })
+  const server = await start(repo.dir)
+  const plan = await server.call('replacePlan', { sessionID: 'a', query: { ...query, text: 'user' }, replacement: 'account' }) as { planId: string; files: ReplaceFile[]; skipped: Skipped[] }
+  expect(plan.files.sort((a, b) => a.rel.localeCompare(b.rel)).map(f => [f.rel, f.count])).toEqual([['a.ts', 1], ['b.ts', 1]])
+  expect(plan.skipped.sort((a, b) => a.rel.localeCompare(b.rel))).toEqual(['a.ts', 'b.ts', 'omitted.ts'].map(rel => ({ rel, reason: 'case-differs' })))
+  expect(await server.call('replaceApply', { sessionID: 'a', planId: plan.planId, rels: ['a.ts'] })).toEqual({ written: ['a.ts'], skipped: [] })
+  expect(await server.call('replaceApply', { sessionID: 'a', planId: plan.planId, rels: ['b.ts'] })).toEqual({ written: ['b.ts'], skipped: [] })
+  expect(readFileSync(join(repo.dir, 'a.ts'), 'utf8')).toBe('account User USER\n')
+  expect(readFileSync(join(repo.dir, 'b.ts'), 'utf8')).toBe('User\naccount\n')
+  expect(readFileSync(join(repo.dir, 'omitted.ts'), 'utf8')).toBe('USER\n')
+})
+
+test('public Search and replacement RPC normalize removed flags while validating their types', async () => {
+  const repo = await makeRepo({ 'a.ts': 'user.name USER.NAME userXname superuser.name\n' }), server = await start(repo.dir)
+  const request = { ...query, text: 'user.name', caseSensitive: true, regex: true, wholeWord: true }
+  await server.call('searchStart', { sessionID: 'a', id: 'fixed', query: request })
+  const deadline = Date.now() + 5000
+  while (!server.emitted.some(e => e.name === 'searchDone') && Date.now() < deadline) await Bun.sleep(10)
+  expect(server.emitted.some(e => e.name === 'searchDone')).toBe(true)
+  const batches = server.emitted.filter(e => e.name === 'searchMatches').flatMap(e => (e.data as { matches: { ranges: number[][] }[] }).matches)
+  expect(batches.flatMap(m => m.ranges)).toEqual([[0, 9], [10, 19], [35, 44]])
+  expect(await server.call('replacePlan', { sessionID: 'a', query: request, replacement: 'account' })).toMatchObject({
+    files: [{ rel: 'a.ts', after: 'account USER.NAME userXname superaccount\n', count: 2 }],
+    skipped: [{ rel: 'a.ts', reason: 'case-differs' }],
+  })
+  for (const name of ['caseSensitive', 'regex', 'wholeWord']) {
+    await expect(server.call('replacePlan', { sessionID: 'a', query: { ...request, [name]: 'yes' }, replacement: 'account' })).rejects.toThrow('Invalid RPC input')
+  }
+})
+
 test('replacement ownership and the complete subset are checked before writing; changed files are skipped', async () => {
   const repo = await makeRepo({ 'a.ts': 'export const load = 1\n', 'b.ts': 'load()\n' })
   const server = await start(repo.dir)
@@ -116,19 +148,11 @@ test('replacement ownership and the complete subset are checked before writing; 
   expect(readFileSync(join(repo.dir, 'b.ts'), 'utf8')).toBe('changed\n')
 })
 
-test('new RPC boundaries reject extra nested fields, invalid names and outside paths', async () => {
+test('Search RPC rejects extra nested fields', async () => {
   const repo = await makeRepo({ 'a.ts': 'export function load() {}\n' }); const server = await start(repo.dir)
   const call = (name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>
   await expect(call('searchStart', { sessionID: 'a', id: '1', query: { ...query, surprise: true } })).rejects.toThrow('Invalid RPC input')
-  await expect(call('references', { name: 'load\nother' })).rejects.toThrow('Invalid RPC input')
-  await expect(call('findSymbol', { name: 'x'.repeat(201) })).rejects.toThrow('Invalid RPC input')
-  await expect(call('outgoing', { rel: 'a.ts', line: 0 })).rejects.toThrow('Invalid RPC input')
-  expect(await call('outline', { rel: '../x' })).toMatchObject({ type: 'outside_root' })
-  await expect(call('outline', { rel: 'a.ts', extra: true })).rejects.toThrow('Invalid RPC input')
-  expect(await call('outline', { rel: '' })).toEqual({ nodes: null, file: false })
-  expect(await call('outline', { rel: 'a.ts' })).toMatchObject({ file: true, nodes: [{ name: 'load' }] })
-  repo.write('notes.txt', 'plain text'); expect(await call('outline', { rel: 'notes.txt' })).toEqual({ nodes: null, file: true })
-  repo.write('bad.ts', '\0binary'); await expect(call('outline', { rel: 'bad.ts' })).rejects.toThrow("Can't read this file.")
+
 })
 
 test('search batches stream before completion, cancel per session and stop on cleanup', async () => {
