@@ -127,7 +127,17 @@ The installed OpenTUI 0.5.17 input strips CR/LF and defaults to 1,000 characters
 
 ## Both hosts
 
-Every view renders at 40 columns; git always runs with `--no-optional-locks` and `GIT_OPTIONAL_LOCKS=0`; no shell strings; agent labels use the host's name (Ask Claude, Ask OpenCode). Behavior differences are limited to those listed above and are recorded in `PRD.md` §13.
+Every view renders at 40 columns; git always runs with `--no-optional-locks` and `GIT_OPTIONAL_LOCKS=0`; no user-built shell source (the fixed PowerShell filesystem exception is ADR 0028); agent labels use the host's name (Ask Claude, Ask OpenCode). Behavior differences are limited to those listed above and are recorded in `PRD.md` §13.
+
+## Files mutations
+
+Both hosts use pure `core/fsops.ts` for literal input validation, fresh uncached parent-entry and canonical metadata checks, captured-root/source/parent evidence, exact destinations and postconditions. Metadata must be an absolute native canonical path; a relative stat answer never authorizes an effect. Direct source links/other entries, root aliases, outside ancestors, unknown metadata, existing targets of any kind and missing parents refuse. A Files-only busy guard spans editing, effects and immediate refresh. This does not lock unrelated agents/editors or remove the external check/use window.
+
+Installed Claude declarations verify `fs.write(path,text): Promise<void>` without exclusive-create flags and with implicit parent creation, `fs.list` preserving links as other, resolved `fs.stat`, and `ProcessRunInit.env`. New files use exactly `$.fs.write(path,'')` after checks. Other effects use checked argv. Windows fixes the executable as powershell.exe and selects constant program text, transporting paths only through JEI_FS_SOURCE/JEI_FS_DESTINATION environment variables. Move-Item/Remove-Item use LiteralPath; actual New-Item has no LiteralPath, so verified literal directory creation uses Path. Errors terminate and exit codes are checked. POSIX uses nonrecursive mkdir, mv -n and rm with -- and absolute operands; postconditions catch exit-zero skipped moves. ADR 0028 records the narrow exception and tested literal-creation evidence.
+
+OpenCode adds closed fsPrepare/fsApply methods. Preparation stores evidence server-side behind a random token bound to session/root; one latest plan per scope and a 32-plan cap bound pending work. Apply rejects extra/malformed data, stale/replayed/restarted tokens, unconfirmed delete, canceled work and changed roots/evidence before effects. Node uses exclusive wx writeFile, nonrecursive mkdir, checked rename and rm with force:false. Effects and state refresh stay on the server; the TUI uses existing native inline inputs/clickable controls and no filesystem API. Both adapters invalidate listings, previews and all-files after every attempted effect, distinguish completed execution from refresh failure, and never retry effects automatically.
+
+Five-row editor/confirmation trees and actual OpenTUI frames are tested at 24/40/80/120 columns through resize, with enlargement/Cancel at smaller sizes. SDK prompt/confirm mocks are not layout evidence. Windows junction tests preserve outside children during recursive deletion; file-symlink EPERM and unexecuted other operating systems remain explicit QA limits. Path APIs cannot guarantee atomic no-overwrite against unrelated concurrent writers or prove inode identity through a race.
 
 ## OpenCode Search and replacement
 

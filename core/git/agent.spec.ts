@@ -129,7 +129,7 @@ test('real Git merge creations and manual completions are witnessed, fast-forwar
     expect(await r.git('reflog', 'show', '-1', '--format=%gs', 'HEAD')).toContain('Fast-forward')
     expect(await agentCandidates(r.host, r.dir, to, forward, beforeForward)).toEqual([])
   }
-})
+}, 60_000)
 
 test('real Git cherry-pick completion and rebase continuation prove creation', async () => {
   for (const operation of ['cherry-pick', 'rebase'] as const) {

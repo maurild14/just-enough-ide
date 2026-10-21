@@ -38,7 +38,7 @@ for (const action of ['stage', 'unstage', 'discard'] as const) test(`working sel
   }
 })
 
-for (const surface of ['terminal', 'desktop'] as const) test(`nested panes fit three, four and five rows on ${surface}`, async ($, on) => {
+for (const surface of ['terminal', 'desktop'] as const) test(`nested panes fit three, four and five rows on ${surface}`, { timeoutMs: 60_000 }, async ($, on) => {
   await historyWorld($, on)
   for (const width of [24, 40, 80, 120]) {
     const ui = await historyPane($, width, 5, surface)

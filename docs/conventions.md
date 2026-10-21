@@ -1,6 +1,6 @@
 # Conventions
 
-> Purpose: the code, copy and commit conventions every change follows · Status: current · Last reviewed: 2026-10-20
+> Purpose: the code, copy and commit conventions every change follows · Status: current · Last reviewed: 2026-10-21
 
 The rules that bind everything are summarized in `AGENTS.md`. Behavior is in `PRD.md`; visuals are in `docs/design.md`.
 
@@ -31,7 +31,7 @@ Status: current.
 
 ## Processes
 
-- **argv only.** Every process is an argv array. Never `sh -c`, `cmd /c` or string concatenation into a shell. Where an OS tool is unavoidable, each OS gets its own argv, both tested.
+- **argv only.** Every process is an argv array. Never `sh -c`, `cmd /c` or string concatenation into a shell. ADR 0028 permits fixed PowerShell filesystem program constants with all path operands carried only as environment data; this does not authorize user-built program text. Where an OS tool is unavoidable, each OS gets its own argv, both tested.
 - **Git invocation.** Every git command is `['git', '--no-optional-locks', '-C', root, ...args]` run with env `GIT_OPTIONAL_LOCKS=0`, `LC_ALL=C`, `GIT_LITERAL_PATHSPECS=1` (paths after `--` are literal, never globs), `GIT_MERGE_AUTOEDIT=no` and `GIT_TERMINAL_PROMPT=0` (no editor or credential prompt), so JEI never contends with the agent's own git and can match git's English stderr (for example divergence detection) in any locale. Callers may pass extra env but must not override these. All git calls go through the one runner in `core/git/run.ts`. Read with porcelain or plumbing formats only (`status --porcelain=v2 -z`, `log --format=...`, `diff --numstat -z`).
 - Paths are handled by `core/shared/paths.ts` (posix-style, case-insensitive on Windows). Every path JEI writes or deletes must resolve inside the project root.
 

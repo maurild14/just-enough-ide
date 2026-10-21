@@ -43,6 +43,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 | Search retention budgets, complete replacement review or shared replacement Ask text | `docs/decisions/0023-bounded-search-and-complete-replacement-review.md` |
 | Live filename search, content Search tab, control spacing or retained tree navigation | `docs/decisions/0026-filename-and-content-search.md` |
 | Symbols removal, exact Replace, unknown retained values or minimum history-editor height | `docs/decisions/0027-remove-symbols-and-exact-replacement.md` |
+| Files mutations, canonical evidence, native confirmations or fixed PowerShell programs | `docs/decisions/0028-safe-files-operations.md` |
 | Commit mode, input blur or repeated focus/arrow navigation | `docs/decisions/0024-focus-and-arrow-navigation.md` |
 | Checking what is built and known debt | `docs/quality.md` |
 | Preparing a release (manual QA, release pipeline) | `docs/qa.md`, `CONTRIBUTING.md` |
@@ -53,7 +54,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 ## Hard rules
 
 - `core/` is pure: no imports from `claude-code`, `@opencode/*`, `solid-js`, `@opentui/*`, `node:*` or `bun:*`, only ECMAScript built-ins. Specs (`*.spec.ts`) may use `bun:test` and `node:*`.
-- Every process is an argv array, never a shell string (`sh -c`, `cmd /c`). Every git call is `['git', '--no-optional-locks', '-C', root, ...]` with env `GIT_OPTIONAL_LOCKS=0`.
+- Every process is an argv array, never user-built shell source (`sh -c`, `cmd /c`). ADR 0028 permits fixed PowerShell filesystem programs with path operands only in environment data. Every git call is `['git', '--no-optional-locks', '-C', root, ...]` with env `GIT_OPTIONAL_LOCKS=0`.
 - Test naming: `*.spec.ts(x)` run under `bun test` (`core/`, `hosts/opencode/`); `*.test.ts(x)` run under `claude plugin test` (`hosts/claude-code/` only). Never mix them.
 - Relative imports keep their extension (`./status.ts`, `./pane.tsx`). Zero runtime dependencies.
 - A feature lands on both hosts or on neither. Keys are one lowercase letter or digit (plus `enter`, `esc`, arrows), defined only in `core/keys.ts`.

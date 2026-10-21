@@ -36,6 +36,7 @@ Every file starts with a `> Purpose … · Status: current|draft · Last reviewe
 | `docs/decisions/0025-search-inside-files.md` | Superseded by ADR 0026: earlier Search-inside-Files placement. |
 | `docs/decisions/0026-filename-and-content-search.md` | Live filename search in Files, content Search in tab 2, spacing and Symbols retirement. |
 | `docs/decisions/0027-remove-symbols-and-exact-replacement.md` | Complete Symbols removal, ordinary unknown-value defaults, exact literal Replace and corrected minimum history-editor heights. |
+| `docs/decisions/0028-safe-files-operations.md` | Literal Files mutations, canonical evidence, fixed PowerShell programs, server-owned plans and native confirmations. |
 | `docs/plans/` | Implementation plans, one per body of work (`YYYY-MM-DD-slug.md`). Checkboxes in a plan are not a status tracker; `git log` is. |
 
 ## Keeping docs current

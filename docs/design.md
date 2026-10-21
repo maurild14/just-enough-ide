@@ -192,6 +192,14 @@ States are one `muted` line in the body, a short sentence ending in a period, wi
 | Git | Left running | `Commit is still running in the background; check the terminal.` (toast; the message is kept) |
 | Diff | Capped | `Diff truncated at 5,000 lines.` (`warning`) |
 
+### Files operation states
+
+Files n/r/m/d use inline native controls (ADR 0028). Editor titles are `New file or folder`, `Rename` and `Move to project path`; their actions are `Create`, `Rename` and `Move`, with a separate visible `Cancel`. Rename prefills the basename, Move the full project-relative path. One trailing slash in New requests a folder. Inputs own letters/digits and keep their values through resize. Confirmation replaces editing: `Delete file?` or `Delete recursively?`, a fitted source path, and `Delete` / `Cancel`. OpenCode Enter confirms the visible action; Claude uses its native Button focus/activation. No mutation precedes delete confirmation.
+
+At 24 columns Claude uses a compact n/r/m/d row ahead of the results and retains the old hint controls. Root-filter Back shares that row when necessary, leaving one result at five total rows. Wider panes use the ordinary hint budget. Five-row editors/confirmations retain three body rows for title, input/path and answers. Smaller operation views show `Enlarge the pane.` and Cancel; the undisplayed action cannot submit. Native tree/renderer size measurements are separate from physical host paint.
+
+While executing, `Working…` replaces the action and the Files busy guard remains held through refresh. Preparation failures, changed metadata and existing targets show errors without an effect. Failed effects still invalidate caches and attempt refresh. A failure after successful execution starts `Operation completed. Refresh failed: …`; it never automatically repeats the action. Success clears the filename query, reveals parents and selects the target or surviving parent/row.
+
 ## 9. Motion: activity shimmer
 
 - When a row is touched, the name's foreground starts in the activity color and returns to `fg` in **8 steps of 250 ms (2 s in total)**. In truecolor, each step mixes linearly from the token's color to `fg` in the theme layer. With 16 colors there are **3 steps**: bold activity color (0–700 ms), activity color (700–1400 ms), dim activity color (1400–2000 ms).

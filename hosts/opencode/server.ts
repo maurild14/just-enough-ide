@@ -1,4 +1,6 @@
 import { Plugin } from '@opencode/plugin'
+import { lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { prepareFsOp, planFsOp, verifyFsOp, type FsOp, type FsPreparation } from '../../core/fsops.ts'
 import { classifyTool } from '../../core/activity/classify.ts'
 import { ActivityLog, allows } from '../../core/activity/log.ts'
 import { allFiles, listDir, loadPreview, openFile } from '../../core/files/service.ts'
@@ -84,6 +86,8 @@ export default Plugin.define({
     type RunningSearch = { id: string; sessionID: string; stream: ReturnType<typeof search>; timer?: ReturnType<typeof setTimeout>; batch: Match[]; pending: Promise<void> }
     const searches = new Map<string, RunningSearch>()
     const plans = new Map<string, { id: string; files: ReplaceFile[]; busy: boolean }>()
+    const filesPlans = new Map<string, { id: string; prepared: FsPreparation }>()
+    let filesBusy = false
     const scope = (sessionID: string, root = ctx.location.directory) => `${sessionID}\0${root}`
     const cancelSearch = (key: string) => { const active = searches.get(key); if (active) { searches.delete(key); clearTimeout(active.timer); active.batch = []; active.stream.cancel() } }
     const requestHost = (signal: AbortSignal): Host => {
@@ -158,6 +162,65 @@ export default Plugin.define({
         return loadPreview(host, root, rel)
       },
       async allFiles() { return { files: await allFiles(host, ctx.location.directory) } },
+      async fsPrepare(input, context) {
+        if (filesBusy) throw new Error('A Files operation is already running.')
+        const sessionID = text(input, 'sessionID'), kind = text(input, 'kind')
+        if (!sessionID || !['new', 'rename', 'move', 'delete'].includes(kind)) throw new Error('Invalid RPC input')
+        const root = ctx.location.directory
+        const prepared = await prepareFsOp(host, root, { kind: kind as FsOp, source: text(input, 'source') })
+        if (context.signal.aborted || stopped || root !== ctx.location.directory) throw new Error('The Files operation was canceled or the project changed.')
+        const key = scope(sessionID, root), id = crypto.randomUUID()
+        filesPlans.delete(key)
+        if (filesPlans.size >= 32) filesPlans.delete(filesPlans.keys().next().value!)
+        filesPlans.set(key, { id, prepared })
+        return { planId: id, root, kind: prepared.kind, source: prepared.source, sourceKind: prepared.sourceKind, parent: prepared.parent }
+      },
+      async fsApply(input, context) {
+        const sessionID = text(input, 'sessionID'), id = text(input, 'planId'), confirmed = flag(input, 'confirmed')
+        const rawValue = record(input).value
+        if (rawValue !== undefined && typeof rawValue !== 'string') throw new Error('Invalid RPC input')
+        if (filesBusy) throw new Error('A Files operation is already running.')
+        const root = ctx.location.directory, key = scope(sessionID, root), pending = filesPlans.get(key)
+        if (!pending || pending.id !== id) throw new Error('Invalid or expired Files operation.')
+        if (pending.prepared.kind === 'delete' && !confirmed) throw new Error('Delete requires visible confirmation.')
+        filesBusy = true
+        let attempted = false, error: string | undefined, refreshError: string | undefined
+        let rel = pending.prepared.source
+        const active = () => { if (context.signal.aborted || stopped || controller.signal.aborted || root !== ctx.location.directory) throw new Error('The Files operation was canceled or the project changed.') }
+        try {
+          active()
+          const plan = await planFsOp(host, pending.prepared, rawValue as string | undefined)
+          const fresh = await planFsOp(host, pending.prepared, rawValue as string | undefined)
+          if (JSON.stringify(plan) !== JSON.stringify(fresh)) throw new Error('The destination parent has changed. Start again.')
+          const destination = plan.destination === null ? null : joinPath(root, plan.destination)
+          if (destination !== null) {
+            // Only ENOENT is absence; lstat also sees dangling links and alias collisions.
+            try { await lstat(destination); throw new Error('That destination already exists.') }
+            catch (failure) { if ((failure as { code?: string }).code !== 'ENOENT') throw failure }
+          }
+          active()
+          filesPlans.delete(key)
+          attempted = true
+          rel = plan.destination ?? plan.parent
+          // shortcut: path APIs leave an external-writer check/use window; directory-handle effects would be needed to remove it.
+          if (plan.kind === 'new') {
+            if (plan.targetKind === 'dir') await mkdir(destination!)
+            else await writeFile(destination!, '', { flag: 'wx', encoding: 'utf8' })
+          } else if (plan.kind === 'delete') await rm(joinPath(root, plan.source), { recursive: plan.targetKind === 'dir', force: false })
+          else await rename(joinPath(root, plan.source), destination!)
+          await verifyFsOp(host, plan)
+        } catch (failure) {
+          if (!attempted) throw failure
+          error = failure instanceof Error ? failure.message.split(/\r?\n/)[0]! : 'Unable to complete Files operation.'
+        } finally {
+          if (attempted) {
+            try { await snapshot(host, root) } catch (failure) { refreshError = failure instanceof Error ? failure.message.split(/\r?\n/)[0]! : 'Unable to refresh project state.' }
+            await emit('changed', {})
+          }
+          filesBusy = false
+        }
+        return { ok: !error, attempted, rel, ...(error ? { error } : {}), ...(refreshError ? { refreshError } : {}) }
+      },
       async open(input, context) {
         const root = ctx.location.directory
         const rel = safeRel(root, text(input, 'rel'))
@@ -337,7 +400,7 @@ export default Plugin.define({
       },
       async quickOpenFiles(_input, context) { return { files: await quickOpenFiles(requestHost(context.signal), ctx.location.directory) } },
     }
-    const mutating = new Set(['stage', 'unstage', 'discard', 'commit', 'init', 'sync', 'switchBranch', 'createBranch', 'checkout', 'revert', 'fetch', 'replaceApply'])
+    const mutating = new Set(['stage', 'unstage', 'discard', 'commit', 'init', 'sync', 'switchBranch', 'createBranch', 'checkout', 'revert', 'fetch', 'replaceApply', 'fsApply'])
     const checked = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [name, async (input: unknown, context: Parameters<typeof handler>[1]) => {
       const schema = JeiRpc.methods[name as keyof typeof JeiRpc.methods].input
       closed(input, Object.keys(schema.properties), schema.required)
@@ -364,6 +427,7 @@ export default Plugin.define({
       const pendingSearches = [...searches.values()].map(search => search.stream.done)
       for (const key of searches.keys()) cancelSearch(key)
       plans.clear()
+      filesPlans.clear()
       clearTimeout(timer)
       controller.abort()
       await Promise.allSettled(pendingSearches)

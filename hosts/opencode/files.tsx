@@ -3,6 +3,7 @@ import type { Plugin } from '@opencode/plugin/tui'
 import { SyntaxStyle, parseColor, RGBA, type CodeRenderable } from '@opentui/core'
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from 'solid-js'
 import type { ActivityLog } from '../../core/activity/log.ts'
+import type { FsOp } from '../../core/fsops.ts'
 import { fitTable } from '../../core/files/csv.ts'
 import { iconFor } from '../../core/files/icons.ts'
 import { mentionText } from '../../core/files/mention.ts'
@@ -21,6 +22,7 @@ import type { JeiRpc } from './rpc.ts'
 
 type Preview = Awaited<ReturnType<typeof loadPreview>>
 type Listing = { entries: DirEntry[]; ignored: string[]; failed?: boolean }
+type FilesEdit = { planId: string; root: string; kind: FsOp; source: string; sourceKind: 'file' | 'dir' | null; parent: string; value: string; working: boolean }
 const STATUS: Record<FileStatus, string> = { modified: 'M', added: 'A', deleted: 'D', renamed: 'R', untracked: 'U', conflicted: 'C', ignored: '' }
 
 function record(value: unknown): Record<string, unknown> {
@@ -64,8 +66,9 @@ export function Files(props: {
   ctx: Plugin.Context; api: RpcClient<typeof JeiRpc>; sessionID: string; cwd: string; options: Options; git: Record<string, unknown>
   state: PaneState; dispatch: (action: PaneAction) => void; activity: ActivityLog; now: number; revision: number
   width: number; height: number; header: boolean; focused: boolean; bind: (run: (action: string) => void, editing: () => boolean) => void
+  refresh: () => Promise<void>
 }) {
-  const [saved, save] = props.ctx.storage.memory<{ expanded: string[]; hidden: boolean; query: string; origin?: string; top: number; originTop: number }>(`jei.files.${props.sessionID}\0${props.cwd}`, { initial: { expanded: [], hidden: false, query: '', top: 0, originTop: 0 } })
+  const [saved, save] = props.ctx.storage.memory<{ expanded: string[]; hidden: boolean; query: string; origin?: string; top: number; originTop: number; operation?: FilesEdit; operationBusy?: boolean }>(`jei.files.${props.sessionID}\0${props.cwd}`, { initial: { expanded: [], hidden: false, query: '', top: 0, originTop: 0 } })
   const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set(saved.expanded))
   const [hidden, setHidden] = createSignal(saved.hidden)
   const [filtering, setFiltering] = createSignal(saved.query !== '')
@@ -77,6 +80,9 @@ export function Files(props: {
   const [files, setFiles] = createSignal<string[]>([])
   const [filesError, setFilesError] = createSignal(false)
   const [loaded, setLoaded] = createSignal(false)
+  const [operation, setOperation] = createSignal<FilesEdit | undefined>(saved.operation)
+  const [operationRevision, setOperationRevision] = createSignal(0)
+  let operationController: AbortController | undefined
   const [preview, setPreview] = createSignal<Preview>()
   const [previewRel, setPreviewRel] = createSignal('')
   const [top, setTop] = createSignal(0)
@@ -89,13 +95,13 @@ export function Files(props: {
   const selected = () => props.state.selected.files
   const isPreview = () => currentView(props.state) === 'files.preview'
   const relOf = (path: string) => insideRel(cwd(), path)
-  const searchRows = () => isPreview() ? 0 : props.height >= 6 ? 3 : Math.min(1, Math.max(0, props.height - 1))
+  const searchRows = () => isPreview() || operation() ? 0 : props.height >= 6 ? 3 : Math.min(1, Math.max(0, props.height - 1))
   const inner = () => Math.max(0, props.width - 2)
   const room = () => Math.max(0, props.height - searchRows() - (props.header ? 1 : 0))
   const theme = () => props.ctx.theme
   const syntax = createMemo(() => SyntaxStyle.fromStyles(Object.fromEntries(Object.entries(theme().syntax ?? {}).map(([name, fg]) => [name, { fg: fg as RGBA }]))))
   createEffect(() => { const style = syntax(); onCleanup(() => style.destroy()) })
-  onCleanup(() => { stopped = true; save(d => { d.expanded = [...expanded()]; d.hidden = hidden(); d.query = query(); d.origin = origin; d.top = treeTop; d.originTop = originTop }); props.bind(() => {}, () => false) })
+  onCleanup(() => { stopped = true; operationController?.abort(); save(d => { d.expanded = [...expanded()]; d.hidden = hidden(); d.query = query(); d.origin = origin; d.top = treeTop; d.originTop = originTop; d.operation = operation()?.working ? undefined : operation() }); props.bind(() => {}, () => false) })
 
   createEffect(() => {
     const rel = selected()
@@ -108,7 +114,7 @@ export function Files(props: {
       if (next.size !== expanded().size) setExpanded(next)
     })
   })
-  createEffect(() => { cwd(); props.revision; cache.clear() })
+  createEffect(() => { cwd(); props.revision; operationRevision(); cache.clear() })
   const loadTree = latest(async (dirs: readonly string[]) => new Map(await Promise.all(dirs.map(async (rel) => {
     let promise = cache.get(rel)
     if (!promise) {
@@ -118,13 +124,13 @@ export function Files(props: {
     return [rel, await promise] as const
   }))))
   createEffect(() => {
-    cwd(); props.revision
+    cwd(); props.revision; operationRevision()
     const dirs = ['', ...expanded()]
     void loadTree(dirs).then((r) => { if (!stopped && !r.stale) { setListings(r.value); setLoaded(true) } })
   })
   const loadFiles = latest(async () => strings(record(await props.api.allFiles({})).files).map(relOf).filter((p): p is string => p !== null && p !== '' && !p.split('/').includes('.git')))
   createEffect(() => {
-    cwd(); props.revision
+    cwd(); props.revision; operationRevision()
     if (!filtering() && !editing()) return
     setFilesError(false)
     void loadFiles().then((r) => { if (!stopped && !r.stale) setFiles(r.value) }).catch(() => {
@@ -142,7 +148,7 @@ export function Files(props: {
     if (preview()?.text !== undefined && (previewTarget?.rel !== rel || previewTarget.line !== line)) { previewTarget = { rel, line }; setTop(markedLine()! - 1) }
   })
   createEffect(() => {
-    cwd(); props.revision
+    cwd(); props.revision; operationRevision()
     const rel = previewPath()
     setPreview(undefined)
     void load(rel).then((r) => { if (!stopped && !r.stale) setPreview(r.value) }).catch(() => { if (!stopped) setPreview({ kind: 'error' }) })
@@ -215,7 +221,54 @@ export function Files(props: {
     if (!value) treeTop = originTop
     else { const first = rows()[0]; if (first && !('more' in first)) props.dispatch({ type: 'select', view: 'files', id: first.rel }) }
   }
+  function cancelOperation() {
+    operationController?.abort()
+    if (!operation()?.working) save(d => { d.operationBusy = false })
+    setOperation(undefined); save(d => { d.operation = undefined })
+  }
+  async function beginOperation(kind: FsOp) {
+    if (saved.operationBusy) { props.ctx.ui.toast.show({ message: 'A Files operation is already running.', variant: 'warning' }); return }
+    save(d => { d.operationBusy = true })
+    const root = cwd(), source = selected() ?? ''
+    operationController = new AbortController()
+    try {
+      const data = record(await props.api.fsPrepare({ sessionID: props.sessionID, kind, source }, { signal: operationController.signal }))
+      if (stopped || operationController.signal.aborted || cwd() !== root) return
+      if (data.root !== root || data.kind !== kind || data.source !== source || typeof data.planId !== 'string' || typeof data.parent !== 'string' || !['file', 'dir', null].includes(data.sourceKind as string | null)) throw new Error('Invalid Files operation reply.')
+      const next: FilesEdit = { planId: data.planId, root, kind, source, sourceKind: data.sourceKind as FilesEdit['sourceKind'], parent: data.parent, value: kind === 'rename' ? source.slice(source.lastIndexOf('/') + 1) : kind === 'move' ? source : '', working: false }
+      setEditing(false); setOperation(next); save(d => { d.operation = next })
+    } finally { if (!operation()) save(d => { d.operationBusy = false }) }
+  }
+  async function applyOperation() {
+    const held = operation()
+    if (!held || held.working || stopped || cwd() !== held.root) return
+    setOperation({ ...held, working: true })
+    let attempted = false, completed = false, failure = ''
+    try {
+      if (!operationController || operationController.signal.aborted) operationController = new AbortController()
+      attempted = true // A rejected remote reply may follow a completed effect.
+      const data = record(await props.api.fsApply({ sessionID: props.sessionID, planId: held.planId, ...(held.kind === 'delete' ? {} : { value: held.value }), confirmed: held.kind === 'delete' }, { signal: operationController?.signal }))
+      if (typeof data.ok !== 'boolean' || typeof data.attempted !== 'boolean' || typeof data.rel !== 'string') throw new Error('Invalid Files operation reply.')
+      attempted = data.attempted; completed = data.ok
+      if (typeof data.error === 'string') failure = data.error
+      if (typeof data.refreshError === 'string') failure = `${completed ? 'Operation completed.' : failure} Refresh failed: ${data.refreshError}`
+      if (!stopped && operation()?.planId === held.planId && cwd() === held.root && completed) {
+        setQuery(''); setFiltering(false); setEditing(false); origin = undefined
+        setExpanded(reveal(new Set([...expanded()].filter(rel => rel !== held.source && !rel.startsWith(held.source + '/'))), data.rel))
+        props.dispatch({ type: 'select', view: 'files', id: data.rel })
+      }
+    } catch (error) { failure = error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message.split(/\r?\n/)[0]! : 'Unable to complete Files operation.' }
+    finally {
+      if (attempted) {
+        cache.clear(); setPreview(undefined); setFiles([]); setOperationRevision(n => n + 1)
+        try { await props.refresh() } catch { failure = `${failure || (completed ? 'Operation completed.' : 'Operation attempted.')} Refresh failed; reopen the pane.` }
+      }
+      setOperation(undefined); save(d => { d.operation = undefined; d.operationBusy = false })
+      if (failure) props.ctx.ui.toast.show({ message: failure, variant: 'error' })
+    }
+  }
   async function run(action: string) {
+    if (operation()) { if (action === 'back') cancelOperation(); else if (action === 'activate' && props.height >= 3) await applyOperation(); return }
     const path = previewPath() || ''
     const rel = isPreview() ? path && !path.includes('\0') && nativeRel('', path, 'linux') === path ? path : null : relOf(selected() || '')
     switch (action) {
@@ -245,6 +298,7 @@ export function Files(props: {
         return
       }
       case 'filter': begin(); return
+      case 'new': case 'rename': case 'move': case 'delete': await beginOperation(action); return
       case 'toggle-hidden': setHidden(!hidden()); return
       case 'scroll-up': case 'scroll-down': {
         const by = action === 'scroll-up' ? -1 : 1
@@ -267,7 +321,7 @@ export function Files(props: {
   const invoke = (action: string) => {
     void run(action).catch(() => props.ctx.ui.toast.show({ message: 'Unable to complete Files action.', variant: 'error' }))
   }
-  props.bind(invoke, () => !isPreview() && editing())
+  props.bind(invoke, () => !!operation() || !isPreview() && editing())
   const table = createMemo(() => fitTable(preview()?.rows ?? [], inner()))
   const notice = () => {
     switch (preview()?.kind) {
@@ -304,6 +358,16 @@ export function Files(props: {
     return RGBA.fromValues(fg.r + (accent.r - fg.r) * weight, fg.g + (accent.g - fg.g) * weight, fg.b + (accent.b - fg.b) * weight)
   }
   return <box flexDirection="column" flexGrow={1} minHeight={0}>
+    <Show when={operation()}>
+      <Show when={props.height >= 3} fallback={<box flexDirection="column"><Show when={props.height >= 2}><text height={1} fg={theme().text.muted}>Enlarge the pane.</text></Show><text id="files-operation-cancel" height={1} fg={theme().text.action.primary.base} onMouseDown={cancelOperation}>{props.height < 2 ? 'Enlarge · Cancel' : 'Cancel'}</text></box>}>
+        <text id="files-operation-title" height={1} flexShrink={0} fg={operation()?.kind === 'delete' ? theme().text.feedback.warning.base : theme().text.base}>{fitEnd(operation()?.kind === 'delete' ? operation()?.sourceKind === 'dir' ? 'Delete recursively?' : 'Delete file?' : operation()?.kind === 'new' ? 'New file or folder' : operation()?.kind === 'rename' ? 'Rename' : 'Move to project path', props.width)}</text>
+        <Show when={operation()?.kind !== 'delete'} fallback={<text height={1} flexShrink={0}>{fitPath(operation()?.source ?? '', props.width)}</text>}>
+          <input id="files-operation-input" width={props.width} focused={props.focused} value={operation()?.value ?? ''} onInput={value => setOperation(held => held ? { ...held, value } : held)} onSubmit={() => invoke('activate')} />
+        </Show>
+        <box height={1} flexShrink={0} flexDirection="row"><Show when={!operation()?.working} fallback={<text fg={theme().text.muted}>Working… · </text>}><text id={operation()?.kind === 'delete' ? 'files-operation-confirm' : 'files-operation-submit'} fg={theme().text.action.primary.base} onMouseDown={() => { void applyOperation() }}>{operation()?.kind === 'delete' ? 'Delete' : operation()?.kind === 'new' ? 'Create' : operation()?.kind === 'rename' ? 'Rename' : 'Move'}</text><text fg={theme().text.muted}> · </text></Show><text id="files-operation-cancel" fg={theme().text.action.primary.base} onMouseDown={cancelOperation}>Cancel</text></box>
+      </Show>
+    </Show>
+    <Show when={!operation()}>
     <Show when={!isPreview() && searchRows() > 0}>
       <box id="files-search-field" height={searchRows()} flexShrink={0} flexDirection="row" border={searchRows() === 3 ? true : ['left', 'right']} borderColor={theme().text.action.primary.base}>
         <input id="files-query" width={Math.max(1, props.width - 2 - (editing() ? 16 : 7))} focused={props.focused && editing()} value={query()} placeholder="Find files by name" onInput={change} onSubmit={() => invoke('activate')} onMouseDown={begin} on:focused={begin} on:blurred={() => setEditing(false)} />
@@ -322,5 +386,6 @@ export function Files(props: {
         </Show>}><box flexDirection="row" height={room()} overflow="hidden"><text width={2} fg={theme().text.action.primary.base}>{source().slice(top(), top() + room()).map((_, i) => top() + i + 1 === markedLine() ? '> ' : '  ').join('\n')}</text><code id="files-target-code" width={Math.max(0, inner() - 1)} height={room()} content={source().slice(top(), top() + room()).join('\n')} filetype={preview()?.language} syntaxStyle={syntax()} wrapMode="none" fg={theme().text.base} conceal={false} /></box></Show>
       </Show>
     </box>
+    </Show>
   </box>
 }

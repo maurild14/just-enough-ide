@@ -1,5 +1,7 @@
 import type { EngineInterface, RenderElement, RenderInput } from 'claude-code'
 import { ActivityLog, shimmerPhase } from '../../core/activity/log.ts'
+import { prepareFsOp, planFsOp, fsOpCommand, verifyFsOp, type FsOp } from '../../core/fsops.ts'
+import { KEYS } from '../../core/keys.ts'
 import { fitTable } from '../../core/files/csv.ts'
 import { iconFor } from '../../core/files/icons.ts'
 import { mentionText } from '../../core/files/mention.ts'
@@ -28,12 +30,14 @@ import {
   updateTree,
 } from './state.ts'
 import { activityColor, color, statusLook } from './theme.ts'
+import { refreshGit, forgetViews } from './activity.ts'
 
 export type PaneRender = RenderInput<'Pane'>
 
 /** What the pane gives the Files tab: the room it draws in. */
 export type FilesFrame = {
   searchRows?: number
+  operationsRows?: number
   /** The pane's body width. */
   columns: number
   /** Cells between the gutter (column 0) and the empty last column. */
@@ -210,6 +214,7 @@ export async function focusFiles($: EngineInterface, element: string | undefined
   focused = element
   const pane = await readPane($)
   if (currentView(pane) !== 'files') return
+  if ((await readTree($)).operation) { if (changed) await bumpTick($); return }
   if (element === 'filter') {
     if (!(await readTree($)).editing) await updateTree($, t => ({ ...t, editing: true }))
   } else if (element !== 'files-cancel' && element !== 'files-clear' && (await readTree($)).editing) await updateTree($, t => ({ ...t, editing: false }))
@@ -230,6 +235,7 @@ export async function scrollFiles($: EngineInterface, by: number): Promise<boole
     return true
   }
   if (view !== 'files' || lastIds.length === 0) return false
+  if ((await readTree($)).operation) return true
   const editing = (await readTree($)).editing
   if (editing) await updateTree($, t => ({ ...t, editing: false }))
   const sel = (await readPane($)).selected.files
@@ -243,6 +249,79 @@ export async function scrollFiles($: EngineInterface, by: number): Promise<boole
 
 // ---------------------------------------------------------------------------
 // Actions.
+
+let operationSerial = 0
+
+export async function cancelFilesOperation($: EngineInterface): Promise<void> {
+  await updateTree($, t => ({ ...t, operation: null, operationBusy: t.operation?.working || t.operationBusy !== t.operation?.id ? t.operationBusy : null }))
+}
+
+async function beginFilesOperation($: EngineInterface, kind: FsOp, root: string, source: string): Promise<void> {
+  let acquired = false
+  const id = String(++operationSerial)
+  await updateTree($, t => { acquired = !t.operationBusy; return acquired ? { ...t, operationBusy: id } : t })
+  if (!acquired) { $.ui.toast('A Files operation is already running.'); return }
+  try {
+    const prepared = await prepareFsOp(await projectHost($, root), root, { kind, source })
+    if (await readCwd($) !== root || currentView(await readPane($)) !== 'files' || (await readTree($)).operationBusy !== id) throw new Error('The project changed. Start again.')
+    await updateTree($, t => t.operationBusy === id ? { ...t, editing: false, operation: { id, prepared, working: false, value: kind === 'rename' ? baseName(source) : kind === 'move' ? source : '' } } : t)
+    if (kind !== 'delete') await $.ui.focus({ requestId: 'jei', key: 'files-operation-input' }).catch(() => {})
+  } catch (error) { await updateTree($, t => t.operationBusy === id ? { ...t, operationBusy: null } : t); $.ui.toast(`Files operation failed: ${firstLine(error)}.`) }
+}
+
+async function applyFilesOperation($: EngineInterface, id: string, value: string | undefined, confirmed = false): Promise<void> {
+  const held = (await readTree($)).operation
+  if (!held || held.id !== id || held.working || held.prepared.kind === 'delete' && !confirmed) return
+  let acquired = false
+  await updateTree($, t => { acquired = t.operationBusy === id && t.operation?.id === id && !t.operation.working; return acquired && t.operation ? { ...t, operation: { ...t.operation, working: true } } : t })
+  if (!acquired) return
+  const root = held.prepared.root
+  let attempted = false, completed = false, failure = ''
+  try {
+    const host = await projectHost($, root)
+    const active = async () => { if (await readCwd($) !== root || (await readTree($)).operation?.id !== id || currentView(await readPane($)) !== 'files') throw new Error('The Files operation was canceled or the project changed.') }
+    await active()
+    const plan = await planFsOp(host, held.prepared, value)
+    const fresh = await planFsOp(host, held.prepared, value)
+    if (JSON.stringify(fresh) !== JSON.stringify(plan)) throw new Error('The destination parent has changed. Start again.')
+    const command = fsOpCommand(plan, host.platform)
+    await active()
+    attempted = true
+    // shortcut: path APIs cannot close the external-writer check/use window; directory-handle effects require a different host API.
+    if (command === null) await $.fs.write(absOf(root, plan.destination!), '')
+    else {
+      const result = await host.run(command.argv, { cwd: root, env: command.env })
+      if (result.exitCode !== 0) throw new Error(result.stderr || result.stdout || `Process exited with ${result.exitCode}.`)
+    }
+    await verifyFsOp(host, plan)
+    completed = true
+    if (await readCwd($) === root && (await readTree($)).operation?.id === id) {
+      const selected = plan.destination ?? plan.parent
+      await updateTree($, t => ({ ...t, filter: '', filtering: false, editing: false, origin: undefined, expanded: [...new Set([...t.expanded.filter(rel => rel !== plan.source && !rel.startsWith(plan.source + '/')), ...parentDirs(selected)])] }))
+      await updatePane($, p => reducePane(p, { type: 'select', view: 'files', id: selected }))
+    }
+  } catch (error) { failure = `Files operation failed: ${firstLine(error)}.` }
+  finally {
+    if (attempted) {
+      forgetAll(root); forgetFileList(root); forgetViews()
+      if (await readCwd($) === root) {
+        try {
+          await refreshGit($)
+          const listing = await listingOf(await projectHost($, root), root, '')
+          if (listing.failed) throw new Error('Cannot read the project folder.')
+          if (completed && held.prepared.kind === 'delete' && (await readTree($)).operation?.id === id && (await readPane($)).selected.files === '') {
+            const tree = await readTree($)
+            const first = treeRows({ root, expanded: new Set(), listings: new Map([['', listing.entries]]), ignored: new Set(listing.ignored), showHidden: tree.showHidden, status: new Map(), glow: () => 0, touched: () => false, limit: ENTRY_LIMIT })[0]
+            if (first && !('more' in first)) await updatePane($, pane => reducePane(pane, { type: 'select', view: 'files', id: first.rel }))
+          }
+        } catch (error) { failure = `${failure || (completed ? 'Operation completed.' : 'Operation attempted.')} Refresh failed: ${firstLine(error)}.` }
+      }
+      await bumpTick($)
+    }
+    await updateTree($, t => ({ ...t, operation: t.operation?.id === id ? null : t.operation, operationBusy: t.operationBusy === id ? null : t.operationBusy }))
+    if (failure) $.ui.toast(failure)
+  }
+}
 
 function act($: EngineInterface, fn: () => Promise<unknown>): () => void {
   return () => {
@@ -266,6 +345,7 @@ export async function openRel($: EngineInterface, options: Options, root: string
     return
   }
   const host = hostFor($, root)
+
   try {
     const refused = await openFile(host, options, absOf(root, rel))
     if (refused !== null) $.ui.toast(refused)
@@ -329,6 +409,17 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
 
   if (root === '') return { header: line('Files'), body: [line('Loading…', { dim: true }, 'notice')], actions: [] }
   const host = hostFor($, root)
+
+  const operation = view === 'files' ? (await readTree($)).operation : null
+  if (operation) {
+    const held = operation
+    const cancel = <Button key="files-operation-cancel" plain label={frame.bodyRows < 2 ? 'Enlarge · Cancel' : 'Cancel'} onPress={act($, () => cancelFilesOperation($))} />
+    if (frame.bodyRows < 3) return { header: line('Files'), body: [...(frame.bodyRows >= 2 ? [line('Enlarge the pane.', { dim: true })] : []), <Box key="files-operation-tiny">{cancel}</Box>], actions: [] }
+    const title = held.prepared.kind === 'delete' ? held.prepared.sourceKind === 'dir' ? 'Delete recursively?' : 'Delete file?' : held.prepared.kind === 'new' ? 'New file or folder' : held.prepared.kind === 'rename' ? 'Rename' : 'Move to project path'
+    const input = held.prepared.kind === 'delete' ? line(fitPath(held.prepared.source, inner), {}, 'files-operation-path') : Input ? <Input key="files-operation-input" value={held.value} autoFocus submitLabel={held.prepared.kind === 'new' ? 'Create' : held.prepared.kind === 'rename' ? 'Rename' : 'Move'} onInput={value => act($, () => updateTree($, t => t.operation?.id === held.id ? { ...t, operation: { ...t.operation, value } } : t))()} onSubmit={value => act($, () => applyFilesOperation($, held.id, value))()} /> : line('Enlarge on a desktop surface.', { dim: true })
+    const label = held.prepared.kind === 'delete' ? 'Delete' : held.prepared.kind === 'new' ? 'Create' : held.prepared.kind === 'rename' ? 'Rename' : 'Move'
+    return { header: line('Files'), body: [line(title, { color: color(held.prepared.kind === 'delete' ? 'warning' : 'fg') }, 'files-operation-title'), input, <Box key="files-operation-buttons" flexDirection="row"><Text> </Text>{held.working ? <Text dimColor>Working… · </Text> : <Box flexDirection="row"><Button key={held.prepared.kind === 'delete' ? 'files-operation-confirm' : 'files-operation-submit'} plain label={label} onPress={act($, () => applyFilesOperation($, held.id, held.prepared.kind === 'delete' ? undefined : held.value, held.prepared.kind === 'delete'))} /><Text> · </Text></Box>}{cancel}</Box>], actions: [] }
+  }
 
   if (view === 'files.preview') {
     const held = await readPreview($)
@@ -443,10 +534,12 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     </Box><Text> </Text>{cancel}{cancel && <Text> · </Text>}<Button key="files-clear" plain label="Clear" onPress={act($, () => clearFileSearch($))} /><Text color={color('accent')}> │</Text></Box>
     {(frame.searchRows ?? 0) >= 3 && line('└' + '─'.repeat(Math.max(0, inner - 2)) + '┘', { color: color('accent') })}
   </Box>
-  const above = (frame.searchRows ?? 0) > 0 ? [filterHeader] : []
+  const operationActions: FilesAction[] = KEYS.files.filter(key => ['new', 'rename', 'move', 'delete'].includes(key.action)).map(key => ({ key: key.key, run: act($, () => beginFilesOperation($, key.action as FsOp, root, selected ?? '')) }))
+  const above = [...((frame.searchRows ?? 0) > 0 ? [filterHeader] : []), ...(frame.operationsRows ? [<Box key="files-operations" flexDirection="row"><Text> </Text>{operationActions.map(action => <Button key={`key-${action.key}`} plain={tree.filtering ? true : undefined} hotkey={action.key} label={tree.filtering ? '' : action.key} onPress={action.run} />)}{tree.filtering && <Button key="back" plain hotkey={KEYS.files.find(key => key.action === 'back')!.key} label="Back" onPress={act($, () => clearFileSearch($))} />}</Box>] : [])]
   const rootName = toPosix(root).replace(/\/+$/, '').split('/').pop() || 'Files'
   const header = line(rootName)
   const actions: FilesAction[] = tree.editing ? [] : [
+    ...(frame.columns >= 32 ? operationActions : []),
     { key: 's', run: act($, begin) },
     { key: 'a', run: act($, () => mention($, selected)) },
     { key: 'o', run: act($, () => openRel($, options, root, selected)) },

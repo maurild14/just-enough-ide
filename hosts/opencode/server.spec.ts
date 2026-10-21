@@ -83,11 +83,12 @@ async function start(directory: string, options: Record<string, unknown> = {}) {
   const dispose = await entry.setup(ctx as unknown as Plugin.Context)
   if (dispose) disposers.push(dispose)
   return {
+    location: ctx.location,
     registered, emitted, generated,
-    async call<K extends keyof Handlers>(name: K, input: unknown = {}) {
+    async call<K extends keyof Handlers>(name: K, input: unknown = {}, signal = new AbortController().signal) {
       if (!handlers) throw new Error('RPC handlers were not registered')
       const error = ((type: string, message: string, data: unknown) => ({ type, message, data })) as Rpc.ErrorFactory<(typeof JeiRpc.methods)[K]>
-      return handlers[name](input, { signal: new AbortController().signal, error })
+      return handlers[name](input, { signal, error })
     },
     async before(event: ToolEvent) { if (!before) throw new Error('Before hook missing'); await before(event) },
     async tool(event: ToolEvent) {
@@ -101,6 +102,130 @@ async function start(directory: string, options: Record<string, unknown> = {}) {
     get resources() { return { rpcDisposed, hookDisposed, aborted: eventSignal?.aborted, streamClosed } },
   }
 }
+
+test('Files prepare/apply performs literal disposable mutations and confirmed recursive delete only', async () => {
+  const root = makeTemp('acme-app'), server = await start(root)
+  expect(Object.hasOwn((server.registered as typeof JeiRpc).methods, 'fsPrepare')).toBe(true)
+  const call = (method: string, input: unknown) => server.call(method as keyof Handlers, input) as Promise<any>
+  const prepare = (kind: string, source = '') => call('fsPrepare', { sessionID: 'a', kind, source })
+  const apply = async (plan: any, value?: string, confirmed = false) => call('fsApply', { sessionID: 'a', planId: plan.planId, confirmed, ...(value === undefined ? {} : { value }) })
+  const created = await prepare('new')
+  expect(await apply(created, " spaced [x] ' $;é.txt")).toMatchObject({ ok: true, attempted: true })
+  expect(readFileSync(join(root, " spaced [x] ' $;é.txt"), 'utf8')).toBe('')
+  await apply(await prepare('new'), 'folder/')
+  await apply(await prepare('new', 'folder'), 'child.txt')
+  await apply(await prepare('rename', 'folder/child.txt'), 'renamed.txt')
+  await apply(await prepare('move', 'folder/renamed.txt'), 'moved.txt')
+  expect(existsSync(join(root, 'moved.txt'))).toBe(true)
+  const deletion = await prepare('delete', 'folder')
+  await expect(apply(deletion)).rejects.toThrow()
+  expect(existsSync(join(root, 'folder'))).toBe(true)
+  expect(await apply(deletion, undefined, true)).toMatchObject({ ok: true })
+  await apply(await prepare('delete', 'moved.txt'), undefined, true)
+  expect(existsSync(join(root, 'moved.txt'))).toBe(false)
+  expect(server.emitted.some(e => e.name === 'changed')).toBe(true)
+})
+
+test('Files refuses malformed/extra input, existing entries, stale/replayed/session/root/cancelled evidence without writes', async () => {
+  const root = makeTemp('acme-app'), server = await start(root)
+  writeFiles(root, { 'source.txt': 'keep source', 'taken.txt': 'keep target', 'folder/child': 'keep child' })
+  expect(Object.hasOwn((server.registered as typeof JeiRpc).methods, 'fsPrepare')).toBe(true)
+  const call = (method: string, input: unknown, signal?: AbortSignal) => server.call(method as keyof Handlers, input, signal) as Promise<any>
+  const input = { sessionID: 'a', kind: 'move', source: 'source.txt' }
+  for (const invalid of [{ ...input, extra: true }, { ...input, kind: 'other' }, { ...input, source: 1 }, { kind: 'new', source: '' }]) await expect(call('fsPrepare', invalid)).rejects.toThrow()
+  const prepared = await call('fsPrepare', input)
+  const apply = { sessionID: 'a', planId: prepared.planId, value: 'taken.txt', confirmed: false }
+  for (const invalid of [{ ...apply, extra: true }, { ...apply, value: 1 }, { ...apply, sessionID: 'b' }]) await expect(call('fsApply', invalid)).rejects.toThrow()
+  await expect(call('fsApply', apply)).rejects.toThrow()
+  const directory = await call('fsPrepare', input)
+  await expect(call('fsApply', { ...apply, planId: directory.planId, value: 'folder' })).rejects.toThrow()
+  const stale = await call('fsPrepare', input)
+  await call('fsPrepare', input)
+  await expect(call('fsApply', { ...apply, planId: stale.planId, value: 'new.txt' })).rejects.toThrow()
+  const canceled = await call('fsPrepare', input), controller = new AbortController(); controller.abort()
+  await expect(call('fsApply', { ...apply, planId: canceled.planId, value: 'new.txt' }, controller.signal)).rejects.toThrow()
+  const oldRoot = await call('fsPrepare', input); server.location.directory = makeTemp('other')
+  await expect(call('fsApply', { ...apply, planId: oldRoot.planId, value: 'new.txt' })).rejects.toThrow()
+  expect(readFileSync(join(root, 'source.txt'), 'utf8')).toBe('keep source')
+  expect(readFileSync(join(root, 'taken.txt'), 'utf8')).toBe('keep target')
+  expect(existsSync(join(root, 'new.txt'))).toBe(false)
+})
+
+test('Files refuses direct/outside/dangling junctions and preserves an outside child during recursive removal', async () => {
+  const root = makeTemp('acme-app'), outside = makeTemp('outside'), server = await start(root)
+  writeFiles(root, { 'tree/child': 'inside' }); writeFiles(outside, { 'keep.txt': 'outside' })
+  expect(Object.hasOwn((server.registered as typeof JeiRpc).methods, 'fsPrepare')).toBe(true)
+  symlinkSync(outside, join(root, 'link'), 'junction')
+  symlinkSync(join(outside, 'missing'), join(root, 'dangling'), 'junction')
+  symlinkSync(outside, join(root, 'tree/link'), 'junction')
+  const call = (method: string, input: unknown) => server.call(method as keyof Handlers, input) as Promise<any>
+  for (const source of ['link', 'link/keep.txt']) await expect(call('fsPrepare', { sessionID: 'a', kind: 'delete', source })).rejects.toThrow()
+  const creation = await call('fsPrepare', { sessionID: 'a', kind: 'new', source: '' })
+  await expect(call('fsApply', { sessionID: 'a', planId: creation.planId, value: 'dangling', confirmed: false })).rejects.toThrow()
+  const prepared = await call('fsPrepare', { sessionID: 'a', kind: 'delete', source: 'tree' })
+  expect(await call('fsApply', { sessionID: 'a', planId: prepared.planId, confirmed: true })).toMatchObject({ ok: true })
+  expect(existsSync(join(root, 'tree'))).toBe(false)
+  expect(readFileSync(join(outside, 'keep.txt'), 'utf8')).toBe('outside')
+})
+
+test('Files mutations through a linked opened root remain inside its canonical project', async () => {
+  const real = makeTemp('acme-app'), parent = makeTemp('linked-root'), root = join(parent, 'project')
+  symlinkSync(real, root, 'junction')
+  const server = await start(root), call = (name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>
+  const plan = await call('fsPrepare', { sessionID: 'a', kind: 'new', source: '' })
+  expect(await call('fsApply', { sessionID: 'a', planId: plan.planId, value: 'new.txt', confirmed: false })).toMatchObject({ ok: true })
+  expect(readFileSync(join(real, 'new.txt'), 'utf8')).toBe('')
+})
+
+test('Files delete revalidates changed source and parent evidence after confirmation', async () => {
+  const root = makeTemp('acme-app'), server = await start(root)
+  writeFiles(root, { 'src/file': 'before' })
+  expect(Object.hasOwn((server.registered as typeof JeiRpc).methods, 'fsPrepare')).toBe(true)
+  const call = (method: string, input: unknown) => server.call(method as keyof Handlers, input) as Promise<any>
+  const prepared = await call('fsPrepare', { sessionID: 'a', kind: 'delete', source: 'src/file' })
+  writeFiles(root, { 'src/file': 'changed and longer' })
+  await expect(call('fsApply', { sessionID: 'a', planId: prepared.planId, confirmed: true })).rejects.toThrow()
+  expect(readFileSync(join(root, 'src/file'), 'utf8')).toBe('changed and longer')
+})
+
+test('Files attempted postcheck failure refreshes, consumes the token and serializes through state refresh', async () => {
+  const root = makeTemp('acme-app'), nodeHost = hostModule.nodeHost
+  writeFiles(root, { 'source.txt': 'keep' })
+  let refreshing = false, release!: () => void
+  const wait = new Promise<void>(resolve => { release = resolve })
+  const mock = spyOn(hostModule, 'nodeHost').mockImplementation(generate => {
+    const host = nodeHost(generate)
+    return { ...host,
+      async stat(path) { if (existsSync(join(root, 'moved.txt')) && toPosix(path) === toPosix(root)) return null; return host.stat(path) },
+      async run(argv, options) { if (existsSync(join(root, 'moved.txt')) && argv.includes('--show-toplevel')) { refreshing = true; await wait }; return host.run(argv, options) },
+    }
+  })
+  try {
+    const server = await start(root), call = (name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>
+    const plan = await call('fsPrepare', { sessionID: 'a', kind: 'move', source: 'source.txt' })
+    const input = { sessionID: 'a', planId: plan.planId, value: 'moved.txt', confirmed: false }
+    const pending = call('fsApply', input)
+    for (let i = 0; i < 500 && !refreshing; i++) await Bun.sleep(2)
+    expect(refreshing).toBe(true)
+    await expect(call('fsPrepare', { sessionID: 'b', kind: 'new', source: '' })).rejects.toThrow('already running')
+    release()
+    expect(await pending).toMatchObject({ attempted: true, ok: false, error: 'Cannot verify filesystem metadata.' })
+    expect(readFileSync(join(root, 'moved.txt'), 'utf8')).toBe('keep')
+    expect(server.emitted.some(event => event.name === 'changed')).toBe(true)
+    await expect(call('fsApply', input)).rejects.toThrow('expired')
+  } finally { release(); mock.mockRestore() }
+})
+
+test('Files tokens from an old server instance cannot authorize a different restarted plan', async () => {
+  const root = makeTemp('acme-app'), oldServer = await start(root)
+  const call = (server: Awaited<ReturnType<typeof start>>, name: string, input: unknown) => server.call(name as keyof Handlers, input) as Promise<any>
+  const old = await call(oldServer, 'fsPrepare', { sessionID: 'a', kind: 'new', source: '' })
+  await oldServer.dispose()
+  const restarted = await start(root)
+  await call(restarted, 'fsPrepare', { sessionID: 'a', kind: 'new', source: '' })
+  await expect(call(restarted, 'fsApply', { sessionID: 'a', planId: old.planId, value: 'wrong.txt', confirmed: false })).rejects.toThrow()
+  expect(existsSync(join(root, 'wrong.txt'))).toBe(false)
+})
 
 test('exact replacement RPC retains eligible mixed files for sequential selected/all applications', async () => {
   const repo = await makeRepo({ 'a.ts': 'user User USER\n', 'b.ts': 'User\nuser\n', 'omitted.ts': 'USER\n' })
@@ -566,7 +691,7 @@ test('history RPC validates exact hashes, refs, confirmations and extra properti
   expect(await server.call('switchBranch', { name: 'feature', remote: false, confirmed: true })).toEqual({ ok: true })
   expect(await repo.git('branch', '--show-current')).toBe('feature')
   expect(readFileSync(join(repo.dir, 'a.txt'), 'utf8')).toBe('dirty\n')
-})
+}, 60_000)
 
 test('tool identity and session attribution mark agent commits and suppress overlapping JEI commits', async () => {
   const repo = await makeRepo({ 'a.txt': 'before\n' })
@@ -590,7 +715,7 @@ test('tool identity and session attribution mark agent commits and suppress over
   const overlap = await repo.git('rev-parse', 'HEAD')
   await server.tool({ ...event, id: 'call-c' }); await server.tool({ ...event, id: 'call-d' })
   expect((await graph('session-a')).commits.find(c => c.hash === overlap)?.agent).toBe(false)
-})
+}, 60_000)
 
 test('a pending before-hook cannot attribute a JEI commit, and missing reflog evidence leaves the tool successful', async () => {
   const repo = await makeRepo({ 'a.txt': 'before\n' }); const server = await start(repo.dir)

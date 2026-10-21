@@ -28,7 +28,7 @@ Status: current. Defined in `core/host.ts`; the process, file and model half onl
 
 | View | key: action |
 | --- | --- |
-| `files` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: filter, `a`: mention, `o`: open-editor, `f`: filter, `h`: toggle-hidden, `q` / `esc`: back |
+| `files` | `up`: move-up, `down`: move-down, `enter`: activate, `n`: new, `r`: rename, `m`: move, `d`: delete, `s`: filter, `a`: mention, `o`: open-editor, `f`: filter, `h`: toggle-hidden, `q` / `esc`: back |
 | `files.preview` | `up`: scroll-up, `down`: scroll-down, `a`: mention, `o`: open-editor, `m`: toggle-markdown-source, `q` / `esc`: back |
 | `git` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: stage, `u`: unstage, `d`: discard, `c`: commit, `y`: copy-hash, `a`: ask, `b`: branches, `f`: filter, `t`: fetch, `n`: new-branch, `g`: generate-message, `e`: sync, `q` / `esc`: back |
 | `git.branches` | `up`: move-up, `down`: move-down, `enter`: switch, `n`: new-branch, `c`: compare, `f`: filter, `q` / `esc`: back |
@@ -197,7 +197,9 @@ docs/                 this documentation; docs/plans/ holds implementation plans
 scripts/              dev scripts (check-docs.ts)
 ```
 
-Search views and OpenCode RPC are built on both hosts (ADRs 0021-0023, 0027). Native session/root state preserves Search/Replace across preview Back; runtime maps hold cancellable streams, clocks and read-through caches. New Claude path boundaries require canonical evidence for ambiguous double-slash roots (ADR 0021). Delimited previews retain raw text alongside table rows for exact source-line targets. Status: draft — milestone 0.4 adds `core/fsops.ts`.
+Search views and OpenCode RPC are built on both hosts (ADRs 0021-0023, 0027). Native session/root state preserves Search/Replace across preview Back; runtime maps hold cancellable streams, clocks and read-through caches. New Claude path boundaries require canonical evidence for ambiguous double-slash roots (ADR 0021). Delimited previews retain raw text alongside table rows for exact source-line targets.
+
+Milestone 0.4 adds pure `core/fsops.ts` validation/evidence, plans, fixed argv/env and exact-result verification. Native adapters capture root/source/parent evidence before editing, revalidate before effects, serialize Files operations through refresh, and invalidate listings/previews/all-files after any attempted effect. OpenCode retains at most 32 server-owned latest session/root plans behind random opaque tokens; closed fsPrepare/fsApply inputs and cancellation/root checks precede Node effects. Claude executes through its installed writer/process APIs. ADR 0028 records literal input semantics, native inline states, the narrow fixed PowerShell exception and external-writer limits.
 
 ## Packaging
 

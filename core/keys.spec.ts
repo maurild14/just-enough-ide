@@ -4,6 +4,11 @@ import { hintLine, KEYS, TAB_KEYS, type View } from './keys.ts'
 const views = Object.keys(KEYS) as View[]
 const named = ['enter', 'esc', 'up', 'down']
 
+test('Files operations have shared contextual keys before lower priority aliases', () => {
+  expect(KEYS.files.filter(k => ['new', 'rename', 'move', 'delete'].includes(k.action)).map(k => [k.key, k.action])).toEqual([['n', 'new'], ['r', 'rename'], ['m', 'move'], ['d', 'delete']])
+  expect(KEYS['files.preview'].find(k => k.key === 'm')?.action).toBe('toggle-markdown-source')
+})
+
 test('every key is a letter, digit or a named key', () => {
   for (const view of views)
     for (const k of KEYS[view]) expect(/^[a-z0-9]$/.test(k.key) || named.includes(k.key)).toBe(true)
@@ -66,10 +71,10 @@ test('hint line fits every width and has no help key', () => {
 test('hint line at 24, 40, 80 and 10', () => {
   expect(hintLine('git', 40)).toBe('↑↓ enter s u d c y a b f t n g e q esc')
   expect(hintLine('git', 24)).toBe('↑↓ s u d c y a b f t esc')
-  expect(hintLine('files', 24)).toBe('↑↓ enter s a o f h q esc')
-  expect(hintLine('files', 40)).toBe('↑↓ move · enter open · s a o f h q esc')
-  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · s find file · a mention · o open in editor · f h q esc')
-  expect(hintLine('files', 120)).toBe('↑↓ move · enter open · s find file · a mention · o open in editor · f filter · h hidden · q back · esc back')
+  expect(hintLine('files', 24)).toBe('↑↓ n r m d s a o f h esc')
+  expect(hintLine('files', 40)).toBe('↑↓ move · enter n r m d s a o f h q esc')
+  expect(hintLine('files', 80)).toBe('↑↓ move · enter open · n new · r rename · m move · d delete · s a o f h q esc')
+  expect(hintLine('files', 120)).toBe('↑↓ move · enter open · n new · r rename · m move · d delete · s find file · a mention · o open in editor · f h q esc')
   expect(hintLine('git.diff', 10)).toBe('↑↓ n p esc')
   expect(hintLine('git', 10)).toBe('↑↓ s u esc')
 })

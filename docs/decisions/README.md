@@ -42,3 +42,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0025 | [Search inside Files](0025-search-inside-files.md) | Superseded by ADR 0026: earlier Search-inside-Files placement. |
 | 0026 | [Separate filename and content search](0026-filename-and-content-search.md) | Live filename search, content Search tab, spaced controls and Symbols retirement. |
 | 0027 | [Remove Symbols and exact replacement](0027-remove-symbols-and-exact-replacement.md) | Remove compatibility, use ordinary unknown-value defaults, replace exact literal text and correct minimum history-editor heights. |
+| 0028 | [Safe Files operations](0028-safe-files-operations.md) | Literal mutations, captured canonical evidence, fixed PowerShell programs, server-owned plans and native confirmation. |

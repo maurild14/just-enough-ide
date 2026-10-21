@@ -33,6 +33,175 @@ const posix = (p: string) => p.replaceAll('\\', '/').replace(/^[A-Za-z]:/, '')
 
 const FILES = ['README.md', 'people.csv', 'logo.bin', 'big.log', 'empty.txt', 'src/index.ts', 'src/api/user.ts']
 
+test('Files operations stay reachable, own typed input, cancel and always confirm deletion at five rows', { timeoutMs: 60_000 }, async ($, on) => {
+  on('ui.focus', () => ({}))
+  const seen = await world($, on)
+  for (const surface of SURFACES) for (const width of WIDTHS) {
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
+    for (const key of ['n', 'r', 'm', 'd']) expect(await ui.find({ key: `key-${key}` })).toBeTruthy()
+    await ui.press({ key: 'key-n' })
+    expect(await ui.find({ key: 'files-operation-input' })).toBeTruthy()
+    await ui.input({ key: 'files-operation-input', text: 'nrmd123.txt', kind: 'change' })
+    expect((await ui.find({ key: 'files-operation-input' }))?.text).toContain('nrmd123.txt')
+    expect((findKey(await ui.drawn() as Node, 'tab-1') as { props?: { hotkey?: string } })?.props?.hotkey).toBeUndefined()
+    for (const resized of [120, 24, 40, 80, width]) {
+      await ui.redraw(paneProps(resized, 5))
+      expect((await ui.find({ key: 'files-operation-input' }))?.props.value).toBe('nrmd123.txt')
+      expect(Math.max(0, ...lineWidths(await ui.drawn() as Node))).toBeLessThanOrEqual(resized)
+      expect(lineWidths(await ui.drawn() as Node).length).toBeLessThanOrEqual(5)
+    }
+    await ui.redraw(paneProps(width, 2)); expect(await ui.find({ key: 'files-operation-input' })).toBeUndefined()
+    expect(await ui.find({ key: 'files-operation-cancel' })).toBeTruthy()
+    await ui.redraw(paneProps(width, 5))
+    await ui.press({ key: 'files-operation-cancel' })
+    await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src', origin: { kind: 'person' } })
+    await ui.press({ key: 'key-d' })
+    expect(await ui.find({ key: 'files-operation-confirm' })).toBeTruthy()
+    expect(await ui.find({ key: 'files-operation-cancel' })).toBeTruthy()
+    expect((await ui.find({ key: 'files-operation-title' }))?.text).toContain('recursive')
+    await ui.redraw(paneProps(24, 2)); expect(await ui.find({ key: 'files-operation-confirm' })).toBeUndefined()
+    expect(await ui.find({ key: 'files-operation-cancel' })).toBeTruthy()
+    await ui.redraw(paneProps(width, 5)); expect(await ui.find({ key: 'files-operation-confirm' })).toBeTruthy()
+    expect(seen.runs.filter(argv => ['rm', 'mv', 'mkdir', 'powershell.exe'].includes(argv[0]!))).toEqual([])
+    expect(Math.max(0, ...lineWidths(await ui.drawn() as Node))).toBeLessThanOrEqual(width)
+    await ui.press({ key: 'files-operation-cancel' })
+    await ui.unmount()
+  }
+})
+
+test('Files rename/move long-prefill editors and file confirmation retain native bounds through resize', { timeoutMs: 60_000 }, async ($, on) => {
+  on('ui.focus', () => ({}))
+  await world($, on)
+  const longName = 'long-'.repeat(12) + 'file.txt', rel = `src/api/${longName}`
+  TREE[`${ROOT}/src/api`]!.push(file(longName))
+  try {
+    for (const surface of SURFACES) for (const width of WIDTHS) {
+      await $.command.run(jei(`${ROOT}/${rel}`))
+      const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width, 5), requestId: 'jei' })
+      for (const action of ['r', 'm']) {
+        await ui.press({ key: `key-${action}` })
+        for (const resized of [24, 40, 80, 120, width]) {
+          await ui.redraw(paneProps(resized, 5))
+          expect((await ui.find({ key: 'files-operation-input' }))?.props.value).toBe(action === 'r' ? longName : rel)
+          expect(Math.max(0, ...lineWidths(await ui.drawn() as Node))).toBeLessThanOrEqual(resized)
+          expect(lineWidths(await ui.drawn() as Node).length).toBeLessThanOrEqual(5)
+        }
+        await ui.redraw(paneProps(width, 2)); expect(await ui.find({ key: 'files-operation-input' })).toBeUndefined()
+        await ui.redraw(paneProps(width, 5)); await ui.press({ key: 'files-operation-cancel' })
+      }
+      await ui.press({ key: 'key-d' }); expect((await ui.find({ key: 'files-operation-title' }))?.text).toContain('Delete file?')
+      await ui.redraw(paneProps(24, 5)); expect(await ui.find({ key: 'files-operation-confirm' })).toBeTruthy()
+      expect((await ui.find({ key: 'files-operation-path' }))?.text).toContain('.txt')
+      expect(Math.max(0, ...lineWidths(await ui.drawn() as Node))).toBeLessThanOrEqual(24)
+      await ui.press({ key: 'files-operation-cancel' }); await ui.unmount()
+    }
+  } finally { TREE[`${ROOT}/src/api`] = TREE[`${ROOT}/src/api`]!.filter(entry => entry.name !== longName) }
+})
+
+test('Files changed cwd and changed source after confirmation refuse with zero process effects', async ($, on) => {
+  on('ui.focus', () => ({}))
+  const seen = await world($, on)
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+  await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src', origin: { kind: 'person' } })
+  await ui.press({ key: 'key-d' })
+  await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: '/work/other-app' })
+  await ui.press({ key: 'files-operation-confirm' })
+  expect(seen.runs.some(argv => argv[0] === 'rm')).toBe(false)
+  expect(seen.toasts.at(-1)).toContain('project changed')
+  await $.classic.CwdChanged({ old_cwd: '/work/other-app', new_cwd: ROOT })
+  await $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: 'row-src/api/user.ts', origin: { kind: 'person' } })
+  await ui.press({ key: 'key-d' })
+  const original = TREE[`${ROOT}/src/api`]!.find(entry => entry.name === 'user.ts')!
+  original.size++
+  try { await ui.press({ key: 'files-operation-confirm' }); expect(seen.toasts.at(-1)).toContain('changed'); expect(seen.runs.some(argv => argv[0] === 'rm')).toBe(false) }
+  finally { original.size-- }
+  await ui.unmount()
+})
+
+test('Files duplicate native submits perform only one effect', async ($, on) => {
+  on('ui.focus', () => ({}))
+  const savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT), seen = await world($, on, true)
+  try {
+    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+    await ui.press({ key: 'key-n' })
+    await Promise.all([ui.input({ key: 'files-operation-input', text: 'once.txt', kind: 'submit' }), ui.input({ key: 'files-operation-input', text: 'once.txt', kind: 'submit' })])
+    expect(seen.effects.filter(effect => effect.endsWith('/once.txt'))).toHaveLength(1)
+    await ui.unmount()
+  } finally {
+    for (const key of Object.keys(TREE)) delete TREE[key]
+    Object.assign(TREE, JSON.parse(savedTree))
+    for (const key of Object.keys(CONTENT)) delete CONTENT[key]
+    Object.assign(CONTENT, JSON.parse(savedContent))
+  }
+})
+
+for (const phase of ['begin', 'apply'] as const) test(`Files ${phase} loses a real compare-and-set retry without taking another operation's lock`, async ($, on) => {
+  let armed = false, injected = false, owner: string | null | undefined
+  on('ui.focus', () => ({}))
+  on('state.set', async (_$, event, next) => {
+    if (armed && !injected && event.key === 'tree' && event.ifVersion !== undefined && (phase === 'begin' ? event.value.operationBusy && !event.previous?.operationBusy : event.value.operation?.working && !event.previous?.operation?.working)) {
+      injected = true
+      const winner = await next(phase === 'begin' ? { ...event, value: { ...event.value, operationBusy: 'competing-owner' } } : event)
+      if (winner.value?.isSet) owner = phase === 'begin' ? 'competing-owner' : event.value.operationBusy
+      // A competing writer won this exact version; update() must re-read and retry its callback.
+      return winner.value ? { value: { isSet: false, version: winner.value.version } } : winner
+    }
+    const result = await next(event)
+    if (event.key === 'tree' && result.value?.isSet) owner = event.value.operationBusy
+    return result
+  })
+  const seen = await world($, on, true)
+  const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+  if (phase === 'begin') { armed = true; await ui.press({ key: 'key-n' }); expect(await ui.find({ key: 'files-operation-input' })).toBeUndefined(); expect(owner).toBe('competing-owner'); expect(seen.toasts.at(-1)).toContain('already running') }
+  else { await ui.press({ key: 'key-n' }); armed = true; await ui.input({ key: 'files-operation-input', text: 'not-created.txt', kind: 'submit' }) }
+  expect(injected).toBe(true)
+  expect(seen.effects).toEqual([])
+  await ui.unmount()
+})
+
+test('Files holds its effect owner across cwd change/cancel and cannot release or select into another project', { timeoutMs: 60_000 }, async ($, on) => {
+  on('ui.focus', () => ({}))
+  const clock = mock.clock(on, { now: 0 })
+  let owner: string | null | undefined, selected: string | undefined
+  on('state.set', async (_$, event, next) => {
+    const result = await next(event)
+    if (result.value?.isSet) {
+      if (event.key === 'tree') owner = event.value.operationBusy
+      if (event.key === 'pane') selected = event.value.selected.files
+    }
+    return result
+  })
+  const savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT), seen = await world($, on, true)
+  const other = '/work/other-app'; TREE[other] = []
+  seen.holdEffects(clock.sleep(100))
+  try {
+    const ui = await $.ui.mount({ plugin: 'jei', surface: 'terminal', component: 'Pane', props: paneProps(24, 5), requestId: 'jei' })
+    await ui.press({ key: 'key-n' })
+    const pending = ui.input({ key: 'files-operation-input', text: 'first.txt', kind: 'submit' })
+    await clock.settle()
+    expect(seen.effectEntered).toBe(true)
+    await $.classic.CwdChanged({ old_cwd: ROOT, new_cwd: other })
+    const before = selected
+    await ui.press({ key: 'files-operation-cancel' }); await ui.press({ key: 'key-n' })
+    expect(seen.toasts.at(-1)).toContain('already running')
+    expect(seen.effects).toHaveLength(1)
+    await clock.advance(100); await pending
+    expect(owner).toBeFalsy()
+    expect(selected).toBe(before)
+    expect(TREE[other]).toEqual([])
+    seen.holdEffects(undefined)
+    await ui.press({ key: 'key-n' }); await ui.input({ key: 'files-operation-input', text: 'second.txt', kind: 'submit' })
+    expect(CONTENT[`${ROOT}/first.txt`]).toBe(''); expect(CONTENT[`${other}/second.txt`]).toBe('')
+    await ui.unmount()
+  } finally {
+    await clock.advance(100)
+    for (const key of Object.keys(TREE)) delete TREE[key]
+    Object.assign(TREE, JSON.parse(savedTree))
+    for (const key of Object.keys(CONTENT)) delete CONTENT[key]
+    Object.assign(CONTENT, JSON.parse(savedContent))
+  }
+})
+
 test('repeated Files focus and boundary scroll leave selection state unchanged', async ($, on) => {
   const writes: string[] = []
   on('state.set', (_$, e, next) => { writes.push(e.key); return next(e) })
@@ -57,12 +226,30 @@ function jei(args: string) {
 }
 
 /** Answers the files, git and the session beneath the plugin. Returns the calls it saw. */
-async function world($: Engine, on: On) {
+async function world($: Engine, on: On, operations = false) {
   on('session.id', () => ({ value: 'files-test-session' }))
   const lists: string[] = []
   const runs: string[][] = []
   const fills: { text: string; mode?: string }[] = []
   const toasts: string[] = []
+  const effects: string[] = []
+  let operationFailure: 'exit' | 'skip' | null = null
+  let refreshFailure = false
+  let effectHold: Promise<void> | undefined
+  let effectEntered = false
+  const create = (path: string, kind: 'file' | 'dir') => {
+    const parent = path.slice(0, path.lastIndexOf('/')), name = path.slice(path.lastIndexOf('/') + 1)
+    TREE[parent]!.push(kind === 'dir' ? dir(name) : file(name, 0))
+    if (kind === 'dir') TREE[path] = []
+    else CONTENT[path] = ''
+  }
+  const remove = (path: string) => {
+    const parent = path.slice(0, path.lastIndexOf('/')), name = path.slice(path.lastIndexOf('/') + 1)
+    TREE[parent] = TREE[parent]!.filter(entry => entry.name !== name)
+    for (const key of Object.keys(TREE)) if (key === path || key.startsWith(path + '/')) delete TREE[key]
+    for (const key of Object.keys(CONTENT)) if (key === path || key.startsWith(path + '/')) delete CONTENT[key]
+  }
+  if (operations) on('fs.write', async (_$, e) => { const path = posix(e.path); effects.push(`write:${path}`); effectEntered = true; await effectHold; create(path, 'file'); return { value: undefined } })
   on('fs.list', (_$, e) => {
     const path = posix(e.path)
     lists.push(path)
@@ -88,11 +275,29 @@ async function world($: Engine, on: On) {
     const argv = [...e.argv]
     runs.push(argv)
     const ok = (stdout: string) => ({ value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } })
+    if (refreshFailure && argv.includes('status')) return { value: { exitCode: 1, stdout: '', stderr: 'Status unavailable.', isStdoutTruncated: false, isStderrTruncated: false } }
+    if (operations && ['mkdir', 'mv', 'rm'].includes(argv[0]!)) {
+      effects.push(argv.join(' '))
+      if (operationFailure === 'exit') return { value: { exitCode: 1, stdout: '', stderr: 'Access denied.', isStdoutTruncated: false, isStderrTruncated: false } }
+      if (operationFailure === 'skip') return ok('')
+      const destination = posix(argv.at(-1)!)
+      if (argv[0] === 'mkdir') create(destination, 'dir')
+      else if (argv[0] === 'rm') remove(destination)
+      else {
+        const source = posix(argv.at(-2)!), isDir = !!TREE[source]
+        const contents = Object.entries(CONTENT).filter(([key]) => key === source || key.startsWith(source + '/'))
+        const folders = Object.entries(TREE).filter(([key]) => key === source || key.startsWith(source + '/'))
+        create(destination, isDir ? 'dir' : 'file'); remove(source)
+        for (const [key, value] of contents) CONTENT[destination + key.slice(source.length)] = value
+        for (const [key, value] of folders) TREE[destination + key.slice(source.length)] = value
+      }
+      return ok('')
+    }
     if (argv[0] === 'xdg-open') return { deny: 'xdg-open: not found\nmore detail' }
     if (argv.includes('--show-toplevel')) return ok(`${ROOT}\n`)
     if (argv.includes('--absolute-git-dir')) return ok(`${ROOT}/.git\n`)
     if (argv.includes('check-ignore')) return { value: { exitCode: 1, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
-    if (argv.includes('ls-files') && argv.includes('-co')) return ok(FILES.join('\0') + '\0')
+    if (argv.includes('ls-files') && argv.includes('-co')) return ok((operations ? Object.entries(TREE).flatMap(([parent, entries]) => entries.filter(e => e.kind === 'file').map(e => `${parent}/${e.name}`.slice(ROOT.length + 1))) : FILES).join('\0') + '\0')
     if (argv.includes('status')) return ok('# branch.oid 1111111111111111111111111111111111111111\0# branch.head main\0' + '1 .M N... 100644 100644 100644 1111111111111111111111111111111111111111 1111111111111111111111111111111111111111 src/api/user.ts\0')
     return ok('')
   })
@@ -107,8 +312,62 @@ async function world($: Engine, on: On) {
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('classic.CwdChanged', () => ({}))
   await $.classic.CwdChanged({ old_cwd: '/work', new_cwd: ROOT })
-  return { lists, runs, fills, toasts }
+  return { lists, runs, fills, toasts, effects, setOperationFailure(value: typeof operationFailure) { operationFailure = value }, setRefreshFailure(value: boolean) { refreshFailure = value }, holdEffects(value: Promise<void> | undefined) { effectHold = value }, get effectEntered() { return effectEntered } }
 }
+
+test('Files mutations refresh caches/state, select surviving targets and never simulate failed or skipped moves', { timeoutMs: 60_000 }, async ($, on) => {
+  on('ui.focus', () => ({}))
+  const savedTree = JSON.stringify(TREE), savedContent = JSON.stringify(CONTENT), seen = await world($, on, true)
+  try {
+    for (const surface of SURFACES) {
+      const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(40, 5), requestId: 'jei' })
+      const focus = async (rel: string) => $.ui.focus({ component: 'Pane', requestId: 'jei', plugin: 'jei', element: `row-${rel}`, origin: { kind: 'person' } })
+      await focus('src')
+      await ui.press({ key: 'key-n' }); await ui.input({ key: 'files-operation-input', text: 'created.txt', kind: 'submit' })
+      expect(CONTENT[`${ROOT}/src/created.txt`]).toBe('')
+      expect(await ui.find({ key: 'row-src/created.txt' })).toBeTruthy()
+      await ui.press({ key: 'key-r' }); await ui.input({ key: 'files-operation-input', text: 'renamed.txt', kind: 'submit' })
+      expect(CONTENT[`${ROOT}/src/renamed.txt`]).toBe('')
+      await ui.press({ key: 'key-m' }); await ui.input({ key: 'files-operation-input', text: 'moved.txt', kind: 'submit' })
+      expect(CONTENT[`${ROOT}/moved.txt`]).toBe('')
+      await ui.press({ key: 'key-f' }); await ui.input({ key: 'filter', text: 'moved', kind: 'change' })
+      expect(await ui.find({ key: 'row-moved.txt' })).toBeTruthy()
+      await ui.press({ key: 'files-cancel' })
+      const before = seen.effects.length
+      await ui.press({ key: 'key-d' }); expect(seen.effects.length).toBe(before)
+      await ui.press({ key: 'files-operation-confirm' }); expect(CONTENT[`${ROOT}/moved.txt`]).toBeUndefined()
+      expect((await ui.findAll({ type: 'Button' })).some(row => row.key?.startsWith('row-') && row.children.some(child => typeof child === 'object' && child !== null && 'props' in child && (child.props as { inverse?: boolean }).inverse))).toBe(true)
+      await focus('src')
+      await ui.press({ key: 'key-n' }); await ui.input({ key: 'files-operation-input', text: 'new-folder/', kind: 'submit' })
+      await ui.press({ key: 'key-n' }); await ui.input({ key: 'files-operation-input', text: 'child.txt', kind: 'submit' })
+      expect(CONTENT[`${ROOT}/src/new-folder/child.txt`]).toBe('')
+      await focus('src/new-folder'); await ui.press({ key: 'key-d' })
+      expect((await ui.find({ key: 'files-operation-title' }))?.text).toContain('recursive')
+      await ui.press({ key: 'files-operation-confirm' }); expect(CONTENT[`${ROOT}/src/new-folder/child.txt`]).toBeUndefined()
+      await focus('src/api/user.ts')
+      for (const failure of ['exit', 'skip'] as const) {
+        seen.setOperationFailure(failure)
+        await ui.press({ key: 'key-m' }); await ui.input({ key: 'files-operation-input', text: 'failed.txt', kind: 'submit' })
+        expect(CONTENT[`${ROOT}/src/api/user.ts`]).toBe(USER_TS)
+        expect(CONTENT[`${ROOT}/failed.txt`]).toBeUndefined()
+        expect(seen.toasts.at(-1)).toContain(failure === 'exit' ? 'Access denied' : 'did not complete')
+      }
+      seen.setOperationFailure(null)
+      seen.setRefreshFailure(true)
+      await focus('src'); await ui.press({ key: 'key-n' }); await ui.input({ key: 'files-operation-input', text: 'completed.txt', kind: 'submit' })
+      expect(CONTENT[`${ROOT}/src/completed.txt`]).toBe('')
+      expect(seen.toasts.at(-1)).toContain('Operation completed. Refresh failed:')
+      seen.setRefreshFailure(false)
+      delete CONTENT[`${ROOT}/src/completed.txt`]; TREE[`${ROOT}/src`] = TREE[`${ROOT}/src`]!.filter(entry => entry.name !== 'completed.txt')
+      await ui.unmount()
+    }
+  } finally {
+    for (const key of Object.keys(TREE)) delete TREE[key]
+    Object.assign(TREE, JSON.parse(savedTree))
+    for (const key of Object.keys(CONTENT)) delete CONTENT[key]
+    Object.assign(CONTENT, JSON.parse(savedContent))
+  }
+})
 
 const rowKeys = async (ui: { findAll: (q: { type: string }) => Promise<{ key: string | undefined }[]> }) =>
   (await ui.findAll({ type: 'Button' })).map((b) => b.key ?? '').filter((k) => k.startsWith('row-'))
@@ -344,7 +603,7 @@ test('no line is wider than the pane, and the selection survives a resize', asyn
       const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', props: paneProps(width), requestId: 'jei' })
       for (const w of lineWidths((await ui.drawn()) as Node)) expect(w, `tree ${surface} ${width}`).toBeLessThanOrEqual(width)
       await ui.redraw(paneProps(width, 5))
-      expect(await ui.find({ key: 'row-src/api/user.ts' })).toBeDefined()
+      expect(await ui.find({ key: 'row-src/api/user.ts' }), `${surface} ${width}: ${(await rowKeys(ui)).join(',')}`).toBeDefined()
       for (const w of lineWidths((await ui.drawn()) as Node)) expect(w).toBeLessThanOrEqual(width)
       await ui.redraw(paneProps(width, 24))
       await ui.press({ key: 'key-f' })

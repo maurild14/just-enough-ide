@@ -45,13 +45,37 @@ function fixture(options: Record<string, unknown> = {}) {
   let preview = async (rel: string): Promise<unknown> => previews[rel] ?? { kind: 'empty' }
   let opener = async (_input: unknown): Promise<unknown> => ({})
   let allFiles = async (): Promise<unknown> => ({ files: ['src/usage.ts', 'README.md', 'src/api/user.ts', '.env'] })
+  let operationSerial = 0
+  let pendingOperation: { kind: string; source: string; parent: string } | undefined
+  let fsApply: ((input: { value?: string }) => Promise<unknown>) | undefined
+  let prepareReply: Promise<unknown> | undefined
+  let directory = '/acme-app'
+  let stateReads = 0
   let git: unknown = { root: '/acme-app', status: { entries: [{ path: 'src/api/user.ts', index: null, worktree: 'modified' }] } }
   const api = {
-    state: async () => ({ cwd: '/acme-app', options: parseOptions(options), git, activity: {} }),
+    state: async () => { stateReads++; return { cwd: directory, options: parseOptions(options), git, activity: {} } },
     async listDir(input: { rel: string }) { calls.push({ method: 'listDir', input }); return listing(input.rel) },
     async preview(input: { rel: string }) { calls.push({ method: 'preview', input }); return preview(input.rel) },
     async allFiles() { calls.push({ method: 'allFiles', input: {} }); return allFiles() },
+    async quickOpenFiles() { calls.push({ method: 'quickOpenFiles', input: {} }); return { files: Object.entries(tree).flatMap(([parent, entries]) => entries.filter(raw => (raw as { kind: string }).kind === 'file').map(raw => `${parent ? parent + '/' : ''}${(raw as { name: string }).name}`)) } },
     async open(input: unknown) { calls.push({ method: 'open', input }); return opener(input) },
+    async fsPrepare(input: { kind: string; source: string }) { calls.push({ method: 'fsPrepare', input }); const sourceKind = tree[input.source] ? 'dir' : 'file', parent = input.kind === 'new' && sourceKind === 'dir' ? input.source : input.source.slice(0, Math.max(0, input.source.lastIndexOf('/'))); pendingOperation = { ...input, parent }; return prepareReply ?? { planId: String(++operationSerial), root: directory, ...input, sourceKind: input.source ? sourceKind : null, parent } },
+    async fsApply(input: { value?: string }) {
+      calls.push({ method: 'fsApply', input })
+      if (fsApply) return fsApply(input)
+      const operation = pendingOperation!, source = operation.source, sourceParent = source.slice(0, Math.max(0, source.lastIndexOf('/')))
+      const sourceName = source.slice(source.lastIndexOf('/') + 1), sourceEntry = tree[sourceParent]?.find(raw => (raw as { name: string }).name === sourceName) as { name: string; kind: string } | undefined
+      const value = input.value ?? '', destination = operation.kind === 'move' ? value : `${operation.parent ? operation.parent + '/' : ''}${value.replace(/\/$/, '')}`
+      if (operation.kind !== 'new') tree[sourceParent] = tree[sourceParent]!.filter(raw => (raw as { name: string }).name !== sourceName)
+      if (operation.kind !== 'delete') {
+        const parent = destination.slice(0, Math.max(0, destination.lastIndexOf('/'))), name = destination.slice(destination.lastIndexOf('/') + 1)
+        const isDir = operation.kind === 'new' ? value.endsWith('/') : sourceEntry?.kind === 'dir'
+        tree[parent]!.push(isDir ? dir(name) : file(name))
+        if (isDir) tree[destination] = tree[source] ?? []
+      }
+      if (operation.kind !== 'new') { delete tree[source]; delete previews[source] }
+      return { ok: true, attempted: true, rel: operation.kind === 'delete' ? sourceParent : destination }
+    },
     events: { on(name: string, fn: (event: { data: unknown }) => void) {
       const handlers = listeners.get(name) ?? new Set(); listeners.set(name, handlers); handlers.add(fn)
       return () => { handlers.delete(fn) }
@@ -81,6 +105,8 @@ function fixture(options: Record<string, unknown> = {}) {
     setGit(value: unknown) { git = value },
     setAllFiles(fn: typeof allFiles) { allFiles = fn },
     setOpen(fn: typeof opener) { opener = fn },
+    setFsApply(fn: typeof fsApply) { fsApply = fn },
+    setPrepareReply(reply: Promise<unknown>) { prepareReply = reply }, setCwd(value: string) { directory = value }, get stateReads() { return stateReads },
     emit(name: string, data: unknown = {}) { for (const fn of listeners.get(name) ?? []) fn({ data }) },
   }
 }
@@ -94,6 +120,133 @@ test('Files sorts directories first, expands/collapses and toggles hidden entrie
   f.key('enter'); await r.flush(); expect(r.captureCharFrame()).not.toContain('api')
   f.key('h'); await r.flush(); frame = r.captureCharFrame()
   expect(frame).toContain('.env'); expect(frame).toContain('dist'); expect(frame).not.toContain('.git')
+})
+
+test('Files operation inline editor and recursive confirmation own input and cancel in the public pane', async () => {
+  const f = fixture(), r = await f.mount(24, 5)
+  f.key('n'); await r.flush()
+  expect(r.renderer.root.findDescendantById('files-operation-input')).toBeDefined()
+  await r.mockInput.typeText('nrmd123.txt'); await r.flush()
+  expect(r.captureCharFrame()).toContain('nrmd123.txt')
+  expect(f.key('3')).toBeUndefined()
+  f.key('esc'); await r.flush()
+  expect(r.renderer.root.findDescendantById('files-operation-input')).toBeUndefined()
+  f.select('src'); await r.flush(); f.key('d'); await r.flush()
+  expect(r.captureCharFrame()).toContain('recursive')
+  expect(r.captureCharFrame()).toContain('Delete')
+  expect(r.captureCharFrame()).toContain('Cancel')
+  f.key('esc'); await r.flush()
+  expect(f.calls.filter(call => call.method === 'fsApply')).toEqual([])
+})
+
+for (const width of [24, 40, 80, 120]) test(`Files operation editor/confirm stays bounded and retains input through resize at ${width}`, async () => {
+  const f = fixture(), r = await f.mount(width, 5)
+  f.key('n'); await r.flush(); await r.mockInput.typeText('nrmd123.txt'); await r.flush()
+  for (const w of [120, 24, 40, 80, width]) {
+    f.setWidth(w); r.resize(w, 5); await r.flush()
+    const lines = r.captureCharFrame().split('\n').slice(0, -1); expect(lines.length).toBe(5)
+    expect(lines.every(line => cellWidth(line) <= w)).toBe(true)
+    expect(r.captureCharFrame()).toContain('nrmd123.txt'); expect(r.captureCharFrame()).toContain('Cancel')
+  }
+  r.resize(width, 2); await r.flush()
+  expect(r.captureCharFrame()).toContain('Enlarge'); expect(r.captureCharFrame()).toContain('Cancel')
+  expect(r.renderer.root.findDescendantById('files-operation-input')).toBeUndefined()
+  f.key('enter'); await r.flush(); expect(f.calls.some(call => call.method === 'fsApply')).toBe(false)
+  r.resize(width, 5); await r.flush(); expect(r.captureCharFrame()).toContain('nrmd123.txt')
+  f.key('esc'); await r.flush()
+  const longName = 'long-'.repeat(12) + 'file.txt', longPath = `src/api/${longName}`
+  f.tree['src/api']!.push(file(longName)); f.emit('changed'); f.select(longPath); await r.flush()
+  for (const action of ['r', 'm']) {
+    f.key(action); await r.flush()
+    const expected = action === 'r' ? longName : longPath
+    for (const w of [24, 40, 80, 120, width]) {
+      f.setWidth(w); r.resize(w, 5); await r.flush()
+      expect((r.renderer.root.findDescendantById('files-operation-input') as InputRenderable).value).toBe(expected)
+      expect(r.captureCharFrame().split('\n').every(line => cellWidth(line) <= w)).toBe(true)
+      expect(r.captureCharFrame()).toContain('Cancel')
+    }
+    r.resize(width, 2); await r.flush(); expect(r.captureCharFrame()).toContain('Enlarge'); f.key('esc'); await r.flush(); r.resize(width, 5); await r.flush()
+  }
+  f.key('d'); await r.flush(); expect(r.captureCharFrame()).toContain('Delete file?'); f.key('esc'); await r.flush()
+  f.select('src'); await r.flush(); f.key('d'); await r.flush()
+  for (const w of [24, 120, width]) {
+    f.setWidth(w); r.resize(w, 5); await r.flush()
+    expect(r.captureCharFrame()).toContain('recursive'); expect(r.captureCharFrame()).toContain('Delete'); expect(r.captureCharFrame()).toContain('Cancel')
+  }
+  expect(f.calls.some(call => call.method === 'fsApply')).toBe(false)
+  f.key('enter'); await r.flush()
+  expect(f.calls.filter(call => call.method === 'fsApply').at(-1)?.input).toMatchObject({ confirmed: true })
+})
+
+test('Files native mutations refresh listing/all-files/state, keep targets and report partial/completed refresh errors without retries', async () => {
+  const f = fixture(), r = await f.mount(40, 5)
+  f.setAllFiles(async () => ({ files: Object.entries(f.tree).flatMap(([parent, entries]) => entries.filter(raw => (raw as { kind: string }).kind === 'file').map(raw => `${parent ? parent + '/' : ''}${(raw as { name: string }).name}`)) }))
+  f.key('f'); await r.flush(); f.key('esc'); await r.flush()
+  const beforeFiles = f.calls.filter(call => call.method === 'allFiles').length, beforeState = f.stateReads
+  f.select('src'); await r.flush()
+  f.key('n'); await r.flush(); await r.mockInput.typeText('created.txt'); f.key('enter'); await r.flush()
+  expect(f.calls.filter(call => call.method === 'fsApply').at(-1)?.input).toMatchObject({ value: 'created.txt', confirmed: false })
+  expect(r.captureCharFrame()).toContain('created.txt')
+  f.key('f'); await r.flush(); await r.mockInput.typeText('created'); await r.flush()
+  expect(r.captureCharFrame()).toContain('created.txt')
+  expect(f.calls.filter(call => call.method === 'allFiles').length).toBeGreaterThan(beforeFiles)
+  expect(f.stateReads).toBeGreaterThan(beforeState)
+  f.key('esc'); await r.flush()
+  f.key('r'); await r.flush(); const rename = r.renderer.root.findDescendantById('files-operation-input') as InputRenderable
+  expect(rename.value).toBe('created.txt'); rename.value = 'renamed.txt'; f.key('enter'); await r.flush()
+  expect(r.captureCharFrame()).toContain('renamed.txt')
+  f.key('m'); await r.flush(); const move = r.renderer.root.findDescendantById('files-operation-input') as InputRenderable
+  expect(move.value).toBe('src/renamed.txt'); move.value = 'moved.txt'; f.key('enter'); await r.flush()
+  expect(r.captureCharFrame()).toContain('moved.txt')
+  const before = f.calls.length
+  f.setFsApply(async () => ({ ok: false, attempted: true, rel: '', error: 'Access denied after partial delete.' }))
+  f.key('d'); await r.flush(); expect(f.calls.slice(before).some(call => call.method === 'fsApply')).toBe(false)
+  f.key('enter'); await r.flush()
+  expect(f.notices.at(-1)).toMatchObject({ message: 'Access denied after partial delete.', variant: 'error' })
+  expect(f.calls.slice(before).some(call => call.method === 'listDir')).toBe(true)
+  expect(f.calls.slice(before).filter(call => call.method === 'fsApply')).toHaveLength(1)
+  f.setFsApply(async () => ({ ok: true, attempted: true, rel: 'moved.txt', refreshError: 'Status read failed.' }))
+  f.key('r'); await r.flush(); f.key('enter'); await r.flush()
+  expect(f.notices.at(-1)).toMatchObject({ message: 'Operation completed. Refresh failed: Status read failed.', variant: 'error' })
+})
+
+test('Files preparation busy and stale-root replies cannot open an editor or mutate another project', async () => {
+  const f = fixture(), r = await f.mount(24, 5)
+  let release!: (reply: unknown) => void
+  f.setPrepareReply(new Promise(resolve => { release = resolve }))
+  f.key('n'); await r.flush(); f.key('r'); await r.flush()
+  expect(f.calls.filter(call => call.method === 'fsPrepare')).toHaveLength(1)
+  f.setCwd('/other-app'); f.emit('changed'); await r.flush()
+  release({ planId: 'old', root: '/acme-app', kind: 'new', source: 'src', sourceKind: 'dir', parent: 'src' }); await r.flush()
+  expect(r.renderer.root.findDescendantById('files-operation-input')).toBeUndefined()
+  expect(f.calls.some(call => call.method === 'fsApply')).toBe(false)
+})
+
+test('own Files mutations invalidate a retained Quick Open cache while Search is unmounted', async () => {
+  const f = fixture()
+  for (const key of Object.keys(f.tree)) delete f.tree[key]
+  f.tree[''] = [file('old.txt')]
+  const r = await f.mount(40, 10)
+  const quickOpen = async () => { f.key('2'); await r.flush(); f.key('esc'); await r.flush(); f.key('q'); await r.flush() }
+  await quickOpen(); expect(r.captureCharFrame()).toContain('old.txt')
+  f.key('esc'); await r.flush(); f.key('1'); await r.flush()
+  f.select('old.txt'); await r.flush(); f.key('d'); await r.flush(); f.key('enter'); await r.flush()
+  f.key('n'); await r.flush(); await r.mockInput.typeText('fresh.txt'); f.key('enter'); await r.flush()
+  await quickOpen()
+  expect(r.captureCharFrame()).toContain('fresh.txt'); expect(r.captureCharFrame()).not.toContain('old.txt')
+  expect(f.calls.filter(call => call.method === 'quickOpenFiles')).toHaveLength(2)
+})
+
+test('Files keeps an in-flight owner on cancel and ignores its late selection', async () => {
+  const f = fixture(), r = await f.mount(40, 5)
+  let release!: (value: unknown) => void
+  f.setFsApply(() => new Promise(resolve => { release = resolve }))
+  f.key('n'); await r.flush(); await r.mockInput.typeText('late.txt'); f.key('enter'); await r.flush()
+  f.key('esc'); await r.flush(); const before = paneMemory(f.ctx)[0].panes['session-a']!.selected.files
+  f.key('n'); await r.flush(); expect(f.calls.filter(call => call.method === 'fsPrepare')).toHaveLength(1)
+  release({ ok: true, attempted: true, rel: 'late.txt' }); await r.flush()
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected.files).toBe(before)
+  expect(f.calls.filter(call => call.method === 'fsApply')).toHaveLength(1)
 })
 
 test('f filters unexpanded paths, ranks usr first, and Esc returns to the tree', async () => {

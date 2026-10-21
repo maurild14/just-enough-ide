@@ -1,0 +1,29 @@
+# ADR 0028: Safe native Files operations
+
+> Purpose: literal Files mutation inputs, captured canonical evidence, host effects and native confirmation · Status: current · Last reviewed: 2026-10-21
+
+Status: accepted · 2026-10-21
+
+## Context
+
+Files needs the same new, rename, move and delete behavior on both hosts. Existing Host stats follow links and return null for metadata failures. Claude's writer creates parents and can overwrite. Node rename can replace a destination; mv -n can skip with exit zero, and mv/Move-Item can treat an existing directory as a container. None of these path APIs holds a verified directory handle through an effect.
+
+Windows PowerShell 5.1 and 7 declare LiteralPath for Move-Item/Remove-Item, but not New-Item. Disposable probes verified literal New-Item directory creation with Path, including brackets in parents and basenames. A constructed shell command is unnecessary.
+
+## Decision
+
+- n takes one name and creates an empty file. One trailing slash creates a folder. Its parent is the selected folder, the selected file's parent, or the project root without a selection. r takes a single basename in the same parent. m takes the exact project-root-relative destination, including basename; an existing folder is not a container request.
+- Preserve ordinary legal whitespace and Unicode. Reject empty/blank names, C0 controls, backslashes, absolute paths, empty/dot/traversal components, and separators in basenames. Windows also rejects drive-relative/UNC/device inputs, ADS/colon and invalid characters, device stems including extension/superscript aliases, and trailing dot/space in every component. POSIX colons remain literal.
+- Fresh uncached parent listings and absolute resolved metadata establish observed source kind and target absence. Null stat alone is never absence. Refuse missing parents, unknown metadata, existing targets of any kind (including directory/dangling-link/case aliases), direct source links/other entries, root/canonical-root aliases and outside paths. An opened root link is allowed and anchored to its real root. Validate each ancestor and reject lexical/canonical descendant directory moves.
+- Capture root/source/parent evidence before editing or confirmation, then revalidate before effects. Delete always has visible Delete/Cancel controls and names its source; folder copy explicitly says recursive. Changed evidence, canceled work and a changed project refuse before effects. A Files-only busy guard serializes these operations through refresh; it is not a global editor/agent/Git/Search lock.
+- core/fsops.ts is pure: validation, evidence, plans, argv/env and postconditions. Claude new files use exactly $.fs.write(path, ''). Other Claude effects use checked process.run argv. Windows selects fixed powershell.exe program constants; source/destination are only JEI_FS_SOURCE/JEI_FS_DESTINATION environment data. Move/Remove use LiteralPath. Directory creation uses verified literal New-Item Path, without Force or automatic-parent authorization. ErrorAction Stop and exit checks prevent nonterminating errors from appearing successful. This is a narrow exception to the no-shell-program wording: no user-built program, sh -c or cmd /c is permitted.
+- POSIX effects use mkdir, mv -n and rm with absolute operands after --; mkdir is nonrecursive and directory removal is recursive. Require exact source-absence/destination-kind/canonical postconditions, including after exit zero, so skipped mv is an error. Postconditions do not identify inodes or reverse a directory-container race.
+- OpenCode effects stay server-side in node:fs/promises: exclusive wx files, nonrecursive mkdir, freshly checked rename and rm(force:false). Closed fsPrepare/fsApply RPC inputs reject extra/malformed fields before effects. The server owns the evidence behind opaque random tokens, one latest plan per session/root and at most 32 pending plans; stale/replayed/restarted tokens refuse. Cancellation and current root are checked immediately before effects. The TUI performs no filesystem I/O.
+- Both hosts use small inline native editors/confirmations and existing controls/tokens. Input owns letters/digits; Cancel is visible. At 24 columns Claude gives n/r/m/d their own compact action row, sharing the root-filter Back control when needed and borrowing a result row. Existing mention/open/filter/hidden controls remain reachable. Five total rows retain the editor/confirmation controls. Smaller operation views show bounded enlargement/Cancel and cannot submit an undisplayed action.
+- Every attempted effect invalidates listings, previews and all-files caches and attempts tree/Git/state refresh, including failed or partially completed effects. Successful new/rename/move selects the target and reveals parents; delete selects a surviving parent/row. Clear the filename query after success so it cannot conceal the changed target. Keep a completed action distinct from a refresh failure, consume attempted plans and never automatically repeat an effect.
+
+## Consequences and limits
+
+The final checks enforce refusal against observed state, not atomic protection from an unrelated concurrent writer. Claude write has no exclusive flag; Node rename can replace a newly appearing target, and a new directory can redirect mv/Move-Item. Root/parent links can change between checks and effects. Eliminating those windows requires different host primitives, including directory-handle-relative effects and no-replace rename. Existing-target checks, canonical checks and postconditions remain mandatory.
+
+Native renderer/kit tests prove measured trees, input routing and public flows at the required sizes; SDK dialog mocks are not layout evidence. Physical host paint/focus, other operating systems and Windows file symlinks (EPERM in this environment) remain explicit QA limits. Disposable Windows junction tests preserve outside child contents during recursive deletion.

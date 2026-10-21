@@ -2,7 +2,7 @@ import type { EngineInterface } from 'claude-code'
 import { currentView, reducePane } from '../../core/pane.ts'
 import { readGit, readGitUi, readHistory, readPane, readTree, updateGitUi, updateHistory, updatePane } from './state.ts'
 import { leaveSearchEditor, searchEditing, stopSearch } from './search.tsx'
-import { clearFileSearch } from './files.tsx'
+import { clearFileSearch, cancelFilesOperation } from './files.tsx'
 
 /** The visible control and keyboard shortcut share the same one-level return. */
 export async function backContext($: EngineInterface) {
@@ -15,13 +15,14 @@ export async function backContext($: EngineInterface) {
   const history = editorView && git?.root ? await readHistory($, git.root) : null
   const question = !!ui?.ask && (view === 'git' || ui.ask.kind === 'history' && ui.ask.root === git?.root)
   const filtering = view === 'files' && (tree?.filtering || tree?.editing) || view === 'git' && history?.filtering || view === 'git.branches' && history?.branchFiltering
-  const editing = await searchEditing($) || view === 'files' && tree?.editing === true
-  return { active: pane.stack.length > 1 || !!filtering || question || !!history?.newBranch || editing, editing: (view !== 'files' && !!filtering) || !!history?.newBranch || editing, inline: question || !!history?.newBranch }
+  const editing = await searchEditing($) || view === 'files' && (tree?.editing === true || !!tree?.operation)
+  return { active: pane.stack.length > 1 || !!filtering || question || !!history?.newBranch || editing, editing: (view !== 'files' && !!filtering) || !!history?.newBranch || editing, inline: question || !!history?.newBranch || !!tree?.operation }
 }
 
 export async function goBack($: EngineInterface): Promise<void> {
   const pane = await readPane($)
   const view = currentView(pane)
+  if (view === 'files' && (await readTree($)).operation) { await cancelFilesOperation($); return }
   if (['search', 'quickopen', 'search.replace'].includes(view) && await leaveSearchEditor($)) return
   if (['search', 'quickopen', 'search.replace'].includes(view)) await stopSearch($)
   if (view === 'git' || view === 'git.branches' || view === 'git.compare') {

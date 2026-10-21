@@ -118,7 +118,7 @@ export async function refreshGit($: EngineInterface): Promise<void> {
   if (!guarded) { guarded = latest(snapshot); snapshots.set(key, guarded) }
   const r = await guarded(hostFor($, root), root)
   if (!r.stale && await readCwd($) === root) {
-    for (const forget of forgetters) forget()
+    forgetViews()
     await setGit($, gitState(r.value))
     if (r.value.root !== null) {
       try { (await tracking($, r.value.root)).agent.observe(r.value.status.branch.oid) } catch {}
@@ -134,6 +134,11 @@ export function onRefresh(forget: () => void): void {
   forgetters.push(forget)
 }
 
+/** Invalidate derived views even when the subsequent state read fails. */
+export function forgetViews(): void {
+  for (const forget of forgetters) forget()
+}
+
 /**
  * After a change on disk: drop stale caches (everything for `all`, a shell
  * command), re-read git, re-read the filter's file list only while the filter
@@ -144,7 +149,7 @@ export async function refreshAfterChange($: EngineInterface, rels: readonly stri
   if (root === '') return
   if (all) forgetAll(root)
   else forgetPaths(root, rels)
-  for (const forget of forgetters) forget()
+  forgetViews()
   let fileList: Promise<void> | undefined
   if ((await readTree($)).filtering) fileList = refreshFileList(hostFor($, root), root).catch(() => undefined)
   else forgetFileList(root)

@@ -149,6 +149,14 @@ export const JeiRpc = Rpc.define({
       }, errors: pathErrors,
     },
     allFiles: { input: empty, output: { type: 'object', properties: { files: strings }, required: ['files'], additionalProperties: false } },
+    fsPrepare: {
+      input: { type: 'object', properties: { sessionID: text, kind: { enum: ['new', 'rename', 'move', 'delete'] }, source: text }, required: ['sessionID', 'kind', 'source'], additionalProperties: false },
+      output: { type: 'object', properties: { planId: text, root: text, kind: { enum: ['new', 'rename', 'move', 'delete'] }, source: text, sourceKind: { enum: ['file', 'dir', null] }, parent: text }, required: ['planId', 'root', 'kind', 'source', 'sourceKind', 'parent'], additionalProperties: false },
+    },
+    fsApply: {
+      input: { type: 'object', properties: { sessionID: text, planId: text, value: text, confirmed: flag }, required: ['sessionID', 'planId', 'confirmed'], additionalProperties: false },
+      output: { type: 'object', properties: { ok: flag, attempted: flag, rel: text, error: text, refreshError: text }, required: ['ok', 'attempted', 'rel'], additionalProperties: false },
+    },
     open: {
       input: { type: 'object', properties: { rel: text, line: { type: 'integer', minimum: 1 } }, required: ['rel'], additionalProperties: false },
       // `refused`: why the OS opener was not run (a runnable type with no editorCommand).

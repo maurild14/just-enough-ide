@@ -75,6 +75,9 @@ export function setCwd($: StateHost, dir: string): Promise<string> {
 export function readTree($: StateHost): Promise<JeiTree> {
   return read($, tree)
 }
+export function resetFilesUi($: StateHost): Promise<JeiTree> {
+  return update($, tree, t => ({ ...t, operation: null, operationBusy: null }))
+}
 export function readActivity($: StateHost): Promise<JeiActivity> {
   return read($, activity)
 }

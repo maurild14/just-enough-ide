@@ -37,6 +37,14 @@ export type JeiTree = {
   filter: string
   editing?: boolean
   origin?: string
+  operationBusy?: string | null
+  operation?: {
+    id: string; value: string; working: boolean
+    prepared: {
+      kind: 'new' | 'rename' | 'move' | 'delete'; source: string; root: string; realRoot: string; parent: string; parentReal: string
+      sourceKind: 'file' | 'dir' | null; sourceReal: string | null; sourceSize: number; ancestors: string[]
+    }
+  } | null
 }
 
 /** The Files preview: the file shown, markdown source shown (`m`) and the first line in view. */

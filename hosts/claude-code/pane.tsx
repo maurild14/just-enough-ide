@@ -119,12 +119,14 @@ export async function renderPane($: EngineInterface, e: PaneRender, options: Opt
   const showRule = rows >= 8
   const showHeader = rows >= 6
   const showBar = rows >= 3
-  const compactEditor = view === 'files' ? (await readTree($)).editing === true : view === 'search' || view === 'quickopen'
-  const showBack = back.active && !back.inline && rows >= 4 && !(compactEditor && back.editing)
+  const fileTree = view === 'files' ? await readTree($) : null
+  const compactEditor = view === 'files' ? fileTree?.editing === true || !!fileTree?.operation : view === 'search' || view === 'quickopen'
+  const operationsRows = view === 'files' && columns < 32 && rows >= 5 && !fileTree?.editing && !fileTree?.operation ? 1 : 0
+  const showBack = back.active && !back.inline && rows >= 4 && !(compactEditor && back.editing) && !operationsRows
 
   const pinned = (showBar ? 1 : 0) + (showRule ? 1 : 0) + (showHeader ? 1 : 0) + (showHint ? 1 : 0) + (showBack ? 1 : 0)
-  const searchRows = root && ['files', 'search', 'quickopen'].includes(view) ? rows >= 10 ? 3 : Math.min(1, Math.max(0, rows - pinned)) : 0
-  const frame = { columns, inner, bodyRows: Math.max(0, rows - pinned - searchRows), isFocused: e.props.isFocused, searchRows }
+  const searchRows = root && !fileTree?.operation && ['files', 'search', 'quickopen'].includes(view) ? rows >= 10 ? 3 : Math.min(1, Math.max(0, rows - pinned)) : 0
+  const frame = { columns, inner, bodyRows: Math.max(0, rows - pinned - searchRows - operationsRows), isFocused: e.props.isFocused, searchRows, operationsRows }
   // Tabs that draw their own header, body and letter actions.
   const content = isFiles
     ? await renderFiles($, e, frame, options)

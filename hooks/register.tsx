@@ -12,7 +12,7 @@ import { focusGit, scrollGitList } from '../hosts/claude-code/git.tsx'
 import { focusBranches, scrollBranches } from '../hosts/claude-code/branches.tsx'
 import { focusSearch, scrollSearch, stopSearch } from '../hosts/claude-code/search.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
-import { initPane, PANE_ID, readCwd, readPane, resetGitUi, resetSearch, setCwd, updatePane, updateTree, updateSearch } from '../hosts/claude-code/state.ts'
+import { initPane, PANE_ID, readCwd, readPane, resetGitUi, resetFilesUi, resetSearch, setCwd, updatePane, updateTree, updateSearch } from '../hosts/claude-code/state.ts'
 
 const TITLE = 'JEI'
 
@@ -43,6 +43,7 @@ export const register: Register = (on, raw) => {
     await setCwd($, e.cwd)
     autoOpenArmed = (await initPane($, options.defaultTab)) && options.startOpen
     await resetGitUi($)
+    await resetFilesUi($)
     await resetSearch($)
     void refreshGit($).catch(() => undefined)
     return next(e)

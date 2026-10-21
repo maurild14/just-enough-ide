@@ -20,9 +20,17 @@ test('git snapshots survive a JSON round trip with text and binary numstat count
   expect(toWire(fromWire({ root: null }))).toEqual({ root: null })
 })
 
+test('Files mutation RPC uses closed server-owned preparation and explicit confirmation', () => {
+  const methods = JeiRpc.methods as Record<string, any>
+  expect(methods.fsPrepare?.input.additionalProperties).toBe(false)
+  expect(methods.fsApply?.input.additionalProperties).toBe(false)
+  expect(methods.fsApply?.input.required).toEqual(['sessionID', 'planId', 'confirmed'])
+  expect(methods.fsApply?.input.properties).not.toHaveProperty('plan')
+})
+
 test('the portable contract names every service, includes error previews and declares path errors', () => {
   expect(JeiRpc.id).toBe('jei')
-  expect(Object.keys(JeiRpc.methods)).toEqual(['state', 'listDir', 'preview', 'allFiles', 'open', 'stage', 'unstage', 'discard', 'diff', 'generate', 'commitPlan', 'commit', 'init', 'sync', 'graph', 'commitFiles', 'branches', 'switchBranch', 'createBranch', 'compare', 'checkout', 'revert', 'fetch', 'webUrl', 'openWeb', 'searchStart', 'searchCancel', 'replacePlan', 'replaceApply', 'quickOpenFiles'])
+  expect(Object.keys(JeiRpc.methods)).toEqual(['state', 'listDir', 'preview', 'allFiles', 'fsPrepare', 'fsApply', 'open', 'stage', 'unstage', 'discard', 'diff', 'generate', 'commitPlan', 'commit', 'init', 'sync', 'graph', 'commitFiles', 'branches', 'switchBranch', 'createBranch', 'compare', 'checkout', 'revert', 'fetch', 'webUrl', 'openWeb', 'searchStart', 'searchCancel', 'replacePlan', 'replaceApply', 'quickOpenFiles'])
   expect(JeiRpc.methods.preview.output.properties.kind.enum).toContain('error')
   expect(JeiRpc.methods.commit.input.required).toEqual(['message', 'mode', 'approvedSensitive'])
   expect(JeiRpc.methods.commit.input.properties.approvedSensitive).toEqual({ type: 'array', items: { type: 'string' } })
