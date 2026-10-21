@@ -28,9 +28,10 @@ test('chrome is budgeted: the gap shrinks before the labels', () => {
 })
 
 test('labels shorten when even a zero gap does not fit', () => {
+  expect(tabBar(100, 22, 'search', 4).labels.map((l) => l.label)).toEqual(['1', '2 Search', '3'])
   const b = tabBar(100, 17, 'search', 4)
   expect(b.labels.map((l) => l.label)).toEqual(['1', '2', '3'])
-  expect(b.width).toBeLessThanOrEqual(30)
+  expect(b.width).toBeLessThanOrEqual(17)
 })
 
 test('width never exceeds room while any form fits, at every width', () => {

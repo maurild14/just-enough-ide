@@ -1,5 +1,5 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
-import { CodeRenderable, RGBA } from '@opentui/core'
+import { CodeRenderable, InputRenderable, RGBA } from '@opentui/core'
 import { testRender } from '@opentui/solid'
 import type { Plugin } from '@opencode/plugin/tui'
 import { createMemo, createSignal, onCleanup } from 'solid-js'
@@ -7,6 +7,7 @@ import { createStore, produce } from 'solid-js/store'
 import { cellWidth } from '../../core/shared/fit.ts'
 import { parseOptions } from '../../core/options.ts'
 import plugin from '../../tui.ts'
+import { paneMemory } from './pane.tsx'
 
 type Context = Plugin.Context
 type Layer = ReturnType<Parameters<Context['keymap']['layer']>[0]>
@@ -75,7 +76,7 @@ function fixture(options: Record<string, unknown> = {}) {
   }
   function key(bind: string) { return layers.flatMap((l) => l().commands ?? []).findLast((c) => c.bind === bind && (typeof c.enabled === 'function' ? c.enabled() : c.enabled !== false))?.run() }
   function select(rel: string) { layers.flatMap((l) => l().commands ?? []).find((c) => c.id === 'jei.toggle')!.run(rel) }
-  return { mount, key, select, calls, prompts, sent, notices, tree, previews, setWidth,
+  return { ctx, mount, key, select, calls, prompts, sent, notices, tree, previews, setWidth,
     setEdited(value: string | undefined) { edited = value }, setListing(fn: typeof listing) { listing = fn }, setPreview(fn: typeof preview) { preview = fn },
     setGit(value: unknown) { git = value },
     setAllFiles(fn: typeof allFiles) { allFiles = fn },
@@ -355,6 +356,20 @@ test('o shows the server refusal for a runnable file as a toast', async () => {
 })
 
 
+for (const width of [24, 40, 80, 120]) test(`Files arrows leave query editing on the highlighted result at ${width} columns`, async () => {
+  const f = fixture(), paths = ['src/alpha-0.ts', 'src/alpha-1.ts', 'src/alpha-2.ts']
+  f.setAllFiles(async () => ({ files: paths }))
+  const r = await f.mount(width, 5), selected = () => paneMemory(f.ctx)[0].panes['session-a']!.selected.files
+  f.key('s'); await r.flush(); await r.mockInput.typeText('alpha'); await r.flush()
+  expect(selected()).toBe(paths[0])
+  f.key('down'); await r.flush(); expect(selected()).toBe(paths[0])
+  f.key('down'); await r.flush(); expect(selected()).toBe(paths[1])
+  const editor = r.renderer.root.findDescendantById('files-query') as InputRenderable
+  editor.focus(); await r.flush()
+  f.key('up'); await r.flush(); expect(selected()).toBe(paths[1])
+  f.key('up'); await r.flush(); expect(selected()).toBe(paths[0])
+})
+
 for (const width of [24, 40, 80, 120]) test(`live filename search separates controls and restores the original tree at ${width} columns`, async () => {
   const f = fixture(), paths = Array.from({ length: 35 }, (_, i) => `src/alpha-${String(i).padStart(2, '0')}.ts`)
   f.setAllFiles(async () => ({ files: ['src/data.ts', ...paths] }))
@@ -367,6 +382,9 @@ for (const width of [24, 40, 80, 120]) test(`live filename search separates cont
   expect(r.captureCharFrame()).not.toContain('CancelClear')
   expect(r.captureCharFrame()).toMatch(/Cancel\s*·\s*Clear/)
   r.resize(width, 5); await r.flush()
+  f.key('down'); await r.flush()
+  f.key('enter'); await r.flush(); expect(r.captureCharFrame()).toContain('alpha-00.ts')
+  f.key('q'); await r.flush()
   for (let i = 0; i < 25; i++) { f.key('down'); await r.flush() }
   expect(r.captureCharFrame()).toContain('alpha-25.ts')
   f.key('enter'); await r.flush(); expect(r.captureCharFrame()).toContain('alpha-25.ts')

@@ -224,9 +224,10 @@ export function Files(props: {
         else if (filtering() || editing()) clear()
         return
       case 'move-up': case 'move-down': {
+        const editor = editing()
         setEditing(false)
         const all = rows().filter((r) => !('more' in r)); const from = all.findIndex((r) => r.rel === selected())
-        const next = all[Math.max(0, Math.min(all.length - 1, from + (action === 'move-up' ? -1 : 1)))]
+        const next = all[Math.max(0, Math.min(all.length - 1, from + (editor ? 0 : action === 'move-up' ? -1 : 1)))]
         if (next) props.dispatch({ type: 'select', view: 'files', id: next.rel })
         return
       }

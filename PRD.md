@@ -202,7 +202,7 @@ Each feature lists behavior, keys and how it is built. Keys in `code` are the sa
 - **File operations:** new file, new folder, rename, move, delete. Delete always confirms; nothing is ever deleted without a visible confirmation.
 - Follows `cd`: when the session's directory changes, the tree re-roots.
 
-**Keys:** `↑/↓` move · `enter` expand/collapse or preview · `f` filter · `a` mention · `o` open · `n` new · `r` rename · `m` move · `d` delete · `h` toggle hidden · `q` back. OpenCode also accepts Esc; Claude Code reserves it for the prompt. A visible Back control returns a preview to its retained list/filter; backing out of the filter closes it.
+**Keys:** `↑/↓` move · `enter` expand/collapse or preview · `s` or `f` filename search · `a` mention · `o` open · `n` new · `r` rename · `m` move · `d` delete · `h` toggle hidden · `q` back. OpenCode also accepts Esc; Claude Code reserves it for the prompt. A visible Back control returns a preview to its retained list/filter. Back from the filtered Files list clears the filter and restores its unfiltered origin; Cancel only leaves editing.
 
 **Build:** list lazily (load a folder on expand, cap 2,000 entries per folder with a "show more" row). Git status from `git status --porcelain=v2 -z` (single call, parsed once in `core/`). Refresh on the host's file-changed events, after write tools and after shell commands (debounced ~300 ms).
 
@@ -219,7 +219,7 @@ Results stream from the existing bounded ripgrep service, with the verified Git 
 
 ### 6.3 Filename search in Files
 
-An accent outline above the project name contains the filename query. s or f focuses it. Every input change updates results without Enter; basename prefixes rank first, then existing fuzzy path matches. An empty query shows the tree. Arrows leave editing and navigate results; Enter previews. Back from preview retains query and result selection. Clear restores the original tree selection and expansion; Cancel only leaves editing. All controls fit at 24/40/80/120 columns and compact heights. See ADR 0026.
+An accent outline above the project name contains the filename query. s or f focuses it. Every input change updates results without Enter; basename prefixes rank first, then existing fuzzy path matches. An empty query shows the tree. The first arrow leaves editing on the highlighted result; subsequent arrows navigate results. Enter previews. Back from preview retains query and result selection. Clear and Back from the filtered list restore the original tree selection and expansion; Cancel only leaves editing. Cancel/Clear remain part of each field's editor while focused, preserving their layout until activation. Cancel and focus moving to tabs or rows restore tab shortcuts; Search Clear refocuses its query. All controls fit at 24/40/80/120 columns and compact heights. See ADR 0026.
 
 ### 6.4 Git tab (Source Control, like VS Code)
 

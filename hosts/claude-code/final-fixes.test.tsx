@@ -1,7 +1,56 @@
 import { expect, test } from 'claude-code/testing'
 import { ROOT, command, props, world } from '../../test/claude-search.ts'
+import { findKey, lineWidths, type Node } from './measure.ts'
 
 const focus = (element: string) => ({ component: 'Pane' as const, requestId: 'jei', plugin: 'jei', element, origin: { kind: 'person' as const } })
+
+for (const tab of ['files', 'search'] as const) test(`${tab} editor controls retain focus and geometry until activated`, { timeoutMs: 60_000 }, async ($, on) => {
+  await world($, on)
+  const input = tab === 'files' ? 'filter' : 'search-query', field = tab === 'files' ? 'files-search-field' : 'search-field'
+  for (const surface of ['terminal', 'desktop'] as const) for (const width of [24, 40, 80, 120]) {
+    await $.command.run(command(tab))
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(width, 5) })
+    for (const control of ['cancel', 'clear']) {
+      await $.ui.focus(focus(input)); await ui.input({ key: input, text: 'other', kind: 'change' })
+      const before = findKey(await ui.drawn() as Node, field)
+      expect(before).toBeDefined()
+      await $.ui.focus(focus(`${tab}-${control}`))
+      expect(await ui.find({ key: `${tab}-cancel` })).toBeDefined()
+      expect(findKey(await ui.drawn() as Node, field)).toEqual(before)
+      expect((await ui.find({ key: 'tab-3' }))?.props.hotkey).toBeUndefined()
+      const widths = lineWidths(await ui.drawn() as Node)
+      expect(widths.length).toBeLessThanOrEqual(5)
+      for (const drawn of widths) expect(drawn).toBeLessThanOrEqual(width)
+      await ui.press({ key: `${tab}-${control}` })
+      if (control === 'cancel') {
+        expect(await ui.find({ key: `${tab}-cancel` })).toBeUndefined()
+        expect((await ui.find({ key: 'tab-3' }))?.props.hotkey).toBe('3')
+      }
+      expect((await ui.find({ key: input }))?.props.value).toBe(control === 'cancel' ? 'other' : '')
+    }
+    await ui.unmount()
+  }
+})
+
+test('Files arrows leave query editing on the highlighted result before moving', async ($, on) => {
+  const seen = await world($, on)
+  for (let i = 0; i < 3; i++) seen.files[`src/alpha-${i}.ts`] = 'sample'
+  const selected = () => (seen.states.pane as { selected: { files: string } }).selected.files
+  const scroll = (by: number) => $.ui.scroll({ component: 'Pane', requestId: 'jei', offset: 0, by, bodyRows: 5, contentRows: 20, origin: { kind: 'person' } })
+  for (const surface of ['terminal', 'desktop'] as const) for (const width of [24, 40, 80, 120]) {
+    await $.command.run(command('files'))
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props(width, 5) })
+    await ui.input({ key: 'filter', text: 'alpha', kind: 'change' })
+    expect(selected()).toBe('src/alpha-0.ts')
+    await scroll(1); expect(selected()).toBe('src/alpha-0.ts')
+    expect((await ui.find({ key: 'tab-3' }))?.props.hotkey).toBe('3')
+    await scroll(1); expect(selected()).toBe('src/alpha-1.ts')
+    await $.ui.focus(focus('filter'))
+    await scroll(-1); expect(selected()).toBe('src/alpha-1.ts')
+    await scroll(-1); expect(selected()).toBe('src/alpha-0.ts')
+    await ui.press({ key: 'files-clear' }); await ui.unmount()
+  }
+})
 
 test('leaving a Search or Files input restores tab hotkeys without submitting', async ($, on) => {
   const seen = await world($, on)
@@ -44,6 +93,37 @@ test('command controls retain the selected Search result, Quick Open file and re
   await $.ui.focus(focus('search-row-apply')); await ui.press({ key: 'search-row-apply' })
   expect((await ui.find({ key: 'replace-question' }))?.text).toContain('src/other.ts?')
   await ui.unmount()
+})
+
+test('Search mention uses the highlighted result after submitting another query', async ($, on) => {
+  const seen = await world($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    await $.command.run(command('search'))
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
+    await ui.input({ key: 'search-query', text: 'load', kind: 'submit' }); await seen.clock.advance(300)
+    await $.ui.focus(focus('search-row-match-1'))
+    await ui.input({ key: 'search-query', text: 'save', kind: 'submit' }); await seen.clock.advance(300)
+    expect((seen.states.pane as { selected: { search: string } }).selected.search).toBe('match-0')
+    await ui.press({ key: 'key-a' })
+    expect(seen.fillInputs.at(-1)).toEqual({ text: 'src/account.ts:2 (return save())', mode: 'insert' })
+    await ui.unmount()
+  }
+})
+
+test('Quick Open mention uses the highlighted file after its ranking changes', async ($, on) => {
+  const seen = await world($, on)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    await $.command.run(command('search'))
+    const ui = await $.ui.mount({ plugin: 'jei', surface, component: 'Pane', requestId: 'jei', props: props() })
+    await ui.press({ key: 'search-cancel' }); await ui.press({ key: 'key-q' })
+    await ui.input({ key: 'search-query', text: '', kind: 'change' }); await ui.press({ key: 'search-cancel' })
+    await $.ui.focus(focus('search-row-file-0'))
+    await ui.input({ key: 'search-query', text: 'other', kind: 'change' }); await ui.press({ key: 'search-cancel' })
+    expect((await ui.find({ key: 'search-row-file-0' }))?.text).toContain('other.ts')
+    await ui.press({ key: 'key-a' })
+    expect(seen.fillInputs.at(-1)).toEqual({ text: '@src/other.ts ', mode: 'insert' })
+    await ui.unmount()
+  }
 })
 
 test('Search retains its query/results across Quick Open and quick submit ranks its actual value', async ($, on) => {

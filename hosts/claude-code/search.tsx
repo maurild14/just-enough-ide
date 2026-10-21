@@ -90,7 +90,7 @@ export async function focusSearch($: EngineInterface, key: string | undefined): 
   } else if (key === 'search-query' || key === 'search-globs' || key === 'search-replacement') {
     const editing = key === 'search-query' ? 'query' : key === 'search-globs' ? 'globs' : 'replacement'
     if ((await readSearch($, root)).editing !== editing) await updateSearch($, root, s => ({ ...s, editing }))
-  } else if ((await readSearch($, root)).editing !== null) {
+  } else if (key !== 'search-cancel' && key !== 'search-clear' && (await readSearch($, root)).editing !== null) {
     await updateSearch($, root, s => ({ ...s, editing: null }))
   }
 }
@@ -186,8 +186,9 @@ export async function renderSearch($: EngineInterface, e: PaneRender, frame: Fil
     if (action === 'replace') return edit('replacement')
     if (action === 'send-all') return fill($, sendText(s.text, s.matches))
     if (action === 'mention') {
-      if (quick) { const rel = s.subject?.quickopen ?? ranked[0]; if (rel && files.includes(rel)) await fill($, `@${rel} `); return }
-      const match = s.matches[Number((s.subject?.search ?? 'match-0').slice(6))]
+      const target = r.data?.[pane.selected[view] ?? (quick ? 'file-0' : 'match-0')]
+      if (quick) { const rel = target ?? s.subject?.quickopen ?? ranked[0]; if (rel && ranked.includes(rel)) await fill($, `@${rel} `); return }
+      const match = s.matches[Number((target ?? s.subject?.search ?? 'match-0').slice(6))]
       if (match) await fill($, sendText(s.text, [match]))
     }
     if (action === 'apply-all') return requestApply($, s.plan.map(f => f.rel))

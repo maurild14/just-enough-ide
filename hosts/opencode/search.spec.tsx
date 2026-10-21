@@ -15,8 +15,8 @@ test('exact replacement review displays case skips and preserves remaining files
   expect(r.captureCharFrame()).toContain('case-differs: src/app.ts')
   expect(r.captureCharFrame()).toContain('case-differs: omitted.ts')
   for (const width of [24, 40, 80, 120]) {
-    r.resize(width, 40); await r.flush()
-    expect(r.captureCharFrame()).toContain('case-differs: src/long')
+    f.setWidth(width); r.resize(width, 40); await r.flush()
+    expect(r.captureCharFrame()).toContain('case-differs: src/')
     for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
   }
   f.key('enter'); await r.flush()
@@ -175,6 +175,24 @@ test('compact Quick Open mention command uses the last selected file', async () 
   const f = searchFixture(), r = await f.mount(24, 5); f.openSearch(); await r.flush(); f.key('esc'); f.key('q'); await r.flush(); f.key('esc'); f.key('down'); await r.flush()
   await command(f, r, 'quickopen', 'command:mention')
   expect(f.prompts.at(-1)?.value).toBe('@src/save.ts ')
+})
+
+test('mention follows current Search results and changed Quick Open ranking', async () => {
+  const f = searchFixture(), r = await f.mount(); f.openSearch(); await r.flush()
+  input(r).insertText('load'); input(r).submit(); await settle(r)
+  const first = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.emit('searchMatches', { ...batch(first), matches: [...batch(first).matches, { rel: 'src/save.ts', line: 7, text: 'load()', ranges: [[0, 4]] }] }); f.emit('searchDone', done(first)); await r.flush()
+  f.key('down'); await r.flush()
+  input(r).focus(); input(r).deleteToLineStart(); input(r).insertText('save'); input(r).submit(); await settle(r)
+  const second = f.calls.findLast(c => c.method === 'searchStart')!.input.id
+  f.emit('searchMatches', { ...batch(second), matches: [{ rel: 'src/save.ts', line: 3, text: 'save()', ranges: [[0, 4]] }] }); f.emit('searchDone', done(second)); await r.flush()
+  f.key('a'); await r.flush()
+  expect(f.prompts.at(-1)).toEqual({ title: 'Send to OpenCode', value: 'src/save.ts:3 (save())' })
+  f.key('q'); await r.flush(); f.key('esc'); await r.flush()
+  input(r).focus(); input(r).insertText('save'); await r.flush(); f.key('esc'); await r.flush()
+  expect(paneMemory(f.ctx)[0].panes['session-a']!.selected.quickopen).toBe('file-0')
+  f.key('a'); await r.flush()
+  expect(f.prompts.at(-1)).toEqual({ title: 'Send to OpenCode', value: '@src/save.ts ' })
 })
 
 test('compact Apply file command confirms the last selected reviewed file once', async () => {

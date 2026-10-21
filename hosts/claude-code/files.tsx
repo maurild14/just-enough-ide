@@ -212,7 +212,7 @@ export async function focusFiles($: EngineInterface, element: string | undefined
   if (currentView(pane) !== 'files') return
   if (element === 'filter') {
     if (!(await readTree($)).editing) await updateTree($, t => ({ ...t, editing: true }))
-  } else if ((await readTree($)).editing) await updateTree($, t => ({ ...t, editing: false }))
+  } else if (element !== 'files-cancel' && element !== 'files-clear' && (await readTree($)).editing) await updateTree($, t => ({ ...t, editing: false }))
   if (element === undefined || !element.startsWith(ROW_PREFIX) || pane.selected.files === element.slice(ROW_PREFIX.length)) {
     if (changed) await bumpTick($)
     return
@@ -230,10 +230,11 @@ export async function scrollFiles($: EngineInterface, by: number): Promise<boole
     return true
   }
   if (view !== 'files' || lastIds.length === 0) return false
-  if ((await readTree($)).editing) await updateTree($, t => ({ ...t, editing: false }))
+  const editing = (await readTree($)).editing
+  if (editing) await updateTree($, t => ({ ...t, editing: false }))
   const sel = (await readPane($)).selected.files
   const from = sel === undefined ? -1 : lastIds.indexOf(sel)
-  const to = Math.max(0, Math.min(lastIds.length - 1, from < 0 ? 0 : from + Math.sign(by) * Math.max(1, Math.abs(by))))
+  const to = Math.max(0, Math.min(lastIds.length - 1, from < 0 ? 0 : from + (editing ? 0 : Math.sign(by) * Math.max(1, Math.abs(by)))))
   const id = lastIds[to]!
   if (id !== sel) await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id }))
   if (focused !== `${ROW_PREFIX}${id}`) await $.ui.focus({ requestId: 'jei', key: `${ROW_PREFIX}${id}` }).catch(() => undefined)
