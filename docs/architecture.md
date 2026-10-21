@@ -28,13 +28,13 @@ Status: current. Defined in `core/host.ts`; the process, file and model half onl
 
 | View | key: action |
 | --- | --- |
-| `files` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: search, `a`: mention, `o`: open-editor, `f`: filter, `h`: toggle-hidden, `q` / `esc`: back |
+| `files` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: filter, `a`: mention, `o`: open-editor, `f`: filter, `h`: toggle-hidden, `q` / `esc`: back |
 | `files.preview` | `up`: scroll-up, `down`: scroll-down, `a`: mention, `o`: open-editor, `m`: toggle-markdown-source, `q` / `esc`: back |
 | `git` | `up`: move-up, `down`: move-down, `enter`: activate, `s`: stage, `u`: unstage, `d`: discard, `c`: commit, `y`: copy-hash, `a`: ask, `b`: branches, `f`: filter, `t`: fetch, `n`: new-branch, `g`: generate-message, `e`: sync, `q` / `esc`: back |
 | `git.branches` | `up`: move-up, `down`: move-down, `enter`: switch, `n`: new-branch, `c`: compare, `f`: filter, `q` / `esc`: back |
 | `git.compare` | `up`: move-up, `down`: move-down, `enter`: activate, `q` / `esc`: back |
 | `git.diff` | `up`: scroll-up, `down`: scroll-down, `n`: next-hunk, `p`: prev-hunk, `j`: next-file, `k`: prev-file, `a`: ask-review, `o`: open-editor, `q` / `esc`: back |
-| `search` | `up`/`down`: move, `enter`: preview, `a`: add, `s`: send all, `c`: case, `x`: regex, `w`: word, `i`: include, `p`: replace, `q`: quick open, `esc`: back |
+| `search` | `up`: move-up, `down`: move-down, `enter`: activate, `a`: mention, `s`: send-all, `i`: include, `p`: replace, `q`: quickopen, `f`: edit (query), `b`: back (Files), `esc`: back |
 | `search.replace` | `up`/`down`: scroll, `enter`: apply file, `y`: apply all, `a`: ask agent, `q`/`esc`: back |
 | `quickopen` | `up`/`down`: move, `enter`: preview, `a`: add, `q`: search, `esc`: back |
 

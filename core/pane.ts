@@ -21,9 +21,10 @@ export function normalizePane(state: PaneState | LegacyPaneState): PaneState {
   const diff = state.diff
   const retained = Array.isArray(state.stack) ? state.stack : []
   const knownViews = retained.every(view => Object.hasOwn(KEYS, view))
-  const legacySearch = knownViews && state.tab === 'files' && retained.includes('search')
+  const searchIndex = retained.indexOf('search')
+  const legacySearch = knownViews && state.tab === 'files' && retained[0] === 'files' && searchIndex >= 0 && retained.slice(0, searchIndex).every(view => view === 'files' || view === 'files.preview')
   const tab = legacySearch ? 'search' : state.tab
-  const stack = legacySearch ? retained.slice(retained.indexOf('search')) : retained
+  const stack = legacySearch ? retained.slice(searchIndex) : retained
   if (!knownViews || !['files', 'search', 'git'].includes(tab) || stack[0] !== tab || stack.some(view => !(view === tab || view === 'files.preview' || tab === 'search' && view === 'quickopen' || view.startsWith(`${tab}.`)))) {
     return { ...initialPane('files'), selected: Object.fromEntries(Object.entries(state.selected).filter(([view]) => Object.hasOwn(KEYS, view))), recent: state.recent ?? [] }
   }

@@ -155,3 +155,15 @@ test('unknown retained tabs and views reset safely to Files through the generic 
     expect(state).toEqual({ tab: 'files', stack: ['files'], selected: { files: 'src/a.ts', search: 'match-1' }, recent: ['src/a.ts'] })
   }
 })
+
+for (const stack of [['git', 'search'], ['files', 'git', 'search']] as const) test(`retained Files rejects the invalid pre-Search stack ${stack.join(' > ')}`, () => {
+  const state = normalizePane({ tab: 'files', stack: [...stack], selected: { files: 'src/a.ts', search: 'match-1' }, recent: ['src/a.ts'] })
+  expect(state).toEqual({ tab: 'files', stack: ['files'], selected: { files: 'src/a.ts', search: 'match-1' }, recent: ['src/a.ts'] })
+})
+
+test('retained Files preview prefix migrates Search and keeps its shared preview', () => {
+  const state = normalizePane({ tab: 'files', stack: ['files', 'files.preview', 'search', 'quickopen', 'files.preview'], selected: {}, recent: ['src/a.ts'], preview: { rel: 'src/a.ts', line: 2 } })
+  expect(state.tab).toBe('search')
+  expect(state.stack).toEqual(['search', 'quickopen', 'files.preview'])
+  expect(state.preview).toEqual({ rel: 'src/a.ts', line: 2 })
+})
