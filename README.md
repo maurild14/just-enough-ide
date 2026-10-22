@@ -1,4 +1,4 @@
-# JEI — Just Enough IDE
+# JEI: Just Enough IDE
 
 <p align="center">
   <picture>
@@ -71,7 +71,7 @@ Add the npm package to `opencode.json` (or `opencode.jsonc`); OpenCode installs 
 
 ## Keys
 
-`1`–`3` switch tabs. Every view lists its keys on its last line. `q` or the visible Back control goes back one level; OpenCode also accepts Esc (Claude Code reserves Esc for its prompt). Inside a text field, letters are text.
+`1` to `3` switch tabs. Every view lists its keys on its last line. `q` or the visible Back control goes back one level; OpenCode also accepts Esc (Claude Code reserves Esc for its prompt). Inside a text field, letters are text.
 
 | View | Keys |
 | --- | --- |
