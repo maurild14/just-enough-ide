@@ -1,4 +1,4 @@
-import type { Color } from 'claude-code'
+import type { Color, EngineInterface } from 'claude-code'
 import type { ActivityKind } from '../../core/activity/classify.ts'
 import type { FileStatus } from '../../core/git/status.ts'
 import type { GraphSpan } from '../../core/git/graph.ts'
@@ -41,6 +41,15 @@ export function color(token: Token): Color {
 
 export function activityColor(kind: ActivityKind): Color {
   return THEME[`activity.${kind}`]
+}
+
+let activityMode: Promise<'light' | 'dark'> | undefined
+
+export function forgetTheme(): void { activityMode = undefined }
+
+/** Read once per theme change; normal text continues to use native theme tokens. */
+export function activityTheme($: EngineInterface): Promise<'light' | 'dark'> {
+  return activityMode ??= $.config.list().then(rows => String(rows.find(row => row.key === 'theme')?.value).startsWith('light') ? 'light' : 'dark').catch(() => 'dark')
 }
 
 const LANES: readonly Color[] = ['suggestion', 'success', 'warning', 'autoAccept', 'merged', 'claude']

@@ -9,6 +9,7 @@ import { parseOptions } from '../../core/options.ts'
 import plugin from '../../tui.ts'
 import { paneMemory } from './pane.tsx'
 import { activityColor } from './colors.ts'
+import { ACTIVITY_FRAME_MS } from '../../core/activity/shimmer.ts'
 
 type Context = Plugin.Context
 type Layer = ReturnType<Parameters<Context['keymap']['layer']>[0]>
@@ -360,14 +361,33 @@ test('activity paints the theme accent and followAgent reveals ancestors without
   const f = fixture(); const r = await f.mount()
   f.emit('activity', { rel: 'src/api/user.ts', kind: 'write' }); await r.flush()
   expect(r.captureCharFrame()).toContain('user.ts')
-  const row = r.captureSpans().lines.find((l) => l.spans.some((s) => s.text.includes('user.ts')))!
-  expect(row.spans.find(s => s.text.includes('user.ts'))!.fg.toInts()).toEqual(activityColor(f.ctx, 'write').toInts())
+  const row = r.captureSpans().lines.find(l => l.spans.map(s => s.text).join('').includes('user.ts'))!
+  expect(row.spans.some(s => s.text.trim() && s.fg.toInts()[0]! > s.fg.toInts()[2]!)).toBe(true)
   f.key('enter'); await r.flush(); f.emit('activity', { rel: 'src/usage.ts', kind: 'read' }); await r.flush()
   expect(r.captureCharFrame()).toContain('export const user = 1')
 })
 
+test('writing filenames sweep a gradient across their letters without underlining the row', async () => {
+  const clock = spyOn(Date, 'now').mockReturnValue(1000), interval = spyOn(globalThis, 'setInterval')
+  try {
+    const f = fixture(), r = await f.mount()
+    f.emit('activity', { rel: 'src/api/user.ts', kind: 'write', active: true }); await r.flush()
+    const row = () => r.captureSpans().lines.find(line => line.spans.map(span => span.text).join('').includes('user.ts'))!
+    expect(row().spans.some(span => span.attributes & 8)).toBe(false)
+    const tick = interval.mock.calls.find(args => args[1] === ACTIVITY_FRAME_MS)![0] as () => void
+    const before = row().spans.map(span => [span.text, span.fg.toInts()])
+    clock.mockReturnValue(1680); tick(); await r.flush()
+    const during = row().spans.filter(span => span.text.trim() && span.text.trim() !== 'M' && span.text !== '•')
+    expect(new Set(during.map(span => span.fg.toInts().join(','))).size).toBeGreaterThan(1)
+    expect(row().spans.map(span => [span.text, span.fg.toInts()])).not.toEqual(before)
+    f.emit('activity', { rel: 'src/api/user.ts', kind: 'write', active: false }); await r.flush()
+    clock.mockReturnValue(4000); tick(); await r.flush()
+    expect(row().spans.find(span => span.text.includes('user.ts'))!.fg.toInts()).toEqual([255, 255, 255, 255])
+  } finally { clock.mockRestore(); interval.mockRestore() }
+})
+
 test('selected activity names and softer ancestors retain status colors across themes and widths', async () => {
-  const clock = spyOn(Date, 'now').mockReturnValue(1000)
+  const clock = spyOn(Date, 'now').mockReturnValue(1200), interval = spyOn(globalThis, 'setInterval')
   try { for (const mode of ['light', 'dark'] as const) for (const kind of ['read', 'write', 'git'] as const) {
     const f = fixture()
     Object.assign(f.ctx, { themeMode: mode })
@@ -376,7 +396,9 @@ test('selected activity names and softer ancestors retain status colors across t
     theme.background.base = RGBA.fromHex(mode === 'light' ? '#ffffff' : '#111111')
     const r = await f.mount(80)
     f.emit('activity', { rel: 'src/api/user.ts', kind }); await r.flush()
+    const tick = interval.mock.calls.findLast(args => args[1] === ACTIVITY_FRAME_MS)![0] as () => void
     for (const width of [24, 40, 80, 120]) {
+      clock.mockReturnValue(1200); tick()
       f.setWidth(width); r.resize(width, 24); await r.flush()
       const lines = r.captureSpans().lines
       const name = lines.flatMap(line => line.spans).find(span => span.text.includes('user.ts'))!
@@ -386,11 +408,17 @@ test('selected activity names and softer ancestors retain status colors across t
       expect(folder.fg.toInts()).not.toEqual(theme.text.base.toInts())
       const row = lines.find(line => line.spans.some(span => span.text.includes('user.ts')))!
       expect(row.spans.find(span => span.text.trim() === 'M')!.fg.toInts()).toEqual(theme.text.feedback.warning.base.toInts())
+      clock.mockReturnValue(1680); tick(); await r.flush()
+      const glowing = r.captureSpans().lines.find(line => line.spans.map(span => span.text).join('').includes('user.ts'))!
+      expect(new Set(glowing.spans.filter(span => span.text.trim() && !['M', '•'].includes(span.text.trim())).map(span => span.fg.toInts().join(','))).size).toBeGreaterThan(2)
+      expect(glowing.spans.some(span => span.attributes & 8)).toBe(false)
+      expect(glowing.spans.find(span => span.text.trim() === 'M')!.fg.toInts()).toEqual(theme.text.feedback.warning.base.toInts())
       for (const line of r.captureCharFrame().split('\n')) expect(cellWidth(line)).toBeLessThanOrEqual(width)
     }
     r.renderer.destroy()
     renderers.splice(renderers.indexOf(r), 1)
-  } } finally { clock.mockRestore() }
+    clock.mockReturnValue(1200)
+  } } finally { clock.mockRestore(); interval.mockRestore() }
 })
 
 test('width/height changes keep the selected row reachable and every frame bounded', async () => {
@@ -450,16 +478,16 @@ for (const width of [24, 40, 80, 120]) test(`Back preserves the Files filter and
 test('followAgent off preserves selection while names fade and touched markers remain', async () => {
   const f = fixture({ followAgent: false }); const r = await f.mount()
   f.select('src/api/user.ts'); await r.flush(); f.key('up'); await r.flush()
-  const clock = spyOn(Date, 'now').mockReturnValue(1000)
+  const clock = spyOn(Date, 'now').mockReturnValue(1200)
   const interval = spyOn(globalThis, 'setInterval')
   try {
     f.emit('activity', { rel: 'src/api/user.ts', kind: 'read' }); await r.flush()
-    const row = () => r.captureSpans().lines.find((l) => l.spans.some((s) => s.text.includes('user.ts')))!
+    const row = () => r.captureSpans().lines.find(l => l.spans.map(s => s.text).join('').includes('user.ts'))!
     const initial = row().spans.find((s) => s.text.includes('user.ts'))!.fg.toInts()
-    const tick = interval.mock.calls.find((args) => args[1] === 250)![0] as () => void
-    clock.mockReturnValue(2000); tick(); await r.flush()
-    expect(row().spans.find((s) => s.text.includes('user.ts'))!.fg.toInts()).not.toEqual(initial)
-    clock.mockReturnValue(3000); tick(); await r.flush()
+    const tick = interval.mock.calls.find((args) => args[1] === ACTIVITY_FRAME_MS)![0] as () => void
+    clock.mockReturnValue(2200); tick(); await r.flush()
+    expect(row().spans.filter(s => s.text.trim() && !['M', '•'].includes(s.text.trim())).every(s => s.fg.toInts().join(',') === initial.join(','))).toBe(false)
+    clock.mockReturnValue(3200); tick(); await r.flush()
     expect(row().spans.find((s) => s.text.includes('user.ts'))!.fg.toInts()).toEqual([255, 255, 255, 255])
     expect(row().spans.some((s) => s.text.includes('•') && (s.attributes & 2))).toBe(true)
     f.key('a'); await r.flush(); expect(f.prompts.at(-1)?.value).toBe('@src/api ')
@@ -468,15 +496,15 @@ test('followAgent off preserves selection while names fade and touched markers r
 
 test('in-flight activity stays colored beyond two seconds and fades only after completion', async () => {
   const f = fixture(), r = await f.mount()
-  const clock = spyOn(Date, 'now').mockReturnValue(1000), interval = spyOn(globalThis, 'setInterval')
+  const clock = spyOn(Date, 'now').mockReturnValue(1200), interval = spyOn(globalThis, 'setInterval')
   try {
     f.emit('activity', { rel: 'src/api/user.ts', kind: 'read', active: true }); await r.flush()
-    const tick = interval.mock.calls.find(args => args[1] === 250)![0] as () => void
-    clock.mockReturnValue(10_000); tick(); await r.flush()
+    const tick = interval.mock.calls.find(args => args[1] === ACTIVITY_FRAME_MS)![0] as () => void
+    clock.mockReturnValue(10_800); tick(); await r.flush()
     const name = () => r.captureSpans().lines.flatMap(line => line.spans).find(span => span.text.includes('user.ts'))!
     expect(name().fg.toInts()).toEqual(activityColor(f.ctx, 'read').toInts())
     f.emit('activity', { rel: 'src/api/user.ts', kind: 'read', active: false }); await r.flush()
-    clock.mockReturnValue(12_000); tick(); await r.flush()
+    clock.mockReturnValue(12_800); tick(); await r.flush()
     expect(name().fg.toInts()).toEqual([255, 255, 255, 255])
   } finally { clock.mockRestore(); interval.mockRestore() }
 })

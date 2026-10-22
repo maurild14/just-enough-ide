@@ -1,6 +1,6 @@
 # JEI design guide
 
-> Purpose: how every JEI view looks and behaves at any pane size · Status: current · Last reviewed: 2026-10-21
+> Purpose: how every JEI view looks and behaves at any pane size · Status: current · Last reviewed: 2026-10-22
 
 Status: Files and Git views are built on both hosts. Search and Quick Open are built on both hosts; Symbols is removed (ADR 0027). The PRD is authoritative on behavior; this guide is authoritative on visuals and responsiveness.
 
@@ -16,7 +16,7 @@ JEI is drawn in character cells. There are no pixels and no fonts to pick, and t
 
 ## 2. Color roles
 
-Views use semantic tokens only. No view contains a literal RGB, hex or ANSI color. Claude Code maps roles in `theme.ts`; OpenCode's `colors.ts` resolves the three activity hues through light/dark palettes so a theme's blue info color cannot turn a read blue. Other roles use resolved host theme colors. When a host gives no value for a token, the fallback is the ANSI 16-color name shown below, so the terminal palette still applies.
+Views use semantic tokens only. No view contains a literal RGB, hex or ANSI color. Claude Code maps roles in `theme.ts`; OpenCode's `colors.ts` resolves the three activity hues so a theme's blue info color cannot turn a read blue. Both adapters use shared light/dark gradient stops from `core/activity/shimmer.ts`. Claude reads the configured theme once per session/theme change; other text keeps native theme tokens. Other roles use resolved host theme colors. When a host gives no value for a token, the fallback is the ANSI 16-color name shown below, so the terminal palette still applies.
 
 | Token | Used for | Fallback |
 | --- | --- | --- |
@@ -204,12 +204,13 @@ The latest successful target and its ancestor chain stay visible while selected,
 
 ## 9. Motion: activity shimmer
 
-- Known file operands stay at full activity color while a tool is running, including overlapping calls. After the final completion, the name's foreground returns to `fg` in **8 steps of 250 ms (2 s in total)**. Result-only paths begin fading when reported. In truecolor, each step mixes linearly from the token's color to `fg` in the theme layer. With 16 colors there are **3 steps**: bold activity color (0–700 ms), activity color (700–1400 ms), dim activity color (1400–2000 ms).
+- Known file operands stay at full activity color while a tool is running, including overlapping calls. A soft gradient crest crosses the label **left to right every 1.2 s**, redrawn every **60 ms**, with eight intensity levels. Trailing padding does not slow the sweep. Grapheme boundaries stay intact. Dark themes use a pale crest; light themes use a deeper contrasting crest. The shared motion and palette drive both hosts.
+- After the final completion the name returns to `fg` over **2 s**. Result-only paths begin fading when reported. OpenCode mixes linearly with the resolved foreground. Claude retains its native three-step fade envelope (bold/color/dim), with raw gradient stops inside the activity-colored name; terminals may quantize those stops to their palette. `NO_COLOR` remains the host renderer's responsibility.
 - When it ends, the gutter shows `•` in the dim activity color for the rest of the session. That marker is the only thing that persists.
 - Touching the row again restarts the fade. Only visible rows animate, and rows that scroll off show their end state when they return.
-- The entire name area (indentation, icon, name and padding) shimmers on selected and unselected rows; the status letter retains its status color. Selected active names stay bold/underlined. Claude avoids explicit inverse on the active name, retaining the native focus indicator; OpenCode uses the normal theme background while the selected name glows. Containing folders inherit the latest eligible active descendant's color at a softer strength (dim on Claude, 45% tint on OpenCode). Their inherited tint disappears after the fade. See ADR 0030.
-- `activity: none` shows nothing: no fade and no marker. The host's reduced-motion setting skips the fade and shows the marker straight away.
-- Claude Code paints with theme keys only, which cannot be mixed, so it always uses the 3-step form (`shimmerPhase` in `core/activity/log.ts`), redrawn every 250 ms only while a row glows.
+- The entire name area (indentation, icon, name and padding) carries the activity tint on selected and unselected rows; the status letter retains its status color. Selected active names stay bold without an explicit underline across their padding. Claude avoids explicit inverse on the active name, retaining the native focus indicator; OpenCode uses the normal theme background while the selected name glows. Containing folders inherit the latest eligible active descendant's color at a softer, steady strength (dim on Claude, 45% tint on OpenCode). Their inherited tint disappears after the fade. See ADR 0031.
+- `activity: none` shows nothing: no gradient, fade or marker. `followAgent` controls navigation independently. Neither current adapter exposes a reduced-motion setting.
+- One timer runs only while activity glows and stops after expiration. Only visible rows build gradient runs; offscreen rows use their current phase when they return.
 - There is no other animation: no spinners, no sliding, no blinking cursor except the host's own.
 
 The OpenCode shell follows these height rules using its root box's measured height, rather than assuming the terminal height equals the panel height. The tab bar uses `tabBar`, the single text hint uses `hintLine` (which retains Esc), and all remaining shell rows use `fitEnd` or `fitPath`. The active tab is bold in the resolved theme's primary action text color; tabs also accept clicks. Files adds a selection-anchored tree, eight-step theme-colored shimmer and previews; Git adds a pinned commit input, scrollable actions/groups and the diff view. OpenCode's Markdown preview displays highlighted literal source, and images display `Image preview is not available in OpenCode.`. Explicit source-line targets instead use a bounded native code window with a visible gutter marker and no wrapping, including Markdown/CSV/TSV. Ordinary previews retain wrapping/tables (ADR 0022). Its binary notice is `Binary file — no preview.`; too-large previews say `Too large to preview.` because the RPC does not carry size. Code wraps and scrolls by native visual rows; CSV/TSV use the shared `fitTable` helper. Diff uses the dedicated theme diff text colors, cell-based wrapping and continuation gutters; its logical row and character anchors survive rewrapping. The truncation notice keeps one row whenever there is also room for a content row, including height 2.

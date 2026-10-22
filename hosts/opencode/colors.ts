@@ -1,14 +1,9 @@
 import type { Plugin } from '@opencode/plugin/tui'
 import { RGBA } from '@opentui/core'
 import type { GraphSpan } from '../../core/git/graph.ts'
+import { shimmerColor } from '../../core/activity/shimmer.ts'
 
-// Semantic activity hues keep their meaning even when a theme's info token is blue.
-const ACTIVITY_COLORS = {
-  dark: { read: '#c084fc', write: '#fb923c', git: '#4ade80' },
-  light: { read: '#7e22ce', write: '#c2410c', git: '#15803d' },
-} as const
-
-export const activityColor = (ctx: Plugin.Context, kind: 'read' | 'write' | 'git') => RGBA.fromHex(ACTIVITY_COLORS[ctx.themeMode === 'light' ? 'light' : 'dark'][kind])
+export const activityColor = (ctx: Plugin.Context, kind: 'read' | 'write' | 'git', strength = 0) => RGBA.fromHex(shimmerColor(kind, ctx.themeMode === 'light' ? 'light' : 'dark', strength))
 
 export function graphColor(ctx: Plugin.Context, span: GraphSpan) {
   const theme = ctx.theme.text

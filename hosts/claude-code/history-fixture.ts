@@ -14,7 +14,7 @@ export type HistoryUi = Mounted<'terminal' | 'desktop', 'Pane'>
 export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean; dirty?: boolean } = {}) {
   const clock = mock.clock(on, { now: 2_000_000_000_000 })
   const r = { root: ROOT, head: A, dirty: false, hooks: false, merge: false, topology: false, empty: false, upstream: '', ahead: 0, behind: 0, fetchError: '', copy: true, logError: false, branchesError: false, openerCode: 0, openerError: false,
-    logAbort: false, runs: [] as string[][], copies: [] as string[], fills: [] as string[], toasts: [] as string[], tools: [] as string[], writes: [] as string[],
+    logAbort: false, logAbortMessage: '$.process.run(git) aborted.', runs: [] as string[][], copies: [] as string[], fills: [] as string[], toasts: [] as string[], tools: [] as string[], writes: [] as string[],
     reflog: [] as string[], shell: async (_command: string) => {}, session: 'history-session', base: true, originHead: '', remoteRef: 'origin/main', remoteHash: A, evidenceError: false, clock,
     histories: {} as Record<string, Record<string, { agents: string[] }>>, records: null as string[] | null, logHashes: null as string[] | null, comparedFiles: null as string[] | null, beforeRun: async (_argv: string[]) => {}, time: 2_000_000_000, ...initial }
   const out = (stdout = '', exitCode = 0, stderr = '') => ({ value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false } })
@@ -49,7 +49,7 @@ export async function historyWorld($: Engine, on: On, initial: { hooks?: boolean
     if (a.includes('for-each-ref')) return r.branchesError ? out('', 1, 'Invalid branch.') : out(`${r.base ? `refs/heads/main\0${A}\0origin/main\0ahead 1, behind 2\0*\n` : ''}refs/heads/feature\0${B}\0origin/feature\0gone\0\nrefs/remotes/${r.remoteRef}\0${r.remoteHash}\0\0\0\n`)
     if (a.includes('remote')) return out('https://github.com/acme/acme-app.git\n')
     if (a.includes('log')) {
-      if (r.logAbort) return { deny: '$.process.run(git) aborted.' }
+      if (r.logAbort) return { deny: r.logAbortMessage }
       if (r.logError) return out('', 1, 'Invalid branch.')
       if (r.empty) return out()
       const requested = a[a.indexOf('--end-of-options') + 1]

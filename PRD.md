@@ -160,6 +160,7 @@ An OpenCode plugin package has a **server entry** (`@opencode/plugin`, `Plugin.d
 - Tabs switch with `1`–`3` while the pane holds the keyboard; clicking a tab works where the host supports the mouse.
 - The last line of the pane is always a **hint line** listing the keys of the current view.
 - `/jei` toggles the pane; `/jei files|search|git` opens it on a tab; `/jei <path>` opens Files revealing a path. Same command on both hosts.
+- Creating or editing a file keeps the visible JEI tab in front. Claude's automatic first-edit diff cannot cover it; an explicit `/diff` still opens, and a closed/hidden JEI does not block other panes. No host preference is changed (ADR 0031).
 - Colors follow the host's theme (dark/light); Nerd Font icons when available, plain Unicode otherwise.
 
 ### 5.2 Activity shimmer (shared by Files and Git)
@@ -195,7 +196,7 @@ Resolved filesystem metadata must retain exact component identity. Static Window
 **Behavior**
 - Collapsible tree of the working directory, respecting `.gitignore` (toggle to show ignored/hidden).
 - Git status per file and rolled up per folder (modified, added, untracked, deleted, conflicted), with color and letter.
-- Activity shimmer (§5.2) colors the complete name area (icon, indentation and padding, including the selected row): purple for reads, orange for writes and green for Git file operands. The status letter keeps its Git color. Containing folders inherit a softer tint from the latest eligible active descendant. The two-second animation ends automatically; only the file's dim session marker remains. `activity` filters both names and markers; `followAgent` controls navigation independently. Both hosts retain selection readability in light/dark themes at 24/40/80/120 columns (ADR 0030).
+- Activity shimmer (§5.2) colors the complete name area (icon, indentation and padding, including the selected row): purple for reads, orange for writes and green for Git file operands. A soft gradient sweeps left to right across the label every 1.2 s, redrawn every 60 ms while active; trailing padding does not stretch its travel. The selected name uses bold text without a full-row underline. The status letter keeps its Git color. Containing folders inherit a softer, steady tint from the latest eligible active descendant. After completion the two-second fade ends automatically; only the file's dim session marker remains. `activity` filters both names and markers; `followAgent` controls navigation independently. Both hosts retain selection readability in light/dark themes at 24/40/80/120 columns (ADR 0031).
 - **Follow agent** (option, default on): the tree scrolls to and expands what the agent touches. Off: the view stays where you put it; markers still show.
 - Filter by name (fuzzy) across the whole project, including unexpanded folders.
 - **Preview** inside the pane: syntax-colored code, rendered Markdown (toggle source), CSV/TSV as a table, images where the host and terminal support them. Large (>2 MB) and binary files show a notice.

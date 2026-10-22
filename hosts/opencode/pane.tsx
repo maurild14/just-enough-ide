@@ -4,6 +4,7 @@ import type { PanelInput } from '@opencode/plugin/tui/context'
 import { type JSX, useTerminalDimensions } from '@opentui/solid'
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
 import { ActivityLog, allows } from '../../core/activity/log.ts'
+import { ACTIVITY_FRAME_MS } from '../../core/activity/shimmer.ts'
 import type { ActivityKind } from '../../core/activity/classify.ts'
 import { hintLine, KEYS, TAB_KEYS } from '../../core/keys.ts'
 import { latest } from '../../core/latest.ts'
@@ -123,7 +124,7 @@ export function Pane(props: { input: PanelInput; ctx: Context; api: RpcClient<ty
   const glowing = createMemo(() => activity().isGlowing(now()))
   createEffect(() => {
     if (!glowing()) return
-    const timer = setInterval(() => { setNow(Date.now()) }, 250)
+    const timer = setInterval(() => { setNow(Date.now()) }, ACTIVITY_FRAME_MS)
     onCleanup(() => { clearInterval(timer) })
   })
   void refetch()

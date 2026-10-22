@@ -13,6 +13,7 @@ import { focusBranches, scrollBranches } from '../hosts/claude-code/branches.tsx
 import { focusSearch, scrollSearch, stopSearch } from '../hosts/claude-code/search.tsx'
 import { renderPane } from '../hosts/claude-code/pane.tsx'
 import { focusInput, inputId, resetInputs } from '../hosts/claude-code/inputs.ts'
+import { forgetTheme } from '../hosts/claude-code/theme.ts'
 import { initPane, PANE_ID, readCwd, readPane, readTree, resetActiveActivity, resetGitUi, resetFilesUi, resetSearch, setCwd, updatePane, updateTree, updateSearch } from '../hosts/claude-code/state.ts'
 
 const TITLE = 'JEI'
@@ -34,8 +35,31 @@ export const register: Register = (on, raw) => {
   const options = parseOptions(raw)
   // Armed only by a fresh session, so a hot reload never reopens a pane the person closed.
   let autoOpenArmed = false
+  let manualDiff = 0
+
+  on('command.run', { command: 'diff' }, async ($, e, next) => {
+    manualDiff++
+    try { return await next(e) } finally { manualDiff-- }
+  })
+
+  // The host's first-edit diff must not replace the pane the person is using.
+  on('ui.open', { id: 'diff' }, async ($, e, next) => {
+    if (!manualDiff && next.origin.plugin === 'cc-plugin-diff' && next.origin.tier === 'builtin') {
+      let shown = false
+      try { shown = (await $.ui.panes()).some(pane => pane.id === PANE_ID && pane.isPlaced && pane.isShown) } catch {}
+      if (shown) return { value: { isPlaced: false, reason: 'JEI is shown.' } }
+    }
+    return next(e)
+  })
+
+  on('config.set', { key: 'theme' }, async ($, e, next) => {
+    const result = await next(e)
+    if (result.deny === undefined) { forgetTheme(); $.ui.invalidate('ui.render') }
+    return result
+  })
 
   on('session.start', async ($, e, next) => {
+    forgetTheme()
     resetInputs()
     await resetActiveActivity($)
     await $.command.register({

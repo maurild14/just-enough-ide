@@ -8,6 +8,10 @@ Final Files regressions use a signal-aware RPC mock to reject on transport abort
 
 The test suite requires `rg` (ripgrep) on PATH, alongside Bun and Git. Runtime Search still supports the documented Git grep fallback.
 
+ADR 0031 adds automatic/manual diff boundary replay, native and OpenTUI gradient checks in light/dark at 24/40/80/120 columns, grapheme-safe left-to-right travel and timer disposal. A single live Claude 2.1.306 ConPTY pass used local tool calls without model work: create kept Files visible, modifications kept Search/Git visible, and explicit `/diff` opened. That shell inherited `NO_COLOR=1`, so the pass verifies layout rather than colored paint; truecolor stops and motion are checked by renderer spans/native trees. It also exposed the host cancellation message without a final period, now covered alongside its punctuated form.
+
+Hook-aware commit tests distinguish JEI's explicit permission check from an additional host dispatch check carrying `tool_use_id`. They still require exactly one explicit check and one tool execution; native host checks do not count as duplicate JEI work.
+
 Source: `PRD.md` §8.1 and `docs/design.md` §10. Run `bun run test`, `bun run typecheck` and `bun run check:docs` before finishing.
 
 ADR 0030 regressions cover real Git command-scope hook overrides, aborted ignore checks and history cache recovery, stable native input seeds, selected-row focus targets and replayed late Cancel focus after Down. Both renderers cover colored selected names, softer ancestor tints and expiration; OpenTUI sweeps all three activity kinds at 24/40/80/120 columns in light/dark themes. Active-tool counts cover overlaps and completion before decay. Windows live Claude checks retained the full commit text at 60 ms per key and Search edit-query focus. Post-create row focus and physical Down/Enter remain manual checks after the bounded live pass lost pane focus; renderer/kit checks do not certify those physical routes.

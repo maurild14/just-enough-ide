@@ -763,7 +763,7 @@ test('a Read glows its row and follows the agent; the glow ends after 2 s', asyn
   for (const width of WIDTHS) {
     await ui.redraw(paneProps(width))
     expect((await look('row-src/api/user.ts')).color).toBe('autoAccept')
-    expect((await look('row-src/api/user.ts')).underline).toBe(true)
+    expect((await look('row-src/api/user.ts')).underline).not.toBe(true)
     expect((await look('row-src/api')).color).toBe('autoAccept')
     expect((await look('row-src/api')).dimColor).toBe(true)
     for (const drawn of lineWidths(await ui.drawn() as Node)) expect(drawn).toBeLessThanOrEqual(width)
@@ -776,7 +776,34 @@ test('a Read glows its row and follows the agent; the glow ends after 2 s', asyn
   await ui.unmount()
 })
 
-test('an active native Read holds its filename glow until the tool finishes', async ($, on) => {
+for (const mode of ['light', 'dark'] as const) test(`writing filenames sweep a native gradient in ${mode} without underlining the row`, { timeoutMs: 60_000 }, async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  on('config.list', () => ({ value: [{ key: 'theme', label: 'Theme', kind: 'choice', value: mode, provider: { plugin: 'engine', tier: 'core' }, isLocked: false }] }))
+  on('tool.call', () => ({ result: {} as never, text: 'ok' }))
+  await world($, on)
+  for (const surface of SURFACES) {
+    const ui = await nativeMount($)({ plugin: 'jei', surface, component: 'Pane', props: paneProps(80), requestId: 'jei' })
+    await $.tool.call({ tool: 'Write', file_path: `${ROOT}/src/api/user.ts`, content: 'hello' } as never)
+    const paint = async () => (await ui.find({ key: 'row-src/api/user.ts' }))!.children[0] as Exclude<Node, string>
+    const before = await paint()
+    expect(before.props?.underline).not.toBe(true)
+    await clock.advance(680)
+    for (const width of WIDTHS) {
+      await ui.redraw(paneProps(width))
+      const during = await paint()
+      const colors = (during.children as Node[]).flatMap(child => typeof child === 'object' && typeof child.props?.color === 'string' ? [child.props.color] : [])
+      expect(new Set(colors).size).toBeGreaterThan(1)
+      expect(colors.every(color => /^#[0-9a-f]{6}$/.test(color) && (mode === 'dark' ? parseInt(color.slice(1, 3), 16) >= 251 : parseInt(color.slice(1, 3), 16) <= 194))).toBe(true)
+      expect(during.children).not.toEqual(before.children)
+      for (const drawn of lineWidths(await ui.drawn() as Node)) expect(drawn).toBeLessThanOrEqual(width)
+    }
+    await clock.advance(2200)
+    expect((await paint()).props?.color).toBeUndefined()
+    await ui.unmount()
+  }
+})
+
+test('an active native Read holds its filename glow until the tool finishes', { timeoutMs: 20_000 }, async ($, on) => {
   const clock = mock.clock(on, { now: 1000 })
   let release!: () => void, entered!: () => void
   const held = new Promise<void>(resolve => { release = resolve }), began = new Promise<void>(resolve => { entered = resolve })
@@ -793,6 +820,20 @@ test('an active native Read holds its filename glow until the tool finishes', as
   expect(await ui.find({ key: 'glow-src/api/user.ts' })).toBeUndefined()
   expect(await ui.find({ key: 'mark-src/api/user.ts' })).toBeDefined()
   await ui.unmount()
+})
+
+test('activity does not redraw Git at filename animation speed', async ($, on) => {
+  const clock = mock.clock(on, { now: 1000 })
+  let ticks = 0
+  on('state.set', (_$, e, next) => { if (e.key === 'tick') ticks++; return next(e) })
+  on('tool.call', () => ({ result: {} as never, text: 'ok' }))
+  await world($, on)
+  await $.command.run(jei('git'))
+  await $.tool.call({ tool: 'Read', file_path: `${ROOT}/src/api/user.ts` } as never)
+  await clock.settle()
+  const before = ticks
+  await clock.advance(600)
+  expect(ticks).toBe(before)
 })
 
 test('with activity on writes, a Read does not glow', { options: { activity: 'writes' } }, async ($, on) => {

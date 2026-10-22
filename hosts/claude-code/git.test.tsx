@@ -669,13 +669,15 @@ test('with hooks the commit goes through the agent shell after a check, and the 
   const ui = await gitPane($, 'terminal')
   expect((await ui.find({ key: 'header' }))?.text).toContain('hooks')
   await ui.input({ key: 'message', text: "fix: it's the name", kind: 'submit' })
-  expect(calls.checks).toHaveLength(1)
+  // The host may check again with a tool_use_id when it dispatches the tool.
+  const explicitChecks = calls.checks.filter(check => check && typeof check === 'object' && !('tool_use_id' in check))
+  expect(explicitChecks).toHaveLength(1)
   expect(calls.tools).toHaveLength(1)
   const call = calls.tools[0]!
   expect(call.tool).toBe('Bash')
   expect(call.command).toBe(`git --no-optional-locks -c core.quotepath=off -C ${ROOT} commit -F ${ROOT}/.git/JEI_COMMIT_MSG`)
   expect(call.timeout).toBe(600000)
-  expect((calls.checks[0] as { input: { command: string } }).input.command).toBe(call.command)
+  expect((explicitChecks[0] as { input: { command: string } }).input.command).toBe(call.command)
   // The message goes to a file in the git dir, never into the shell line; the file is emptied after.
   expect(calls.writes[0]).toEqual({ path: `${ROOT}/.git/JEI_COMMIT_MSG`, text: "fix: it's the name\n" })
   expect(calls.writes.at(-1)).toEqual({ path: `${ROOT}/.git/JEI_COMMIT_MSG`, text: '' })

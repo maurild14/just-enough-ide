@@ -2,9 +2,10 @@ import { expect, test } from 'claude-code/testing'
 import { A, B, C, ROOT, historyPane, historyWorld, props, select } from './history-fixture.ts'
 import { drawnLine, findKey, lineWidths, type Node } from './measure.ts'
 
-test('aborted history reads stay silent and their rejected cache can recover', async ($, on) => {
+for (const punctuation of ['', '.']) test(`aborted history reads stay silent and retry with punctuation ${JSON.stringify(punctuation)}`, async ($, on) => {
   const r = await historyWorld($, on)
   r.logAbort = true
+  r.logAbortMessage = '$.process.run(git) aborted' + punctuation
   const ui = await historyPane($, 80)
   expect((await ui.findAll({ type: 'Text' })).some(node => node.text.includes("Can't load history"))).toBe(false)
   r.logAbort = false

@@ -1,5 +1,6 @@
 import type { EngineInterface, RenderElement, RenderInput } from 'claude-code'
 import { ActivityLog, shimmerPhase } from '../../core/activity/log.ts'
+import { shimmerRuns, shimmerColor } from '../../core/activity/shimmer.ts'
 import { prepareFsOp, planFsOp, fsOpCommand, verifyFsOp, type FsOp } from '../../core/fsops.ts'
 import { KEYS } from '../../core/keys.ts'
 import { fitTable } from '../../core/files/csv.ts'
@@ -30,7 +31,7 @@ import {
   updateTree,
   claimFilesPane, releaseFilesPane, filesPaneOwned, publishFilesPane, publishFilesTree,
 } from './state.ts'
-import { activityColor, color, statusLook } from './theme.ts'
+import { activityColor, activityTheme, color, statusLook } from './theme.ts'
 import { refreshGit, forgetViews } from './activity.ts'
 import { focusInput, inputValue, resetInput, inputKey } from './inputs.ts'
 
@@ -579,10 +580,11 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     { key: 'h', run: act($, () => updateTree($, (t) => ({ ...t, showHidden: !t.showHidden, revealed: undefined }))) },
   ]
 
-  type Item = { id: string; isRow: boolean; el: RenderElement }
+  type Item = { id: string; isRow: boolean; el: RenderElement | (() => RenderElement) }
   const items: Item[] = []
   const step = inner < 32 ? 1 : 2
   const maxIndent = Math.floor(inner / 4)
+  const themeMode = log.isGlowing(now) && options.activity !== 'none' ? await activityTheme($) : 'dark'
 
   const statusW = (rels: readonly string[]) => (rels.some((r) => status.has(r)) ? 1 : 0)
   const rowEl = (rel: string, label: string, opts: { isDir: boolean; depth: number; isExpanded: boolean; sw: number }) => {
@@ -614,9 +616,11 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
             {inner > 0 ? (markLook ? '•' : ' ') : ''}
           </Text>
         </Box>
-        <Button key={`${ROW_PREFIX}${rel}`} plain autoFocus={!tree.editing && (isSel || selected === undefined && !items.some(item => item.isRow)) ? true : undefined} onPress={act($, () => press(rel, opts.isDir))}>
-          <Text color={nameLook.color} dimColor={nameLook.dim} weight={nameLook.bold ? 'bold' : undefined} underline={isSel && phase !== 'none'} inverse={nameLook.inverse}>
-            {padEnd(left, room)}
+        <Button key={`${ROW_PREFIX}${rel}`} plain autoFocus={!tree.editing && (isSel || selected === undefined && rel === lastIds[0]) ? true : undefined} onPress={act($, () => press(rel, opts.isDir))}>
+          <Text color={nameLook.color} dimColor={nameLook.dim} weight={nameLook.bold ? 'bold' : undefined} inverse={nameLook.inverse}>
+            {phase !== 'none' && kind !== undefined && !opts.isDir
+              ? shimmerRuns(padEnd(left, room), now).map(run => <Text color={run.strength ? shimmerColor(kind, themeMode, run.strength * activity!.glow) : undefined} weight={run.strength >= 0.5 ? 'bold' : undefined}>{run.text}</Text>)
+              : padEnd(left, room)}
           </Text>
           {opts.sw > 0 && (
             <Text color={look?.color} dimColor={look?.dim} weight={look?.bold ? 'bold' : undefined} inverse={inverse}>
@@ -642,7 +646,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
     catch (err) { return { header, above, body: [line(firstLine(err), { color: color('error') }, 'notice')], actions } }
     const hits = filterRows(files, tree.filter, FILTER_MAX)
     const sw = statusW(hits)
-    for (const rel of hits) items.push({ id: rel, isRow: true, el: rowEl(rel, rel, { isDir: false, depth: 0, isExpanded: false, sw }) })
+    for (const rel of hits) items.push({ id: rel, isRow: true, el: () => rowEl(rel, rel, { isDir: false, depth: 0, isExpanded: false, sw }) })
     if (hits.length === 0) items.push({ id: 'empty', isRow: false, el: line(`No files match "${tree.filter}".`, { dim: true }, 'notice') })
   } else {
     const expanded = new Set(tree.expanded)
@@ -678,7 +682,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
         items.push({ id: r.rel, isRow: false, el: line(`${indent}${r.more} more`, { dim: true }, `more-${r.rel}`) })
         return
       }
-      items.push({ id: r.rel, isRow: true, el: rowEl(r.rel, r.name, { isDir: r.isDir, depth: r.depth, isExpanded: r.isExpanded, sw }) })
+      items.push({ id: r.rel, isRow: true, el: () => rowEl(r.rel, r.name, { isDir: r.isDir, depth: r.depth, isExpanded: r.isExpanded, sw }) })
       const next = rows[i + 1]
       if (r.isDir && r.isExpanded && (next === undefined || next.depth <= r.depth)) {
         const indent = ' '.repeat(Math.min((r.depth + 1) * step, maxIndent))
@@ -697,7 +701,7 @@ export async function renderFiles($: EngineInterface, e: PaneRender, frame: File
   lastIds = items.filter((i) => i.isRow).map((i) => i.id)
   const rows = Math.max(0, frame.bodyRows)
   const top = windowTop(mode, ids, selected, rows)
-  return { header, above, body: items.slice(top, top + rows).map((i) => i.el), actions, scrollable: items.length > rows }
+  return { header, above, body: items.slice(top, top + rows).map(i => typeof i.el === 'function' ? i.el() : i.el), actions, scrollable: items.length > rows }
 }
 
 export async function clearFileSearch($: EngineInterface): Promise<void> {

@@ -1,6 +1,7 @@
 import type { EngineInterface, On, Timer } from 'claude-code'
 import { classifyTool, type ActivityKind, type Touch } from '../../core/activity/classify.ts'
 import { ActivityLog, allows } from '../../core/activity/log.ts'
+import { ACTIVITY_FRAME_MS } from '../../core/activity/shimmer.ts'
 import { reveal } from '../../core/files/tree.ts'
 import { git } from '../../core/git/run.ts'
 import { snapshot, agentCandidates, captureReflog } from '../../core/git/service.ts'
@@ -26,8 +27,6 @@ import {
   updateHistory,
 } from './state.ts'
 
-/** Shimmer redraw period: the 250 ms steps of docs/design.md section 9. */
-const FRAME_MS = 250
 /** Status and listing refresh after the agent's last change. */
 const DEBOUNCE_MS = 300
 /** Longest a refresh waits while changes keep coming. */
@@ -212,8 +211,9 @@ function scheduleRefresh($: EngineInterface, rels: readonly string[], all = fals
 
 /** One shimmer frame: redraw, and stop the clock once nothing glows. */
 async function frame($: EngineInterface): Promise<void> {
-  await bumpTick($)
   const now = await $.clock.now()
+  // Only Files paints the sheen; do not redraw history or editors at animation speed.
+  if (currentView(await readPane($)) === 'files') await bumpTick($)
   if (!ActivityLog.from(await readActivity($)).isGlowing(now)) {
     glowTimer?.cancel()
     glowTimer = null
@@ -249,7 +249,7 @@ async function observe($: EngineInterface, touch: Touch, options: Options, shell
       await updatePane($, (s) => reducePane(s, { type: 'select', view: 'files', id: first }))
     }
   }
-  if (glowTimer === null) glowTimer = $.clock.every(FRAME_MS, () => void frame($).catch(() => undefined))
+  if (glowTimer === null) glowTimer = $.clock.every(ACTIVITY_FRAME_MS, () => void frame($).catch(() => undefined))
 }
 
 /** What a tool call touched, search hits included. */

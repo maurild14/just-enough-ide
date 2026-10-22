@@ -45,3 +45,4 @@ An ADR records one decision that changes a rule or a structure, so a later reade
 | 0028 | [Safe Files operations](0028-safe-files-operations.md) | Literal mutations, captured canonical evidence, fixed PowerShell programs, server-owned plans and native confirmation. |
 | 0029 | [Canonical filesystem identity](0029-canonical-path-identity.md) | Separate lexical aliases from exact canonical metadata containment across Files, preview, Search and Replace. |
 | 0030 | [Native editing and activity rows](0030-native-editing-and-activity-rows.md) | Stable native input seeds, restored list focus, transient reads and selected-row activity tint. |
+| 0031 | [Visible pane and gradient activity](0031-visible-pane-and-gradient-activity.md) | Preserve JEI against automatic diff opening and share a directional activity gradient across hosts. |

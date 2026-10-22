@@ -46,6 +46,7 @@ Before finishing any change, run `bun run test`, `bun run typecheck` and `bun ru
 | Files mutations, canonical evidence, native confirmations or fixed PowerShell programs | `docs/decisions/0028-safe-files-operations.md` |
 | Canonical metadata identity versus lexical Windows path aliases | `docs/decisions/0029-canonical-path-identity.md` |
 | Commit mode, input blur or repeated focus/arrow navigation | `docs/decisions/0024-focus-and-arrow-navigation.md` |
+| Automatic diff panes or directional Files activity | `docs/decisions/0031-visible-pane-and-gradient-activity.md` |
 | Checking what is built and known debt | `docs/quality.md` |
 | Preparing a release (manual QA, release pipeline) | `docs/qa.md`, `CONTRIBUTING.md` |
 | Changing a rule or a past decision | `docs/decisions/README.md` |

@@ -2,6 +2,8 @@ import { nativeMount } from './measure.ts'
 import { expect, test } from 'claude-code/testing'
 import { cellWidth } from '../../core/shared/fit.ts'
 import { lineWidths, type Node } from './measure.ts'
+import type { EngineInterface, On } from 'claude-code'
+import { register } from '../../hooks/register.tsx'
 
 const SURFACES = ['terminal', 'desktop'] as const
 const WIDTHS = [24, 40, 80, 120] as const
@@ -169,6 +171,64 @@ test('/jei brings a pane that is open behind another forward instead of closing 
   on('ui.panes', () => ({ value: [{ id: 'jei', title: 'JEI', isShown: false, isFocused: false, isPlaced: true }] }))
   expect((await $.command.run(jei())).text).toBe('JEI opened.')
   expect(opens).toEqual(['jei'])
+})
+
+// The kit has no engine ui.open call; replay the real registered boundary.
+function paneOpening() {
+  const hooks: { event: string; matcher: any; run: any; recover?: any }[] = []
+  const on = ((event: string, ...args: any[]) => {
+    const entry = { event, matcher: typeof args[0] === 'function' ? undefined : args[0], run: args.at(-1) }
+    hooks.push(entry)
+    return { catch(recover: any) { Object.assign(entry, { recover }) } }
+  }) as unknown as On
+  register(on, {})
+  const shown = { value: true, inspectionFails: false }
+  const opened: string[] = []
+  const $ = { ui: { panes: async () => { if (shown.inspectionFails) throw new Error('Pane inspection failed.'); return shown.value ? [{ id: 'jei', isShown: true, isPlaced: true }] : [] } } } as unknown as EngineInterface
+  const open = async (id: string, plugin = 'cc-plugin-diff', fails = false) => {
+    const next = Object.assign(async () => { opened.push(id); if (fails) throw new Error('Open failed.'); return { value: { isPlaced: true } } }, { origin: { plugin, tier: plugin === 'cc-plugin-diff' ? 'builtin' : 'user' } })
+    const hook = hooks.find(h => h.event === 'ui.open' && (!h.matcher || h.matcher.id === id))
+    if (!hook) return next()
+    try { return await hook.run($, { id }, next) }
+    catch (error) { if (hook.recover) return hook.recover($, { id }, next); throw error }
+  }
+  const manual = async (run: () => Promise<unknown>) => {
+    const hook = hooks.find(h => h.event === 'command.run' && h.matcher?.command === 'diff')
+    return hook ? hook.run($, { command: 'diff', origin: { kind: 'composer' } }, run) : run()
+  }
+  return { shown, opened, open, manual }
+}
+
+test('automatic diff panes cannot cover a shown JEI pane', async () => {
+  const f = paneOpening(), result = await f.open('diff')
+  expect(f.opened).toEqual([])
+  expect(result.value.isPlaced).toBe(false)
+})
+
+test('manual diff and other panes still open, and a closed JEI does not block diff', async () => {
+  const f = paneOpening()
+  await f.manual(() => f.open('diff'))
+  await f.open('help')
+  f.shown.value = false
+  await f.open('diff')
+  expect(f.opened).toEqual(['diff', 'help', 'diff'])
+})
+
+test('a different plugin can open its own namespaced diff pane', async () => {
+  const f = paneOpening()
+  await f.open('diff', 'notes')
+  expect(f.opened).toEqual(['diff'])
+})
+
+test('failed pane inspection passes through, and a failed open is never repeated', async () => {
+  const f = paneOpening()
+  f.shown.inspectionFails = true
+  await f.open('diff')
+  f.shown.inspectionFails = false
+  await expect(f.manual(() => f.open('diff', 'cc-plugin-diff', true))).rejects.toThrow('Open failed.')
+  expect(f.opened).toEqual(['diff', 'diff'])
+  await f.open('diff')
+  expect(f.opened).toEqual(['diff', 'diff'])
 })
 
 test('/jei says why when the pane cannot be shown', async ($, on) => {

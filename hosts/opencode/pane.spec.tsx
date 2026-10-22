@@ -6,6 +6,7 @@ import { createMemo, createSignal, onCleanup } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
 import { parseOptions } from '../../core/options.ts'
 import { ActivityLog } from '../../core/activity/log.ts'
+import { ACTIVITY_FRAME_MS } from '../../core/activity/shimmer.ts'
 import { initialPane, reducePane } from '../../core/pane.ts'
 import { cellWidth } from '../../core/shared/fit.ts'
 import { hintLine } from '../../core/keys.ts'
@@ -268,7 +269,7 @@ test('changed refetches discard stale replies and malformed replies show an erro
   expect(r.captureCharFrame()).toContain('Invalid JEI state.')
 })
 
-test('activity arms one 250 ms timer only while glowing and disposes listeners', async () => {
+test('activity arms one 60 ms timer only while glowing and disposes listeners', async () => {
   const f = fixture()
   const r = await f.mount()
   const interval = spyOn(globalThis, 'setInterval')
@@ -277,12 +278,12 @@ test('activity arms one 250 ms timer only while glowing and disposes listeners',
   try {
     f.emit('activity', { rel: 'src/app.ts', kind: 'write' })
     await r.flush()
-    expect(interval.mock.calls.filter((args) => args[1] === 250)).toHaveLength(1)
-    const tick = interval.mock.calls.find((args) => args[1] === 250)![0] as () => void
+    expect(interval.mock.calls.filter((args) => args[1] === ACTIVITY_FRAME_MS)).toHaveLength(1)
+    const tick = interval.mock.calls.find((args) => args[1] === ACTIVITY_FRAME_MS)![0] as () => void
     clock.mockReturnValue(10250)
     tick()
     await r.flush()
-    expect(interval.mock.calls.filter((args) => args[1] === 250)).toHaveLength(1)
+    expect(interval.mock.calls.filter((args) => args[1] === ACTIVITY_FRAME_MS)).toHaveLength(1)
     clock.mockReturnValue(12000)
     tick()
     await r.flush()
@@ -300,7 +301,7 @@ test('disabled activity stays idle and malformed events display a bounded error'
   try {
     f.emit('activity', { rel: 'src/app.ts', kind: 'write' })
     await r.flush()
-    expect(interval.mock.calls.filter((args) => args[1] === 250)).toHaveLength(0)
+    expect(interval.mock.calls.filter((args) => args[1] === ACTIVITY_FRAME_MS)).toHaveLength(0)
     f.emit('activity', { rel: 42, kind: 'write' })
     await r.flush()
     expect(r.captureCharFrame()).toContain('Invalid JEI activity.')
@@ -336,7 +337,7 @@ test('a delayed state reply cannot erase newer live activity', async () => {
   try {
     f.emit('activity', { rel: 'src/app.ts', kind: 'write' })
     await r.flush()
-    const index = interval.mock.calls.findIndex((args) => args[1] === 250)
+    const index = interval.mock.calls.findIndex((args) => args[1] === ACTIVITY_FRAME_MS)
     const timer = interval.mock.results[index]!.value
     complete({ cwd: '/acme-app', options: {}, git: { root: null }, activity: {} })
     await r.flush()
