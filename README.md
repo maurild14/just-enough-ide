@@ -1,6 +1,11 @@
 # JEI — Just Enough IDE
 
-<!-- logo: added by the maintainer before the public release -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="media/jei-logo-dark.png">
+    <img src="media/jei-logo-light.png" alt="JEI, Just Enough IDE" width="420">
+  </picture>
+</p>
 
 > The parts of an IDE you still need when the AI writes the code: a file tree, project search and a full Git panel, docked beside your Claude Code or OpenCode session.
 
