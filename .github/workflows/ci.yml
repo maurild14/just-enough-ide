@@ -26,6 +26,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      # Search tests run the real ripgrep; runner images do not ship it.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends ripgrep
+      - if: runner.os == 'macOS'
+        run: brew install ripgrep
+      - if: runner.os == 'Windows'
+        run: choco install ripgrep -y --no-progress
       - run: bun install --frozen-lockfile
       - run: bun run test
 

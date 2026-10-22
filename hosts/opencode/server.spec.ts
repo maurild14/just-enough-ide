@@ -426,7 +426,8 @@ test('every path RPC rejects escapes before touching any member of a batch', asy
   const repo = await makeRepo({ 'a.txt': 'before\n' })
   repo.write('a.txt', 'after\n')
   const server = await start(repo.dir)
-  for (const path of ['../x', '..\\x', join(makeTemp('outside'), 'x'), 'C:/outside/x', '//outside/share/x']) {
+  // POSIX colons are literal, so a drive-letter path is outside the root only on Windows.
+  for (const path of ['../x', '..\\x', join(makeTemp('outside'), 'x'), ...(process.platform === 'win32' ? ['C:/outside/x'] : []), '//outside/share/x']) {
     for (const name of ['listDir', 'preview', 'open'] as const) {
       expect(await server.call(name, { rel: path })).toMatchObject({ type: 'outside_root', data: {} })
     }
