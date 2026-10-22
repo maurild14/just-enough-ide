@@ -88,8 +88,10 @@ Commits since the last release: it bumps `package.json`,
 `.claude-plugin/plugin.json` and `core/version.ts` together and updates
 `CHANGELOG.md`. Merging that
 PR creates the tag and GitHub release, and the `publish` job (environment
-`npm`) runs the tests and publishes `opencode-jei` to npm through npm trusted
+`npm`) runs the tests and stages `opencode-jei` on npm through npm trusted
 publishing. There is no npm token; provenance is attached automatically.
+The version goes live only when you approve it: npmjs.com, the package, the
+staged version, Approve (2FA), or `npm stage list` and `npm stage approve <id>`.
 
 One-time setup by the maintainer:
 
@@ -108,7 +110,8 @@ One-time setup by the maintainer:
      it then.
 - On npmjs.com, in the `opencode-jei` package settings, add a trusted
   publisher: GitHub Actions, repository `maurild14/just-enough-ide`, workflow
-  `release.yml`, environment `npm`.
+  `release.yml`, environment `npm`. Leave "Allow npm publish" and "Allow npm
+  dist-tag" unchecked: staged publishing is always allowed.
 - In the GitHub repository, create the `npm` environment and allow GitHub
   Actions to create pull requests (Settings, Actions, General) so
   release-please can open its PR.

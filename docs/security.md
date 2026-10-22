@@ -1,6 +1,6 @@
 # Security and privacy
 
-> Purpose: what JEI does and never does with your data, and the hygiene rules for contributors · Status: current · Last reviewed: 2026-10-21
+> Purpose: what JEI does and never does with your data, and the hygiene rules for contributors · Status: current · Last reviewed: 2026-10-22
 
 Source: `PRD.md` §9. To report a vulnerability, follow `SECURITY.md`.
 
@@ -43,7 +43,7 @@ On OpenCode, sensitive-file approval covers the exact list shown and crosses RPC
 - No secrets, tokens, personal paths, usernames, emails or real project names in code, fixtures, docs or screenshots. Fixtures use `acme-app` and fictional authors (`@example.com`).
 - Commits use the maintainer's GitHub noreply identity, never a personal address. The license names "The JEI contributors".
 - CI runs a gitleaks scan on the full history (`.gitleaksignore` lists one fingerprint: the fictional file names in `core/git/sensitive.spec.ts` line 9, which also carries `// gitleaks:allow`), with `contents: read` permissions, `persist-credentials: false` on checkout, and Dependabot keeping the SHA-pinned actions current; run a secret scan over the repo before each release.
-- npm publishing runs from GitHub Actions through npm trusted publishing (OIDC): no npm token exists to leak, and provenance is attached automatically. `.github/workflows/release.yml` runs release-please (`contents`, `issues` and `pull-requests: write`, nothing else) and a `publish` job in the `npm` environment with only `contents: read` and `id-token: write`; it runs the tests before `npm publish` and installs nothing unpinned (Node 24's bundled npm already supports trusted publishing). Actions are pinned by commit SHA and run with least-privilege `permissions`. The trusted publisher on npmjs.com (this repository, `release.yml`, environment `npm`) is a one-time maintainer setup described in `CONTRIBUTING.md`.
+- npm publishing runs from GitHub Actions through npm trusted publishing (OIDC): no npm token exists to leak, and provenance is attached automatically. `.github/workflows/release.yml` runs release-please (`contents`, `issues` and `pull-requests: write`, nothing else) and a `publish` job in the `npm` environment with only `contents: read` and `id-token: write`; it runs the tests before `npm stage publish` and installs only an exact npm version. A staged version reaches the registry only after the maintainer approves it on npmjs.com with 2FA, so a compromised workflow cannot publish on its own. Actions are pinned by commit SHA and run with least-privilege `permissions`. The trusted publisher on npmjs.com (this repository, `release.yml`, environment `npm`) is a one-time maintainer setup described in `CONTRIBUTING.md`.
 - `.claude-plugin/types/` (laid by Claude Code) is gitignored and never committed.
 
 ## Reporting

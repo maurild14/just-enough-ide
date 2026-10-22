@@ -50,11 +50,13 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: '24.15'
           registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm 11.5.1 or newer: Node 24 bundles it, so npm is not upgraded here
-      # (an unpinned install would run inside the job that holds the OIDC token).
+      # Staged publishing (`npm stage`) needs npm 12; pinned to an exact version because it runs
+      # inside the job that holds the OIDC token.
+      - run: npm install -g npm@12.2.0
       - run: npm --version
       - run: bun install --frozen-lockfile
       - run: bun run test
-      - run: npm publish --access public
+      # The version waits on npmjs.com until the maintainer approves it with 2FA.
+      - run: npm stage publish --access public
