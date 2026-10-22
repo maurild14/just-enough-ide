@@ -40,6 +40,7 @@ Files-only checks require no model request. If a live Claude model is necessary,
 - [ ] Not a repository: the Git tab says so and nothing breaks; Files still works.
 - [ ] Repository row shows branch and Sync state; `e` Sync on a diverged branch offers Merge and Rebase.
 - [ ] `s` stage, `u` unstage, `d` discard (asks to confirm; cancel keeps the change), discard all confirms.
+- [ ] Claude Code, long session: preview files, cancel a Replace review, create/rename/delete a file, let the agent edit, open a diff and go Back, then `s` stage. It finishes in under a second, not `aborted: still running after 30000ms` (known issue in docs/quality.md).
 - [ ] `g` ✦ Generate against a configured model (`commitModel` empty and set); the subject can be edited and the generated body is kept in the commit (OpenCode edits the subject only).
 - [ ] Commit, Commit & Push and Amend; smart commit with nothing staged stages everything first.
 - [ ] A sensitive file (`.env`, `id_rsa`) in a smart commit is listed and needs "Commit anyway"; adding another sensitive path after approving asks again for the exact new list.

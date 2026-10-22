@@ -1,6 +1,6 @@
 # Quality
 
-> Purpose: what is built, what is not, and the known tech debt, per area · Status: current · Last reviewed: 2026-10-21
+> Purpose: what is built, what is not, and the known tech debt, per area · Status: current · Last reviewed: 2026-10-22
 
 Update a row in the same commit that changes the area. `git log` is the history; this table is the current snapshot. States: `not built`, `partial`, `built`, `built (debt)`.
 
@@ -62,6 +62,7 @@ Add one row per item, newest first, and delete the row when it is fixed.
 
 | Date | Area | Issue | Severity (low, medium, high) |
 | --- | --- | --- | --- |
+| 2026-10-22 | Git process calls (Claude Code) | Observed once on Windows, after a long session (Files previews, a cancelled Replace review, file operations, an agent turn, then a diff): Stage stayed on `Staging…` and failed with `$.process.run(git) aborted: still running after 30000ms`, although the path was staged. A transient `Can't load history: … aborted` was seen once too. A fresh session could not reproduce it; the cause (JEI or the host's process runner) is unknown. Refresh or retry shows the real state; no data is lost. Repeat the sequence in docs/qa.md before changing timeouts or routing. | medium |
 | 2026-10-20 | Search/review retention | The 16/32 MiB budgets estimate accepted strings/ranges/snapshots, not exact heap usage. Transient parsing, RPC/session copies and retained per-root state add memory; roots are not pruned. | medium |
 | 2026-10-20 | Search fallback | Git grep exposes only the first verified occurrence per tracked line; hidden/untracked coverage differs from rg. An rg exit 2 still fails closed after partial output. Unicode boundary disagreement refuses replacement of the whole file. | low |
 | 2026-10-20 | Search/Quick Open (Claude Code) | File enumeration beyond the native run-output cap fails explicitly and can be retried; streaming enumeration remains deferred. Already-running process.run calls are guarded but cannot be physically interrupted. Actual live focus/paint, silent pending-child cancellation remain QA. | medium |
