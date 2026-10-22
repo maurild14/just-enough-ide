@@ -6,11 +6,15 @@
 
 JEI is a pane with three tabs (**Files**, **Search**, **Git**) that sits next to the agent's conversation. You watch what the agent reads and edits, search the project without spending tokens, review the changes and commit them, without leaving the session. Both hosts get the same features and the same keys from one codebase.
 
-[![JEI following the agent: the file tree marks index.html while Claude edits it](media/jei-agent.gif)](media/jei-agent.gif)
+[![JEI following the agent: the file tree lights up the files Claude reads and edits](media/jei-agent.gif)](media/jei-agent.gif)
 
 ## Features
 
-- **Files:** a lazy file tree with git status and a shimmer on the files the agent reads (purple), writes (orange) or touches through git (green). Follows the agent, finds filenames as you type, previews code, Markdown and CSV/TSV, mentions a file in the prompt, opens it in your editor, and creates, renames, moves and deletes files (delete always asks first).
+- **Agent activity:** while the agent works, the names of the files it reads glow purple, the ones it writes glow orange and the ones it touches through git glow green, with a soft sweep that fades out a couple of seconds after the tool finishes. Their folders take a softer tint, and the tree follows the agent to each file.
+
+  [![File names glowing in the tree while Claude reads two files and edits index.html](media/jei-activity.gif)](media/jei-activity.gif)
+
+- **Files:** a lazy file tree with git status. Finds filenames as you type, previews code, Markdown and CSV/TSV, mentions a file in the prompt, opens it in your editor, and creates, renames, moves and deletes files (delete always asks first).
 
   [![Finding files by name and previewing a CSV table and a script](media/jei-files.gif)](media/jei-files.gif)
 
@@ -87,7 +91,7 @@ The same keys on both hosts. On Claude Code, set them in `/config`. On OpenCode,
 | --- | --- | --- | --- |
 | `startOpen` | on / off | on | Open the pane when a session starts (where it can dock) |
 | `defaultTab` | `files`, `search`, `git` | `files` | Tab shown on open |
-| `activity` | `reads and writes`, `writes`, `reads`, `none` | `reads and writes` | What the shimmer shows |
+| `activity` | `reads and writes`, `writes`, `reads`, `none` | `reads and writes` | Which agent activity glows in the tree |
 | `followAgent` | on / off | on | The tree follows the files the agent touches |
 | `glyphs` | `auto`, `nerd`, `plain` | `auto` | Icon set |
 | `editorCommand` | text | empty | Command that opens a file; `{path}` and `{line}` are replaced. Empty uses the system default |
